@@ -16,11 +16,11 @@ describe("platform", () => {
 
   it("fails closed outside the local environment (auth is not built yet)", async () => {
     for (const environment of ["staging", "production"] as const) {
-      const r = await h.api("GET", "/api/contacts", undefined, { ENVIRONMENT: environment });
+      const r = await h.withEnv({ ENVIRONMENT: environment }).api("GET", "/api/contacts");
       expect(r.status).toBe(503);
       expect(r.json.error.code).toBe("AUTH_NOT_CONFIGURED");
     }
-    const health = await h.api("GET", "/api/health", undefined, { ENVIRONMENT: "production" });
+    const health = await h.withEnv({ ENVIRONMENT: "production" }).api("GET", "/api/health");
     expect(health.status).toBe(200);
   });
 
@@ -174,8 +174,8 @@ describe("contacts", () => {
     const c = (await mk()).json;
     const camp = (await h.api("POST", "/api/campaigns", { name: "History", subject: "s", htmlBody: "<p>b</p>" })).json;
     await h.sql(
-      "INSERT INTO campaign_recipients (id,campaign_id,contact_id,email_snapshot,personalization_snapshot,sequence,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)",
-      "rcp-del-1", camp.id, c.id, c.email, JSON.stringify({ firstName: "Gone" }), 1, Date.now(), Date.now(),
+      "INSERT INTO campaign_recipients (id,tenant_id,campaign_id,contact_id,email_snapshot,personalization_snapshot,sequence,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+      "rcp-del-1", h.tenantId, camp.id, c.id, c.email, JSON.stringify({ firstName: "Gone" }), 1, Date.now(), Date.now(),
     );
     expect((await h.api("DELETE", `/api/contacts/${c.id}`)).status).toBe(204);
     expect((await h.api("GET", `/api/contacts/${c.id}`)).status).toBe(404);

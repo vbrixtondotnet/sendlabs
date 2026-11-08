@@ -7,7 +7,12 @@
 
   // Only "local" may use the placeholder auth. Every other value makes protected routes answer 503
   // until Cloudflare Access is wired in. Vars are not inherited by environments either.
-  "vars": { "ENVIRONMENT": "local" },
+  "vars": {
+    "ENVIRONMENT": "local",
+    // The address the BROWSER uses for the app. Locally that is the Vite dev server (it proxies /api to this Worker).
+    // Google redirects back to <APP_BASE_URL>/api/sender/gmail/callback, so register that exact address with Google.
+    "APP_BASE_URL": "http://localhost:5173"
+  },
 
   // Top level = local development. Wrangler simulates D1 on disk under .wrangler/, so the
   // database_id below is a placeholder and is never sent anywhere.
@@ -25,7 +30,7 @@
   "env": {
     "staging": {
       "name": "sendlab-staging",
-      "vars": { "ENVIRONMENT": "staging" },
+      "vars": { "ENVIRONMENT": "staging", "APP_BASE_URL": "https://REPLACE_WITH_STAGING_URL" },
       "d1_databases": [
         {
           "binding": "DB",
@@ -37,7 +42,7 @@
     },
     "production": {
       "name": "sendlab-production",
-      "vars": { "ENVIRONMENT": "production" },
+      "vars": { "ENVIRONMENT": "production", "APP_BASE_URL": "https://REPLACE_WITH_PRODUCTION_URL" },
       "d1_databases": [
         {
           "binding": "DB",

@@ -1,4 +1,4 @@
-import type { CampaignDto, CampaignSummaryDto, ContactDto, ImportDto, ImportRowDto, RecipientDto, RecipientTotals } from "../../shared/api";
+import type { CampaignDto, CampaignSummaryDto, ContactDto, ImportDto, ImportRowDto, RecipientDto, RecipientTotals, UserDto } from "../../shared/api";
 import { RECIPIENT_STATUSES } from "../../shared/types";
 import type { CampaignRecipientRow, CampaignRow } from "../database/schema/campaigns";
 import type { ContactRow } from "../database/schema/contacts";
@@ -36,7 +36,8 @@ export function toContactDto(r: ContactRow): ContactDto {
 /** List queries skip the (potentially large) bodies, so the summary mapper does not need them. */
 export type CampaignSummaryRow = Omit<CampaignRow, "htmlBody" | "textBody">;
 
-export function toCampaignSummaryDto(r: CampaignSummaryRow, totals: RecipientTotals): CampaignSummaryDto {
+/** `createdByEmail`: the creator is stored as a user id, but the API shows who they are. */
+export function toCampaignSummaryDto(r: CampaignSummaryRow, totals: RecipientTotals, createdByEmail: string): CampaignSummaryDto {
   return {
     id: r.id,
     name: r.name,
@@ -44,7 +45,7 @@ export function toCampaignSummaryDto(r: CampaignSummaryRow, totals: RecipientTot
     status: r.status,
     senderAccountId: r.senderAccountId,
     recipientImportId: r.recipientImportId,
-    createdBy: r.createdBy,
+    createdBy: createdByEmail,
     dailyLimit: r.dailyLimit,
     sendWindowStart: r.sendWindowStart,
     sendWindowEnd: r.sendWindowEnd,
@@ -60,8 +61,8 @@ export function toCampaignSummaryDto(r: CampaignSummaryRow, totals: RecipientTot
   };
 }
 
-export const toCampaignDto = (r: CampaignRow, totals: RecipientTotals): CampaignDto => ({
-  ...toCampaignSummaryDto(r, totals),
+export const toCampaignDto = (r: CampaignRow, totals: RecipientTotals, createdByEmail: string): CampaignDto => ({
+  ...toCampaignSummaryDto(r, totals, createdByEmail),
   htmlBody: r.htmlBody,
   textBody: r.textBody,
 });
@@ -85,7 +86,7 @@ export function toRecipientDto(r: CampaignRecipientRow): RecipientDto {
   };
 }
 
-export function toImportDto(r: ImportRow): ImportDto {
+export function toImportDto(r: ImportRow, createdByEmail: string): ImportDto {
   return {
     id: r.id,
     filename: r.filename,
@@ -100,7 +101,7 @@ export function toImportDto(r: ImportRow): ImportDto {
     rejectedRows: r.malformedRows + r.badRows + r.duplicateRows + r.blankRows,
     numericWarnings: r.numericWarnings,
     error: r.error,
-    createdBy: r.createdBy,
+    createdBy: createdByEmail,
     createdAt: iso(r.createdAt),
     completedAt: isoOrNull(r.completedAt),
   };
@@ -111,4 +112,33 @@ export const toImportRowDto = (r: ImportRowRow): ImportRowDto => ({
   value: r.rawValue,
   outcome: r.outcome,
   contactId: r.contactId,
+});
+
+/** The columns a user listing reads. Listing never selects the password hash, so it cannot leak by mistake. */
+export interface UserListRow {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  displayName: string;
+  accessId: UserDto["accessId"];
+  accessName: UserDto["access"];
+  status: UserDto["status"];
+  mustChangePassword: boolean;
+  lastLoginAt: number | null;
+  createdAt: number;
+}
+
+export const toUserDto = (r: UserListRow): UserDto => ({
+  id: r.id,
+  email: r.email,
+  firstName: r.firstName,
+  lastName: r.lastName,
+  displayName: r.displayName,
+  access: r.accessName,
+  accessId: r.accessId,
+  status: r.status,
+  mustChangePassword: r.mustChangePassword,
+  lastLoginAt: isoOrNull(r.lastLoginAt),
+  createdAt: iso(r.createdAt),
 });

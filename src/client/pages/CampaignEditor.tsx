@@ -15,9 +15,9 @@ import { MERGE_FIELDS, renderTemplate, UNSUBSCRIBE_TAG, unknownTags } from "@/li
 import { ApiClientError } from "@/services/http";
 import { useCampaign, useCreateCampaign, useUpdateCampaign } from "@/services/campaigns";
 import { useContacts } from "@/services/contacts";
+import { useSender } from "@/services/sender";
 import { useCreateImport, useImports } from "@/services/imports";
 
-const SENDER = "outreach@itimpact.example";
 const TIMEZONES = ["America/Los_Angeles", "America/Denver", "America/Chicago", "America/New_York", "UTC"];
 type Source = "contacts" | "import" | "upload";
 
@@ -59,6 +59,8 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
   const update = useUpdateCampaign();
   const csv = useCsvFile();
   const importCsv = useCreateImport();
+  const senderStatus = useSender();
+  const senderEmail = senderStatus.data?.sender?.email ?? null;
   const imports = useImports(1, 100);
 
   const [name, setName] = useState(initial?.name ?? "");
@@ -102,6 +104,10 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
   /* ---- validation (the server re-checks everything) ---- */
   const unknown = unknownTags(subject + html + text);
   const problems: string[] = [];
+  // Campaigns are sent from the tenant's own connected Gmail account. Without one, nothing can be sent.
+  if (senderStatus.isPending) problems.push("Checking your Gmail sender");
+  else if (!senderStatus.data?.sender) problems.push("Connect a Gmail sender in Settings before launching");
+  else if (senderStatus.data.sender.status !== "Connected") problems.push("Reconnect your Gmail sender in Settings before launching");
   if (!name.trim()) problems.push("Campaign name is required");
   if (!subject.trim()) problems.push("Subject is required");
   if (!html.trim()) problems.push("HTML body is required");
@@ -317,7 +323,7 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
                 </div>
                 <div className="rounded-lg border border-slate-200 text-sm dark:border-slate-800">
                   <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 border-b border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-800/50">
-                    <dt className="text-slate-500">From</dt><dd>{SENDER}</dd>
+                    <dt className="text-slate-500">From</dt><dd>{senderEmail ?? <span className="text-slate-400">(no sender connected)</span>}</dd>
                     <dt className="text-slate-500">To</dt><dd>{sample.email ?? ""}</dd>
                     <dt className="text-slate-500">Subject</dt><dd className="font-medium">{renderTemplate(subject || "(no subject)", sample, false)}</dd>
                   </dl>
@@ -381,7 +387,7 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
         <dl className="mt-4 space-y-2 text-sm">
           {[
             ["Campaign", name],
-            ["Sender mailbox", SENDER],
+            ["Sender mailbox", senderEmail ?? "(none connected)"],
             ["Subject", subject],
             ["Recipients", `${fmt(audienceTotal)} (each receives a separate email)`],
             ["Schedule", `${fmt(daily)} per day, ${from} to ${to} ${tz}, about ${days} days`],

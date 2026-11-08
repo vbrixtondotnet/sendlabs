@@ -1,7 +1,11 @@
-import { useState, type ReactNode } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { useEffect, useState, type ReactNode } from "react";
+import { Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
 import type { Role } from "@shared/types";
 import { useRole } from "@/hooks/useRole";
+import { goTo } from "@/lib/navigate";
+import { useSignOut } from "@/services/auth";
+import { ApiClientError } from "@/services/http";
+import { initialsOf, useMe } from "@/services/me";
 
 const NAV: { to: string; label: string; icon: ReactNode; end?: boolean }[] = [
   { to: "/", label: "Overview", end: true, icon: <path d="M3 12l9-8 9 8M5 10v10h5v-6h4v6h5V10" /> },
@@ -24,6 +28,23 @@ function NavIcon({ children }: { children: ReactNode }) {
 export function Layout() {
   const { role, setRole } = useRole();
   const [open, setOpen] = useState(false);
+  const me = useMe();
+  const signOut = useSignOut();
+  const location = useLocation();
+
+  // Start the "Preview as" selector at the signed-in user's real access level. After that it is the user's to change.
+  const [synced, setSynced] = useState(false);
+  useEffect(() => {
+    if (me.data && !synced) {
+      setRole(me.data.user.access);
+      setSynced(true);
+    }
+  }, [me.data, synced, setRole]);
+
+  // Not signed in: go to the login page, and come back to this page afterwards.
+  if (me.error instanceof ApiClientError && me.error.status === 401) {
+    return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
+  }
 
   const nav = (
     <nav aria-label="Main" className="flex flex-col gap-1 px-3">
@@ -54,7 +75,7 @@ export function Layout() {
       <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-slate-200 bg-white py-5 dark:border-slate-800 dark:bg-slate-900 lg:flex">
         <Brand />
         <div className="mt-6 flex-1">{nav}</div>
-        <p className="px-6 text-xs text-slate-400">Live: contacts, campaigns · Mock: imports, settings</p>
+        <p className="px-6 text-xs text-slate-400">Settings are a preview</p>
       </aside>
 
       {/* Mobile drawer */}
@@ -73,6 +94,11 @@ export function Layout() {
           <button className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 lg:hidden" onClick={() => setOpen(true)} aria-label="Open navigation">
             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
           </button>
+          {me.data ? (
+            <span className="truncate text-sm font-medium" title={me.data.tenant.slug}>{me.data.tenant.name}</span>
+          ) : me.isError ? (
+            <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">Not signed in</span>
+          ) : null}
           <div className="ml-auto flex items-center gap-2">
             <label htmlFor="role-switch" className="hidden text-xs text-slate-500 sm:block">
               Preview as
@@ -87,9 +113,25 @@ export function Layout() {
                 <option key={r}>{r}</option>
               ))}
             </select>
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-600 text-xs font-semibold text-white" title="Brian V." aria-label="Signed in as Brian V.">
-              BV
-            </div>
+            {me.data && (
+              <div
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-600 text-xs font-semibold text-white"
+                title={`${me.data.user.displayName || me.data.user.email} (${me.data.user.email})`}
+                aria-label={`Signed in as ${me.data.user.email}`}
+              >
+                {initialsOf(me.data.user.displayName, me.data.user.email)}
+              </div>
+            )}
+            {me.data && (
+              <button
+                type="button"
+                disabled={signOut.isPending}
+                onClick={() => signOut.mutate(undefined, { onSettled: () => goTo("/login") })}
+                className="rounded-lg px-2.5 py-1.5 text-sm text-slate-600 hover:bg-slate-100 disabled:opacity-50 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                Sign out
+              </button>
+            )}
           </div>
         </header>
         <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6">

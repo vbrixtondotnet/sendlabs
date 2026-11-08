@@ -2,10 +2,13 @@
 import { describe, expect, it } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { CampaignEditor } from "../../src/client/pages/CampaignEditor";
-import { campaign, contact, page, renderAt, stubApi, type Handler } from "./harness";
+import { campaign, contact, page, renderAt, senderStatus, stubApi, type Handler } from "./harness";
 
 const contacts: Handler = ({ method, path }) =>
-  path === "/api/contacts" && method === "GET" ? { json: page([contact()], 8214) } : path === "/api/imports" && method === "GET" ? { json: page([]) } : undefined;
+  path === "/api/contacts" && method === "GET" ? { json: page([contact()], 8214) }
+    : path === "/api/imports" && method === "GET" ? { json: page([]) }
+    : path === "/api/sender" && method === "GET" ? { json: senderStatus() }
+    : undefined;
 
 const newCampaign = () => renderAt(<CampaignEditor />, { path: "/campaigns/new", route: "/campaigns/new" });
 const editCampaign = () => renderAt(<CampaignEditor />, { path: "/campaigns/k1/edit", route: "/campaigns/:id/edit" });

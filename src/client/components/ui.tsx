@@ -251,13 +251,18 @@ export const Select = (p: React.SelectHTMLAttributes<HTMLSelectElement>) => <sel
 /* ---------- Modal ---------- */
 export function Modal({ open, title, onClose, children, footer, wide = false }: { open: boolean; title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
+  // Callers pass a fresh onClose every render. Keep it in a ref so the effect below runs only when the dialog
+  // opens or closes: re-running it on every keystroke would pull focus out of the field being typed in.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCloseRef.current();
     window.addEventListener("keydown", onKey);
-    ref.current?.focus();
+    // Focus the dialog itself, unless a field inside it (autoFocus) already has focus.
+    if (ref.current && !ref.current.contains(document.activeElement)) ref.current.focus();
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  }, [open]);
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center p-4">

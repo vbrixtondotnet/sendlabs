@@ -4,8 +4,14 @@ import type {
   ConsentStatus,
   ContactFields,
   ImportRowOutcome,
+  AccessId,
   ImportStatus,
+  InvitationStatus,
   RecipientStatus,
+  Role,
+  SenderProvider,
+  SenderStatus,
+  UserStatus,
   SkipReason,
 } from "./types";
 
@@ -111,4 +117,75 @@ export interface ImportRowDto {
   value: string;
   outcome: ImportRowOutcome;
   contactId: string | null;
+}
+
+/** The signed-in user and the tenant they belong to. */
+export interface MeDto {
+  user: { id: string; email: string; displayName: string; access: Role; mustChangePassword: boolean };
+  /** True when signed in through a real session (e.g. after accepting an invitation), false for the local development placeholder user. */
+  session: boolean;
+  tenant: { id: string; name: string; slug: string };
+}
+
+/** A user of the caller's tenant. Deliberately has no password or hash field. */
+export interface UserDto {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  displayName: string;
+  access: Role;
+  accessId: AccessId;
+  status: UserStatus;
+  mustChangePassword: boolean;
+  /** Null until sign-in exists and the user has signed in. */
+  lastLoginAt: string | null;
+  createdAt: string;
+}
+
+/** The tenant's connected email account. Never carries a token. */
+export interface SenderDto {
+  id: string;
+  provider: SenderProvider;
+  /** The address campaigns are sent from: the one Google reported when the account was connected. */
+  email: string;
+  status: SenderStatus;
+  /** What the tenant allowed, in plain words (e.g. "Send email"). */
+  permissions: string[];
+  /** Email of the user who connected it. */
+  connectedBy: string;
+  connectedAt: string;
+}
+
+export interface SenderStatusDto {
+  /** False when this server has no Google credentials, so connecting is impossible until they are supplied. */
+  configured: boolean;
+  /** Null when the tenant has not connected an account. */
+  sender: SenderDto | null;
+}
+
+/** An invitation an Administrator sent. Never carries the link or the token: those exist only in the email. */
+export interface InvitationDto {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  access: Role;
+  accessId: AccessId;
+  /** Pending, or Expired once past its date. Accepted and revoked invitations are not listed. */
+  status: Extract<InvitationStatus, "Pending" | "Expired">;
+  /** Email of the Administrator who sent it. */
+  invitedBy: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+/** What the invitation page needs to greet the invited person. Returned for a valid, unused, unexpired link only. */
+export interface InvitationPreviewDto {
+  tenantName: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  access: Role;
+  expiresAt: string;
 }

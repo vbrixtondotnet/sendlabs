@@ -15,7 +15,7 @@ describe("importing the template", () => {
     expect(r.status).toBe(201);
     expect(r.json).toMatchObject({
       filename: "template.csv", status: "Completed", totalRows: 25, validRows: 25, createdContacts: 25, existingContacts: 0,
-      rejectedRows: 0, numericWarnings: 0, createdBy: "dev@local", error: null,
+      rejectedRows: 0, numericWarnings: 0, createdBy: h.adminEmail, error: null,
       counts: { malformed: 0, badRow: 0, duplicate: 0, blank: 0 },
     });
     expect(r.json.fileSize).toBeGreaterThan(1000);
@@ -194,7 +194,7 @@ describe("rejecting bad uploads", () => {
   });
 
   it("fails closed outside the local environment", async () => {
-    const r = await upload(h, { env: { ENVIRONMENT: "production" } });
+    const r = await upload(h.withEnv({ ENVIRONMENT: "production" }));
     expect(r.status).toBe(503);
     expect(r.json.error.code).toBe("AUTH_NOT_CONFIGURED");
   });

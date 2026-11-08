@@ -1,0 +1,11 @@
+# Local secrets for the Gmail connection. Copy this file to `.dev.vars` (which is git-ignored) and fill it in.
+# Never commit real values. In staging and production use `wrangler secret put <NAME> --env <env>` instead.
+# Setup steps: see "Connecting Gmail" in the README.
+
+# From Google Cloud console > APIs & Services > Credentials > your OAuth client (type: Web application).
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-client-secret
+
+# 32 random bytes, base64. Encrypts the stored Gmail refresh tokens. Generate one with:  openssl rand -base64 32
+# Losing or changing this key makes every stored token unreadable, so every tenant would have to reconnect.
+TOKEN_ENCRYPTION_KEY=generate-with-openssl-rand-base64-32

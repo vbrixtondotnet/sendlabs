@@ -2,7 +2,8 @@
 import { z } from "zod";
 import { FIELDS } from "./csv";
 import { isValidEmail, normalizeEmail } from "./email";
-import { CAMPAIGN_STATUSES, CONSENT_STATUSES, IMPORT_ROW_OUTCOMES, RECIPIENT_STATUSES } from "./types";
+import { PASSWORD_MAX_LENGTH } from "./password-rules";
+import { ACCESS_LEVELS, CAMPAIGN_STATUSES, CONSENT_STATUSES, IMPORT_ROW_OUTCOMES, RECIPIENT_STATUSES, type AccessId } from "./types";
 
 /* ------------------------------ primitives ------------------------------ */
 
@@ -162,6 +163,7 @@ export const importMappingSchema = z
   .refine((m) => m["email"] !== undefined, { message: "Map the Email column", path: ["email"] });
 
 export const importListQuery = pageQuery;
+export const userListQuery = pageQuery;
 
 export const importRowsQuery = pageQuery.extend({
   outcome: optionalQuery(z.enum(IMPORT_ROW_OUTCOMES)),
@@ -169,3 +171,27 @@ export const importRowsQuery = pageQuery.extend({
   show: z.enum(["all", "rejected"]).default("all"),
 });
 export type ImportRowsQuery = z.infer<typeof importRowsQuery>;
+
+/* ------------------------------ invitations ------------------------------ */
+
+const ACCESS_IDS = ACCESS_LEVELS.map((a) => a.id) as unknown as [AccessId, ...AccessId[]];
+const personName = (label: string) => z.string().trim().min(1, `${label} is required`).max(100);
+
+/** Who to invite. Unknown properties are rejected, so a tenant or status can never be smuggled in. */
+export const invitationCreateSchema = z.strictObject({
+  email,
+  firstName: personName("First name"),
+  lastName: personName("Last name"),
+  accessId: z.enum(ACCESS_IDS),
+});
+export type InvitationCreate = z.infer<typeof invitationCreateSchema>;
+
+/** The invited person's chosen password. Length rules live in password-rules.ts and are applied by the service. */
+export const acceptInvitationSchema = z.strictObject({ password: z.string().min(1, "Choose a password").max(PASSWORD_MAX_LENGTH) });
+
+/** Sign-in. Deliberately no length or format rules beyond sanity bounds: the answer to a wrong value is always the same. */
+export const loginSchema = z.strictObject({
+  email: z.string().trim().min(1, "Enter your email address").max(254),
+  password: z.string().min(1, "Enter your password").max(PASSWORD_MAX_LENGTH),
+});
+export type LoginInput = z.infer<typeof loginSchema>;

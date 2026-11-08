@@ -9,21 +9,27 @@ import { likeContains, offsetOf, pageOf } from "../../lib/http";
 import { newId, nowMs } from "../../lib/id";
 import { BULK_ROWS, chunk, runBatched, runBulk } from "../batch";
 import type { Database } from "../client";
-import { contacts } from "../schema";
+import { campaignRecipients, contacts, importRows } from "../schema";
 
 /** Case-insensitive, literal-match `LIKE`. `pattern` comes from `likeContains`. */
 const ci = (column: SQL | AnyColumn, pattern: string) =>
   sql`lower(${column}) LIKE ${pattern} ESCAPE '\\'`;
 
-export function contactsRepo(db: Database) {
+/**
+ * Every query here is scoped to `tenantId`: a contact of another tenant does not exist as far as this
+ * repository is concerned (reads find nothing, writes change nothing, and the API answers 404).
+ */
+export function contactsRepo(db: Database, tenantId: string) {
+  const mine = eq(contacts.tenantId, tenantId);
+
   const byId = async (id: string) => {
-    const [row] = await db.select().from(contacts).where(eq(contacts.id, id)).limit(1);
+    const [row] = await db.select().from(contacts).where(and(mine, eq(contacts.id, id))).limit(1);
     return row ?? null;
   };
 
   return {
     async list(q: ContactListQuery): Promise<Page<ContactDto>> {
-      const conditions: (SQL | undefined)[] = [];
+      const conditions: (SQL | undefined)[] = [mine];
       if (q.industry) conditions.push(eq(contacts.industry, q.industry));
       if (q.consent) conditions.push(eq(contacts.consentStatus, q.consent));
       if (q.q) {
@@ -55,21 +61,22 @@ export function contactsRepo(db: Database) {
     },
 
     /**
-     * Bulk insert for an import. An email that already exists is skipped, never overwritten (decision D-06),
-     * and the skip is decided by the unique index, so concurrent imports cannot create duplicates.
+     * Bulk insert for an import. An email that already exists IN THIS TENANT is skipped, never overwritten
+     * (decision D-06), and the skip is decided by the unique index, so concurrent imports cannot create
+     * duplicates. Another tenant holding the same address is irrelevant: that is a separate row.
      * Returns the normalized emails that were actually created. Safe to re-run.
      */
     async insertMany(rows: readonly ValidContact[], sourceImportId: string): Promise<Set<string>> {
       const now = nowMs();
       const sqlText = `INSERT INTO contacts
-        (id, email, normalized_email, first_name, last_name, title, company_name, employees, industry,
+        (id, tenant_id, email, normalized_email, first_name, last_name, title, company_name, employees, industry,
          linkedin_url, website, city, state, country, annual_revenue, source_import_id, created_at, updated_at)
-        SELECT json_extract(value,'$[0]'), json_extract(value,'$[1]'), json_extract(value,'$[2]'), json_extract(value,'$[3]'),
+        SELECT json_extract(value,'$[0]'), ?4, json_extract(value,'$[1]'), json_extract(value,'$[2]'), json_extract(value,'$[3]'),
                json_extract(value,'$[4]'), json_extract(value,'$[5]'), json_extract(value,'$[6]'), json_extract(value,'$[7]'),
                json_extract(value,'$[8]'), json_extract(value,'$[9]'), json_extract(value,'$[10]'), json_extract(value,'$[11]'),
                json_extract(value,'$[12]'), json_extract(value,'$[13]'), json_extract(value,'$[14]'), ?2, ?3, ?3
         FROM json_each(?1) WHERE true
-        ON CONFLICT(normalized_email) DO NOTHING
+        ON CONFLICT(tenant_id, normalized_email) DO NOTHING
         RETURNING normalized_email`;
       const statements = chunk(rows, BULK_ROWS).map((group) =>
         db.$client.prepare(sqlText).bind(
@@ -78,6 +85,7 @@ export function contactsRepo(db: Database) {
           ),
           sourceImportId,
           now,
+          tenantId,
         ),
       );
       const created = new Set<string>();
@@ -87,13 +95,13 @@ export function contactsRepo(db: Database) {
       return created;
     },
 
-    /** Maps normalized emails to contact ids (for linking import rows). */
+    /** Maps normalized emails to this tenant's contact ids (for linking import rows). */
     async idsByEmail(emails: readonly string[]): Promise<Map<string, string>> {
       const statements = chunk(emails, 90).map((group) =>
         db
           .select({ id: contacts.id, email: contacts.normalizedEmail })
           .from(contacts)
-          .where(inArray(contacts.normalizedEmail, group)),
+          .where(and(mine, inArray(contacts.normalizedEmail, group))),
       );
       const map = new Map<string, string>();
       for (const result of await runBatched(db, statements)) {
@@ -107,7 +115,7 @@ export function contactsRepo(db: Database) {
       const rows = await db
         .selectDistinct({ industry: contacts.industry })
         .from(contacts)
-        .where(sql`${contacts.industry} <> ''`)
+        .where(and(mine, sql`${contacts.industry} <> ''`))
         .orderBy(contacts.industry)
         .limit(200);
       return rows.map((r) => r.industry);
@@ -125,7 +133,7 @@ export function contactsRepo(db: Database) {
       try {
         const [row] = await db
           .insert(contacts)
-          .values({ ...rest, email, normalizedEmail, sourceImportId })
+          .values({ ...rest, tenantId, email, normalizedEmail, sourceImportId })
           .returning();
         if (!row) throw new Error("Insert returned no row");
         return toContactDto(row);
@@ -134,7 +142,7 @@ export function contactsRepo(db: Database) {
         const [existing] = await db
           .select({ id: contacts.id })
           .from(contacts)
-          .where(eq(contacts.normalizedEmail, normalizedEmail))
+          .where(and(mine, eq(contacts.normalizedEmail, normalizedEmail)))
           .limit(1);
         throw conflict("A contact with this email address already exists", "EMAIL_EXISTS", {
           contactId: existing?.id ?? null,
@@ -149,7 +157,7 @@ export function contactsRepo(db: Database) {
         ...(email !== undefined ? { email, normalizedEmail: normalizeEmail(email) } : {}),
       };
       try {
-        const [row] = await db.update(contacts).set(set).where(eq(contacts.id, id)).returning();
+        const [row] = await db.update(contacts).set(set).where(and(mine, eq(contacts.id, id))).returning();
         if (!row) throw notFound("Contact");
         return toContactDto(row);
       } catch (err) {
@@ -161,13 +169,17 @@ export function contactsRepo(db: Database) {
     },
 
     /**
-     * Removes the contact. Campaign recipients keep their email/personalization snapshots and
-     * lose only the link (ON DELETE SET NULL). A full erasure that also scrubs those snapshots
-     * is a separate, later feature.
+     * Removes the contact. Recipients and import rows keep their snapshots and lose only the link, which is
+     * cleared first (one atomic batch): the composite foreign keys cannot use ON DELETE SET NULL, since that
+     * would also null the required tenant_id. A full erasure that scrubs those snapshots is a later feature.
      */
     async delete(id: string): Promise<void> {
-      const rows = await db.delete(contacts).where(eq(contacts.id, id)).returning({ id: contacts.id });
-      if (rows.length === 0) throw notFound("Contact");
+      const [, , deleted] = await db.batch([
+        db.update(campaignRecipients).set({ contactId: null }).where(and(eq(campaignRecipients.tenantId, tenantId), eq(campaignRecipients.contactId, id))),
+        db.update(importRows).set({ contactId: null }).where(and(eq(importRows.tenantId, tenantId), eq(importRows.contactId, id))),
+        db.delete(contacts).where(and(mine, eq(contacts.id, id))).returning({ id: contacts.id }),
+      ]);
+      if (deleted.length === 0) throw notFound("Contact");
     },
   };
 }

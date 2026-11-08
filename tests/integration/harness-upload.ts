@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import type { Harness } from "./harness";
+import type { Caller } from "./harness";
 
 /** The template's column order, used as the default mapping in tests. */
 export const TEMPLATE_MAPPING = {
@@ -9,10 +9,10 @@ export const TEMPLATE_MAPPING = {
 
 export const publicFile = (name: string) => readFileSync(`public/${name}`, "utf8");
 
-/** Posts multipart/form-data to /api/imports, like the browser does. */
+/** Posts multipart/form-data to /api/imports as `who` (the harness itself, or `h.as(email)`), like the browser does. */
 export async function upload(
-  h: Harness,
-  opts: { filename?: string; text?: string | Uint8Array; mapping?: unknown; omit?: "file" | "mapping"; env?: Partial<Env> } = {},
+  who: Caller,
+  opts: { filename?: string; text?: string | Uint8Array; mapping?: unknown; omit?: "file" | "mapping" } = {},
 ) {
   const form = new FormData();
   const body = opts.text ?? publicFile("template.csv");
@@ -20,7 +20,7 @@ export async function upload(
   if (opts.omit !== "mapping") {
     form.set("mapping", typeof opts.mapping === "string" ? opts.mapping : JSON.stringify(opts.mapping ?? TEMPLATE_MAPPING));
   }
-  return h.upload(form, opts.env);
+  return who.upload(form);
 }
 
 /** Builds a CSV with the template's columns. Row i has email `${prefix}${i}@example.test`. */

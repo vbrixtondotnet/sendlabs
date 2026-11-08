@@ -9,25 +9,25 @@ export const contactRoutes = new Hono<AppEnv>();
 
 contactRoutes.get("/", async (c) => {
   const query = parseQuery(c, contactListQuery);
-  return c.json(await contactsRepo(c.get("db")).list(query));
+  return c.json(await contactsRepo(c.get("db"), c.get("actor").tenantId).list(query));
 });
 
 contactRoutes.post("/", async (c) => {
   const body = await parseJson(c, contactCreateSchema);
-  return c.json(await contactsRepo(c.get("db")).create(body), 201);
+  return c.json(await contactsRepo(c.get("db"), c.get("actor").tenantId).create(body), 201);
 });
 
 // Registered before "/:id" so "industries" is not read as an id.
-contactRoutes.get("/industries", async (c) => c.json({ items: await contactsRepo(c.get("db")).industries() }));
+contactRoutes.get("/industries", async (c) => c.json({ items: await contactsRepo(c.get("db"), c.get("actor").tenantId).industries() }));
 
-contactRoutes.get("/:id",async (c) => c.json(await contactsRepo(c.get("db")).get(c.req.param("id"))));
+contactRoutes.get("/:id",async (c) => c.json(await contactsRepo(c.get("db"), c.get("actor").tenantId).get(c.req.param("id"))));
 
 contactRoutes.patch("/:id", async (c) => {
   const patch = await parseJson(c, contactPatchSchema);
-  return c.json(await contactsRepo(c.get("db")).update(c.req.param("id"), patch));
+  return c.json(await contactsRepo(c.get("db"), c.get("actor").tenantId).update(c.req.param("id"), patch));
 });
 
 contactRoutes.delete("/:id", async (c) => {
-  await contactsRepo(c.get("db")).delete(c.req.param("id"));
+  await contactsRepo(c.get("db"), c.get("actor").tenantId).delete(c.req.param("id"));
   return c.body(null, 204);
 });

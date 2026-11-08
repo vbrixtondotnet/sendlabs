@@ -20,14 +20,14 @@ export interface UploadedCsv {
 const RAW_VALUE_MAX = 500;
 
 /**
- * Imports one CSV: parse and validate (the same code the browser uses for its preview, but here it is
+ * Imports one CSV for ONE tenant: parse and validate (the same code the browser uses for its preview, but here it is
  * the authority), create the contacts that do not exist yet, and record what happened to every row.
  *
  * Not atomic across the whole file (D1 batches are atomic, a file is many batches), so it is built to be
  * re-run: existing contacts are skipped, and a failure leaves the import marked Failed with the contacts
  * saved so far kept.
  */
-export async function runCsvImport(db: Database, file: UploadedCsv, createdBy: string): Promise<ImportDto> {
+export async function runCsvImport(db: Database, who: { tenantId: string; userId: string }, file: UploadedCsv): Promise<ImportDto> {
   if (!/\.csv$/i.test(file.filename)) throw badRequest("Only .csv files are accepted", undefined, "INVALID_FILE");
   if (file.size === 0) throw badRequest("The file is empty", undefined, "INVALID_FILE");
   if (file.size > MAX_FILE_BYTES) throw new ApiError(413, "FILE_TOO_LARGE", `The file is larger than ${MAX_FILE_BYTES / 1024 / 1024} MB`);
@@ -55,8 +55,8 @@ export async function runCsvImport(db: Database, file: UploadedCsv, createdBy: s
   const t0 = Date.now();
   const result = validateRows(parsed.rows, parsed.headers.length, mapping.data as Mapping);
   const tValidated = Date.now();
-  const imports = importsRepo(db);
-  const contacts = contactsRepo(db);
+  const imports = importsRepo(db, who.tenantId);
+  const contacts = contactsRepo(db, who.tenantId);
 
   const importId = await imports.start({
     filename: file.filename.slice(0, 255),
@@ -69,7 +69,7 @@ export async function runCsvImport(db: Database, file: UploadedCsv, createdBy: s
     duplicateRows: result.counts.duplicate,
     blankRows: result.counts.blank,
     numericWarnings: result.numericWarnings,
-    createdBy,
+    createdBy: who.userId,
   });
 
   try {

@@ -1,23 +1,61 @@
 # Sendlab
 
-> **Status:** Early build. The UI is connected to a real local API for **Contacts, Campaigns and CSV imports**. Launch, test send, sending, Settings, suppression and authentication are not built yet. This README is the implementation plan derived from `email_campaign_platform_project_brief_v2.pdf` (prepared 6 Nov 2026). Section 12 records the decisions made so far (multi-user, Cloudflare Access, service-account Gmail auth, global contacts, one-time import with a 500/day drip send) and the items that are still open.
+> **Status:** Early build. **Multi-tenant** (one database, many tenants, each with its own users). The UI is connected to a real local API for **Contacts, Campaigns and CSV imports**. Each tenant can **connect its own Gmail account** (needs Google credentials, see **Connecting Gmail**). Sign-in, tenant sign-up, launch, test send, sending and suppression are not built yet. This README is the implementation plan derived from `email_campaign_platform_project_brief_v2.pdf` (prepared 6 Nov 2026). Section 12 records the decisions made so far (multi-user, Cloudflare Access, service-account Gmail auth, global contacts, one-time import with a 500/day drip send) and the items that are still open.
 
 Sendlab is a web application that imports client contacts from CSV files, lets users build email campaigns, and sends **one individually addressed email per recipient** through a Google Workspace Gmail account. Sending is asynchronous, using Cloudflare Queues and Workers.
 
 ### Backend (started: Contacts and Campaigns only)
 
-Cloudflare Worker + Hono + D1 + Drizzle, under `src/server`. Built so far: the database schema, repositories and API routes for **Contacts, Campaigns and CSV imports**, the status state machines, and a health endpoint. Not built yet: campaign **launch**, test-send, retry-failed, the queue, Gmail, suppression, and real authentication. The UI is connected to this API for Contacts, Campaigns, Campaign details, the Campaign editor and Overview (see **Running it locally**).
+Cloudflare Worker + Hono + D1 + Drizzle, under `src/server`. Built so far: the database schema, repositories and API routes for **Contacts, Campaigns and CSV imports**, **tenants, users and access levels**, the status state machines, and a health endpoint. Not built yet: **sign-in**, tenant sign-up, user management, campaign **launch**, test-send, retry-failed, the queue, Gmail and suppression. The UI is connected to this API for Contacts, Campaigns, Campaign details, the Campaign editor and Overview (see **Running it locally**).
 
-> **Security status:** the API has no real authentication yet. Every route except `/api/health` fails closed with `503 AUTH_NOT_CONFIGURED` unless `ENVIRONMENT` is `local` (set in `wrangler.jsonc`), so deploying this build cannot expose contacts or campaigns. Locally, requests run as `dev@local`. Roles (Administrator, Campaign Manager, Viewer) are not enforced yet. Cloudflare Access + role checks come next (D-02).
+> **Security status:** you sign in with email and password on the login page (`/login`), or by accepting an invitation; both start a session. Every route except `/api/health`, the login and logout endpoints and the public invitation endpoints needs a session, and everything fails closed with `503 AUTH_NOT_CONFIGURED` unless `ENVIRONMENT` is `local` (set in `wrangler.jsonc`), so deploying this build cannot expose anyone's data until that is deliberately enabled. Optional local shortcut: put `DEV_ACTOR_EMAIL=admin@sabertoothsoftwarelabs.net` in `.dev.vars` and requests with no session run as that user (off by default). Roles are enforced on the user and invitation routes only so far.
+
+#### Multi-tenancy
+
+One database and one schema are shared by every tenant. A **tenant** is a customer organization. It owns its users, contacts, imports and campaigns, and no tenant can see or change another's.
+
+| Table | What it holds |
+|---|---|
+| `tenants` | One row per tenant: `name` (unique ignoring case), `slug` (unique, URL-safe), `status` (`Active` or `Suspended`) |
+| `users` | The logins. Each belongs to **exactly one tenant**. The **email is the username** and is unique across all tenants, so sign-in needs no tenant picker (the cost: one address cannot hold logins in two tenants). Holds a `password_hash`, a `must_change_password` flag, an `access_id` and a `status` (`Active` or `Disabled`) |
+| `access` | The access levels: **Administrator, Campaign Manager, Viewer**. Reference data shared by all tenants, seeded by a migration with stable ids (`administrator`, `campaign-manager`, `viewer`) that match `ACCESS_LEVELS` in `src/shared/types.ts`. Each user holds one |
+
+**How isolation is enforced, in three layers**
+
+1. **Every tenant-owned row carries a `tenant_id`**: contacts, campaigns, campaign recipients, imports and import rows. Uniqueness is per tenant, so two tenants can each hold `jo@example.com` as separate contacts.
+2. **Every repository takes the tenant and filters on it**, and the tenant comes from the signed-in user's database row, never from anything the client sends (a `tenantId` in a request body is rejected, and one in a query string is ignored). Another tenant's record does not exist as far as a caller can tell: reads find nothing and the API answers **404, not 403**, so existence is not revealed.
+3. **The database refuses to cross tenants.** The foreign keys include `tenant_id`, so a recipient cannot point at another tenant's campaign or contact, an import row cannot point at another tenant's import, and a campaign or import cannot be created by another tenant's user, not even by writing SQL directly. A tenant that still owns data or users cannot be deleted.
+
+Tests prove each layer, and a deliberately broken filter is caught (`tests/integration/tenancy.test.ts`).
+
+**Default tenant (local development only)**
+
+| | |
+|---|---|
+| Tenant | Sabertooth Software Labs |
+| Username | `admin@sabertoothsoftwarelabs.net` (Administrator) |
+| Password | `Password@123` (set `SEED_ADMIN_PASSWORD` to use another) |
+
+> **This password is a development credential and is committed on purpose.** The account is flagged `must_change_password`, and the seed script only ever talks to the simulated local database, never to Cloudflare. Real tenants are created by sign-up with their own passwords. **Never seed this account into staging or production.** The repository is public, so assume anyone can read this password.
+
+Passwords are hashed with **PBKDF2-HMAC-SHA256, a random salt per password, 100,000 iterations**, in the form `pbkdf2-sha256$iterations$salt$hash` (`src/server/lib/password.ts`). The settings travel with the hash, so the cost can be raised later. Cloudflare Workers refuse more than 100,000 iterations, which is **below current OWASP guidance for SHA-256 (600,000)**: it is the strongest the platform allows. If that is not acceptable, move to a memory-hard hash (scrypt or Argon2) in WebAssembly.
+
+A tenant is created together with its first Administrator, atomically, by `provisionTenant` (`src/server/services/tenants.ts`). The seed script and the future sign-up flow both use it.
 
 #### API
 
-All list endpoints take `page` (default 1) and `pageSize` (default 25, max 100) and return `{ items, page, pageSize, total }`. Errors always use `{ error: { code, message, details?, correlationId } }`, and the correlation ID is also the `X-Correlation-Id` header. JSON bodies are limited to 1 MB. Unknown properties are rejected, so a typo never silently drops data.
+Everything below is scoped to the caller's tenant. All list endpoints take `page` (default 1) and `pageSize` (default 25, max 100) and return `{ items, page, pageSize, total }`. Errors always use `{ error: { code, message, details?, correlationId } }`, and the correlation ID is also the `X-Correlation-Id` header. JSON bodies are limited to 1 MB. Unknown properties are rejected, so a typo never silently drops data.
 
 | Method + path | Purpose |
 |---|---|
+| `GET /api/me` | The signed-in user (email, name, access level) and their tenant. The header uses it |
+| `GET /api/users` | The caller's tenant's users, with access level, status and last activity (**Administrators only**, `403 FORBIDDEN` otherwise). Read-only. Never returns password data |
+| `GET /api/sender` | Whether the server can connect Gmail (`configured`) and which account the tenant has connected, if any. Never returns a token. Any signed-in user |
+| `POST /api/sender/gmail/connect` | Starts "Connect Gmail": returns `{ url }`, Google's consent screen. **Administrators only**. `503 GMAIL_NOT_CONFIGURED` without Google credentials |
+| `DELETE /api/sender` | Disconnects the account and asks Google to cancel its token. **Administrators only** |
+| `GET /api/sender/gmail/callback` | **Public.** Where Google sends the browser back. Redirects to `/settings?sender=connected` or `?sender=error&reason=<code>` |
 | `GET /api/contacts` | List. Filters: `q` (name, title, company, email), `industry`, `consent` |
-| `POST /api/contacts` | Create. Email is trimmed and normalized. A duplicate returns `409 EMAIL_EXISTS` with the existing `contactId` |
+| `POST /api/contacts` | Create. Email is trimmed and normalized. A duplicate **within the tenant** returns `409 EMAIL_EXISTS` with the existing `contactId` |
 | `GET` / `PATCH` / `DELETE /api/contacts/:id` | Read, partial update (a changed email is re-normalized), delete. Campaign history keeps its snapshot |
 | `GET /api/contacts/industries` | Distinct, non-empty industries (for the filter dropdown) |
 | `POST /api/imports` | **Upload a CSV** (`multipart/form-data`: `file` and `mapping`, JSON `{ "email": 4, "firstName": 0, ... }`). The server parses and validates it itself, creates the contacts that do not exist, records every row, and answers `201` with the authoritative counts |
@@ -38,11 +76,74 @@ All list endpoints take `page` (default 1) and `pageSize` (default 25, max 100) 
 
 - **The server is the authority.** The browser previews with the same code (`src/shared/csv.ts`), but the file is uploaded and parsed again on the server when you confirm, and the server's counts are the ones saved. The UI says so if they ever differ.
 - **Limits:** `.csv` only, 10 MB, 20,000 rows. A binary file renamed to `.csv`, an unclosed quote, or a header with no data is refused with `422 INVALID_CSV` and records nothing. Over the size limit returns `413`.
-- **Contacts are global.** An address that already exists (matched ignoring letter case and surrounding spaces) is skipped and **never overwritten**. Re-uploading the same file creates nothing, so a failed or repeated import is safe.
+- **Contacts are unique per tenant.** An address that already exists in the tenant (matched ignoring letter case and surrounding spaces) is skipped and **never overwritten**. The same address in another tenant is a different contact and is not touched. Re-uploading the same file creates nothing, so a failed or repeated import is safe.
 - **Nothing is silently dropped.** Rejected rows keep their row number, the cell text (cut to 500 characters) and the reason, and can be downloaded from the import history at any time.
 - **Not atomic across a whole file** (D1 writes are atomic per batch, a file is many batches). If it fails midway the import is marked `Failed`, the contacts saved so far are kept, and uploading the file again finishes the job. A crash leaves the import visibly `Processing`.
 - **Fast enough for your list.** Bulk writes send each chunk of rows as one bound JSON array that SQLite expands, which keeps clear of D1's 100-parameter limit. An 8,000-row file imports in about 1.5 seconds locally (the first approach, small multi-row inserts, took 15 seconds). Each import logs its phase timings, with no addresses or file content.
 - **The original file is not kept.** It is parsed in the same request, so nothing needs storing. R2 would only be needed to edit the column mapping after upload.
+
+#### Connecting Gmail
+
+Each tenant connects **its own Google account** to send from. The Administrator opens **Settings > Sender** and presses **Connect Gmail**:
+
+1. The browser asks the server to start (`POST /api/sender/gmail/connect`), and is sent to Google's consent screen.
+2. The person approves. Google redirects the browser back to `<APP_BASE_URL>/api/sender/gmail/callback` with a one-time code.
+3. The Worker exchanges the code for tokens, **checks that the permission to send email was actually granted** (Google lets people untick it), and requires a long-lived refresh token.
+4. It reads the account's **verified** email address from Google.
+5. It stores the refresh token **encrypted** and records the address. That account is now the tenant's campaign sender, and the browser lands back on Settings with a confirmation. Any failure lands there too, with a plain-words explanation.
+
+What is stored, and how it is protected:
+
+- **Only the refresh token**, encrypted with AES-256-GCM under `TOKEN_ENCRYPTION_KEY` (a Worker secret, never in the database). Short-lived access tokens are not stored: they expire within the hour and are minted again from the refresh token when sending.
+- The ciphertext is **bound to its tenant**, so a token copied into another tenant's row cannot be decrypted there (tested).
+- The `state` value that ties the callback to the click is stored only as a **hash**, expires after 10 minutes, and works **once** (a replayed callback is refused). PKCE (S256) is used on top of the client secret. Only the latest attempt per tenant stays valid.
+- The callback is public (Google calls it, not the app), so it trusts nothing in the request except that `state`. The attempt it matches, not the request, decides which tenant it is for. It only ever redirects to `APP_BASE_URL`, with a result code from a fixed list.
+- Tokens, codes, `state` values and email addresses are never logged. The API never returns a token.
+- **Disconnect** deletes the account and asks Google to cancel the token. Reconnecting replaces it in place and cancels the old one. One sender per tenant for now.
+- Only **Administrators** can connect or disconnect. Everyone signed in can see which account is connected, because the campaign editor needs it. A campaign cannot be launched without a connected sender.
+
+Sendlab asks for exactly three permissions: `openid`, `email` (to learn which address was connected) and `gmail.send` (to send). It never asks to read the inbox.
+
+**Setting up Google (needed once per environment, by whoever runs Sendlab)**
+
+1. In the [Google Cloud console](https://console.cloud.google.com/), create a project and enable the **Gmail API**.
+2. **APIs & Services > OAuth consent screen:** choose **External** (tenants are other organizations). Add the three scopes above. While the app is in **Testing**, only the test users you list can connect, and Google expires their refresh tokens after **7 days**, which is fine for development.
+3. **Credentials > Create credentials > OAuth client ID > Web application.** Under *Authorized redirect URIs* add exactly `http://localhost:5173/api/sender/gmail/callback` for local development. Add the matching `https://<your-domain>/api/sender/gmail/callback` for each deployed environment.
+4. Copy `.dev.vars.example` to `.dev.vars` (git-ignored) and fill in `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `TOKEN_ENCRYPTION_KEY` (`openssl rand -base64 32`). Restart `npm run dev:api`. For staging and production use `wrangler secret put` (see section 13.5).
+5. **Before real customers use it:** `gmail.send` is a *sensitive* scope, so Google requires the app to be **published and verified** (a privacy policy, a demo video, a review) before people outside your test list can connect without a warning. Check Google's current requirements in the console, and plan time for the review.
+
+> **Not yet verified against real Google.** The whole flow is built and tested against a stand-in for Google's endpoints (including PKCE, denied consent, an unticked permission, no refresh token, replays and races), but it has not run against Google's real service, because that needs your OAuth client. Expect to find small differences the first time you connect a real account, and tell me.
+>
+> **Sending itself is not built.** Connecting stores the account. Nothing sends email yet.
+>
+> **If it says "not configured" after you added the credentials,** an old dev server is probably still answering. On Windows, stopping a terminal does not always stop its worker, and a new server can start on the same port while the old one keeps replying with its old settings. `npm run dev:api` now checks the port first and tells you; find the process with `Get-NetTCPConnection -LocalPort 8787 -State Listen` and stop it.
+
+#### Inviting users (built)
+
+Decided: sign-in is **app-managed** (email and password). People sign in on the login page; accepting an invitation also signs them in.
+
+1. **Settings > Users & access > Add user.** An Administrator enters first name, last name, email address and a role (Administrator, Campaign Manager or Viewer).
+2. **Sendlab emails the invitation** through the tenant's connected Gmail account (decision D-28), so Gmail must be connected first. The email is plain text plus an HTML version: "{Tenant Name} has invited you to SendLab", with an **Accept invitation** button and the plain link.
+3. **The person opens `/invite/<token>`** (a public page outside the app layout), sees who invited them, and chooses a password (8 to 256 characters, typed twice).
+4. **Accepting activates them** as a user of that tenant with the invited role, signs them in, and sends them to the dashboard.
+
+How it is kept safe:
+
+- The link holds a 32-byte random secret. **Only its SHA-256 hash is stored**, so a database leak cannot be used to accept an invitation. It is valid for 7 days and works once.
+- Every unusable link (unknown, tampered, expired, used, revoked, suspended tenant) gets the same `404 INVITATION_INVALID`, so nothing can be learned by guessing.
+- Accepting is **one atomic D1 batch** (create user, mark invitation accepted, start session): two simultaneous clicks make one user. A wrong or short password is rejected first, so a typo does not use the link up. An address that already has an account gets `409 EMAIL_EXISTS` and the invitation stays usable.
+- The tenant and role come from the invitation row, never from the request. Unknown fields are rejected.
+- One open invitation per address per tenant: **resend** issues a new link and the old one stops working; **revoke** kills it. A person cannot be mailed twice within 60 seconds, and a tenant can have at most 50 open invitations.
+- Inviting an address that belongs to another tenant answers a generic `CANNOT_INVITE`, so the API does not reveal who uses Sendlab.
+- If the email cannot be sent, the invitation is withdrawn again (no phantom entries). If Google rejects the stored token, the connection is flagged "Needs reconnecting" and the Administrator is told.
+- **Sessions:** cookie `sendlab_session` (`HttpOnly`, `SameSite=Lax`, `Secure` on https, 14 days), only a hash stored in the `sessions` table. A disabled user or suspended tenant is refused, never silently downgraded. `POST /api/auth/logout` ends the session; the header shows **Sign out** when the session is real.
+- **Cross-site writes:** a POST, PATCH or DELETE whose `Origin` is not `APP_BASE_URL` is refused with `403 BAD_ORIGIN`.
+
+**Removing a user** (Settings > Users & access > Remove, Administrators only) is a **soft delete**: `users.is_deleted` is set (with `deleted_at`) and nothing is erased, so what the person created keeps its owner and the email stays reserved. Removed users are not listed, all their sessions end at once, and they cannot sign in. You cannot remove yourself, and the last active Administrator cannot be removed (the rule is inside the UPDATE, so two Administrators removing each other at once cannot both succeed). A removed person can be **invited again**: accepting clears `is_deleted` on the same account (new password, name and role from the new invitation) instead of creating a second one. An address removed from a different tenant still cannot be invited here.
+
+**Signing in** (`/login`): email and password, a Show/Hide toggle, and an optional `?next=` to return to the page you were heading for (only in-app paths are honored). Anyone not signed in who opens the app is sent to the login page. The header's **Sign out** ends the session. Every wrong answer (unknown address, wrong password, a removed user) is the same `401 INVALID_CREDENTIALS` after the same amount of work, so it cannot be used to find out who has an account. **Throttling:** 5 failures for one address within 15 minutes lock that address for 15 minutes (even the right password is refused, with `429 TOO_MANY_ATTEMPTS` and `Retry-After`); 30 failures from one network address lock that address. Unknown addresses are counted too, a good sign-in clears the count, and the counters live in the `login_attempts` table (no passwords). A disabled user or suspended organization is told so only after giving the right password.
+
+Still not built: a forced password change for accounts flagged `must_change_password` (the login response reports the flag, nothing acts on it yet), password reset, changing a user's access or disabling (without removing) them, and enforcing roles on every route. The default development admin is flagged, so it signs in normally.
 
 #### State machines
 
@@ -50,21 +151,31 @@ All list endpoints take `page` (default 1) and `pageSize` (default 25, max 100) 
 
 #### Tests
 
-`npm test` runs 172 tests: state machines, validation schemas, IDs, the CSV parser, the API including CSV imports up to 8,000 rows (against in-memory D1), and the UI pages (rendered in a simulated browser with the network stubbed, checking they call the API correctly and handle errors, empty states and read-only roles). The integration tests run the real Hono app and repositories against an in-memory D1 database (Miniflare) built from the committed migrations, so they never touch your local dev data. `npm run typecheck` covers the front end, the server, the server-side tests and the UI tests (the last two use separate configs, because browser and Cloudflare Worker types define clashing globals).
+`npm test` runs 457 tests: state machines, validation schemas, IDs, password hashing, the CSV parser, the API including tenant isolation, CSV imports up to 8,000 rows and the whole Gmail connection and invitation flow against a stand-in for Google (all on in-memory D1), the migrations, and the UI pages (rendered in a simulated browser with the network stubbed, checking they call the API correctly and handle errors, empty states and read-only roles). The integration tests run the real Hono app and repositories against an in-memory D1 database (Miniflare) built from the committed migrations, so they never touch your local dev data. `npm run typecheck` covers the front end, the server, the server-side tests and the UI tests (the last two use separate configs, because browser and Cloudflare Worker types define clashing globals).
 
 | Table | Purpose |
 |---|---|
-| `contacts` | Global contacts, one row per `normalized_email`. Columns follow `template.csv` |
-| `campaigns` | Content, status, and the daily-drip settings (`daily_limit`, send window, timezone, `next_run_at`) |
-| `imports` | One row per CSV upload: filename, size, the confirmed column mapping, and the server's authoritative counts (valid, created, already existing, rejected by reason). Status is Processing, Completed or Failed |
+| `tenants`, `users`, `access` | See **Multi-tenancy** above |
+| `sender_accounts` | A tenant's connected Gmail account: the address, status (`Connected` or `NeedsReconnect`), the **encrypted** refresh token, the scopes granted, who connected it. One per tenant |
+| `oauth_states` | One row per in-flight "Connect Gmail" attempt: a **hash** of the `state`, the encrypted PKCE verifier, an expiry, and a used-at stamp |
+| `contacts` | A tenant's contacts, one row per `normalized_email` **within the tenant**. Columns follow `template.csv` |
+| `campaigns` | A tenant's campaigns: content, status, creator (a user of the same tenant), and the daily-drip settings (`daily_limit`, send window, timezone, `next_run_at`) |
+| `imports` | One row per CSV upload by a tenant's user: filename, size, the confirmed column mapping, and the server's authoritative counts (valid, created, already existing, rejected by reason). Status is Processing, Completed or Failed |
 | `import_rows` | The outcome of **every** CSV row: `Created`, `Existing` (both linked to a contact), or rejected (`Blank`, `Malformed`, `Duplicate`, `Bad row`). The rows linked to a contact are exactly the recipients of "this import" |
 | `campaign_recipients` | One row per (campaign, contact) with an email and merge-field snapshot, a stable `sequence`, status and lease. Included now because it is the link between the two |
 
-Design points: UUIDv7 text IDs, UTC millisecond integer timestamps, enums as `TEXT` with `CHECK` constraints (values live in `src/shared/types.ts`), and `contact_id` uses `ON DELETE SET NULL` so a contact can be erased while the campaign keeps its snapshot. `campaigns.recipient_import_id` (null = every contact, otherwise the people in that import) is saved with the draft and resolved into `campaign_recipients` at launch. Columns that point at tables not built yet (`created_by`, `sender_account_id`) are plain text for now. `contacts.source_import_id` and `campaigns.recipient_import_id` are soft references with no foreign key on purpose: adding one to an existing SQLite table forces a table rebuild, and rebuilding `contacts` or `campaigns` would cascade into `campaign_recipients`.
+Design points: UUIDv7 text IDs, UTC millisecond integer timestamps, enums as `TEXT` with `CHECK` constraints (values live in `src/shared/types.ts`). `created_by` on campaigns and imports is a real foreign key to the creating user (and the API shows that user's email). `campaigns.recipient_import_id` (null = every contact of the tenant, otherwise the people in that import) is saved with the draft and resolved into `campaign_recipients` at launch.
+
+Foreign keys that include `tenant_id` cannot use `ON DELETE SET NULL` (SQLite would also null the required `tenant_id`), so **erasing a contact clears its links first, in one atomic batch** (`contactsRepo.delete`): recipients and import rows keep their snapshots and lose only the link. `contacts.source_import_id` and `campaigns.recipient_import_id` stay soft references (no foreign key), and the API checks the import is the tenant's own and Completed.
+
+**The multi-tenancy migration (`0002`)** drops and recreates the five tenant-owned tables, because SQLite cannot add a required `tenant_id`, change a unique key or add composite foreign keys to an existing table. That is only safe while they are empty, so the migration **aborts without changing anything if any of them holds a row** (tested). Clear the data on purpose first (`npm run db:clear:local`), or write a data-preserving migration. Never edit a migration that has been applied.
 
 ```bash
 npm run db:generate          # after editing src/server/database/schema/*, creates a migration
 npm run db:migrate:local     # apply to the local D1 database (.wrangler/state)
+npm run db:seed:tenant:local # create the default tenant and its Administrator (safe to run twice)
+npm run db:clear:local       # delete ALL tenants, users, contacts, campaigns and imports (keeps tables and the 3 access levels)
+npm run db:reset:local       # clear, then seed the default tenant again
 npm run dev:api              # Worker on http://localhost:8787, try /api/health
 npm run cf-typegen           # regenerate worker-configuration.d.ts after editing wrangler.jsonc
 npm run typecheck            # front end and server
@@ -79,9 +190,11 @@ Two terminals, then open http://localhost:5173:
 ```bash
 npm install
 npm run db:migrate:local   # once, and after each new migration
-npm run dev:api            # terminal 1: the API (wrangler dev, http://127.0.0.1:8787)
+npm run db:seed:tenant:local   # once: the default tenant and admin (see Multi-tenancy). Sign in at /login as admin@sabertoothsoftwarelabs.net / Password@123
+cp .dev.vars.example .dev.vars   # optional: Google credentials, to try Connect Gmail (see Connecting Gmail)
+npm run dev:api            # terminal 1: the API (wrangler dev, http://127.0.0.1:8787). Refuses to start if the port is taken
 npm run dev                # terminal 2: the UI (Vite). Vite proxies /api to the API
-npm run seed:local         # optional: imports the 25 contacts in public/template.csv and creates one sample draft
+npm run seed:local         # optional sample data for the default tenant: imports the 25 contacts in public/template.csv and creates one sample draft
 ```
 
 The seed script imports `public/template.csv` through the real import endpoint, and is safe to run twice. It refuses to talk to anything but a local API.
@@ -97,8 +210,13 @@ The seed script imports `public/template.csv` through the real import endpoint, 
 | Imports (CSV): upload, map, review, confirm, history, rejected-rows download | **Live**. The browser previews, the server imports and answers with the real counts |
 | Campaign recipients (all contacts, a saved import, or upload a CSV there) | **Live and saved with the draft**. The recipient list itself is built at launch, which is not built yet |
 | Launch, test send, retry failed | Not built. The launch dialog saves a draft and says so |
-| Settings, suppression, users | Preview only (mock values) |
-| Authentication and roles | Not built. The "Preview as" selector only changes what the UI shows. The API does not enforce roles |
+| Header: tenant name and signed-in user | **Live** (`/api/me`) |
+| Settings > Sender: Connect Gmail, reconnect, disconnect | **Live**, once the Google credentials are supplied. Until then it says it is not set up. Not yet tried against real Google |
+| Campaign editor sender | **Live**: shows the tenant's connected address and blocks launching without one |
+| Settings: limits, compliance, suppression, retention | Preview only. The mock records were removed: everything starts empty and nothing is saved |
+| Settings > Users & access | **Live, read-only**: lists the tenant's real users and the three access levels. **Add user** and the role selectors are visible but do nothing yet (see below) |
+| Sign-in, tenant sign-up, password change | Not built. Locally the API acts as the seeded Administrator |
+| Role enforcement | Not built. The "Preview as" selector (which starts at your real access level) only changes what the UI shows. The API does not enforce roles yet |
 
 The UI talks to the API through `src/client/services/` (a small typed client plus TanStack Query hooks). Request and response shapes come from `src/shared/`, so the UI and server cannot drift apart. The CSV parsing and validation (`src/shared/csv.ts`) runs in the browser for the preview and in the Worker as the authority.
 
@@ -205,7 +323,7 @@ If the API is not running, pages show "Could not reach the API. Start it with `n
 | Async jobs | Cloudflare Queues + consumer handler | Recipient-level email jobs, DLQ |
 | Object storage | Cloudflare R2 (private) | Uploaded CSV files, generated reports |
 | CSV parsing | Small in-repo RFC 4180 parser (`src/client/lib/csv.ts`, no dependency; shared with the Worker later) | Header row, quoted fields, validation. Replaces SheetJS (see **D-04**) |
-| Email | Gmail API, authenticated by a Google **service account with domain-wide delegation** (D-05) | Send as the Workspace mailbox |
+| Email | Gmail API, authenticated by each tenant's own Google account through **OAuth 2.0** (D-05, revised) | Send as the tenant's connected Gmail address |
 | Validation | Zod | API payloads, env bindings, parsed rows |
 | Testing | Vitest (+ Workers test pool) | Unit, service and integration tests |
 | Tooling | Wrangler | Local D1/R2/Queues simulation, deploy |
@@ -267,7 +385,7 @@ SQLite dialect via Drizzle `sqlite-core`. Never use PostgreSQL-specific SQL.
 | `campaigns` | Config and aggregate state | id, name, subject, html_body, text_body, status, sender_account_id, scheduled_at, archived_at, launched_at, created_by, timestamps; **drip fields** ➕: daily_limit, send_window_start/end, timezone, next_run_at, last_run_at |
 | `campaign_recipients` | Recipient-level work | id, campaign_id, contact_id, email_snapshot, **personalization_snapshot (JSON)** ➕, status, attempt_count, lease_expires_at ➕, queued_at, sent_at, last_error; **UNIQUE(campaign_id, contact_id)** |
 | `email_attempts` | Audit trail of every attempt | id, campaign_recipient_id, attempt_number, outcome, provider_message_id, error_code, error_message (sanitized), attempted_at |
-| `sender_accounts` (replaces `oauth_accounts`) | Sender mailbox config. With a service account there are no per-user refresh tokens to store; the private key is a Worker secret | id, provider, mailbox_email (the impersonated user), scopes, status, last_verified_at, updated_at |
+| `sender_accounts` | **Built** (see **Connecting Gmail**). A tenant's connected Gmail account with its encrypted refresh token. One per tenant | email, normalized_email, status, refresh_token_encrypted, key_version, scopes, connected_by, connected_at |
 | ➕ `sending_limits` / `app_settings` | Per-account per-minute and daily caps, retention periods, test-address allowlist | |
 | ➕ `audit_events` | Who did what (launch, retry, settings, connect) | id, actor_id, action, entity_type, entity_id, metadata (JSON, no secrets), created_at |
 | `email_templates` (post-MVP) | Reusable templates | id, name, subject_template, html_body, text_body, created_at |
@@ -323,11 +441,9 @@ The columns of `template.csv`, in order, and where each is used:
 The supported merge fields are exactly: `{{firstName}}`, `{{lastName}}`, `{{title}}`, `{{companyName}}`, `{{industry}}`, `{{city}}`, `{{state}}`, `{{country}}`, `{{website}}`, plus `{{unsubscribeUrl}}`. Values are HTML-escaped. Unknown tags block launch. The CSV carries no consent column, so imported contacts start with consent "Unknown" (see D-26).
 
 ### 7.2 Email and Gmail
-- **Auth: service account with domain-wide delegation (D-05, decided).** The Worker signs a JWT (RS256, WebCrypto, no Node-only Google SDK) with the service-account private key, sets `sub` to the sender mailbox, and exchanges it for a short-lived access token (about 1 hour). Cache the token in memory per isolate and re-mint when it expires. No OAuth consent screen, callback route, refresh-token storage or 7-day expiry.
-- The private key lives only in a Worker secret. Never log it or the minted tokens.
-- A Workspace **super-admin** must authorize the service account's client ID for the `gmail.send` scope only (Admin console → Security → API controls → Domain-wide delegation).
-- **Risk:** delegation lets the service account impersonate any user in the domain for the granted scopes. Mitigate by granting only `gmail.send`, hard-allowlisting the single sender mailbox in app config (the code must refuse any other `sub`), and keeping the key out of every repo and log.
-- Use a dedicated sending mailbox (D-09).
+- **Auth: each tenant connects its own Google account through OAuth** (see **Connecting Gmail**; this replaces the earlier service-account plan, D-05). Sending will use the stored refresh token to mint a short-lived access token, then call `messages.send` as that account. The token is decrypted only at that moment and only for the tenant being sent for.
+- If Google rejects the token (revoked, expired in Testing mode, password changed), the account is marked `NeedsReconnect`, the campaign pauses, and an Administrator is told to reconnect.
+- Domain-wide delegation is not an option here: it only works inside one Workspace organization, and every tenant is a different one.
 - Build the MIME message (To, From, Subject, MIME-Version, Content-Type, multipart/alternative), then base64url-encode it for `messages.send`.
 - Escape all merge-field values inserted into HTML. Allow only a fixed placeholder set. Never execute user-supplied template code.
 - From must be the authenticated mailbox or a configured send-as alias.
@@ -397,6 +513,11 @@ Brief's proposal (all lists paginated, consistent error envelope, Zod-validated 
 | `GET /api/campaigns/:id/recipients` | Paginated statuses and errors |
 | `GET /api/account/email` | Sender mailbox status |
 | `GET /api/health` | Health, no secrets |
+| `GET /api/users` · `GET /api/users/invitations` · `POST /api/users/invitations` | Administrators: list users, list open invitations, invite and email someone |
+| `DELETE /api/users/:id` | Administrators: remove a user (soft delete, they can be invited again) |
+| `POST /api/users/invitations/:id/resend` · `DELETE /api/users/invitations/:id` | Administrators: send a fresh link, or withdraw an invitation |
+| `GET /api/invitations/:token` · `POST /api/invitations/:token/accept` | Public: show the invitation, set a password and activate (sets the session cookie) |
+| `POST /api/auth/login` · `POST /api/auth/logout` | Public: sign in (sets the session cookie, throttled), and sign out |
 
 **Missing from the brief and needed for the stated features (see D-15):** `POST /api/imports/:id/mapping` (column mapping), `GET /api/oauth/google/start` and `/callback`, `PATCH /api/contacts/:id`, `POST /api/campaigns/:id/preview`, `/duplicate`, `/archive`, `/resume`, `POST /api/campaigns/:id/recipients/upload` (CSV upload from the campaign editor, creating an import), suppression CRUD, public signed `GET|POST /unsubscribe/:token`, invalid-row download, user/role admin, settings and limits, audit-event listing, DLQ inspection.
 
@@ -479,7 +600,7 @@ Each phase is small, reviewable and ends with passing tests. Exit criteria are p
 | **1. Data layer** | Drizzle schema, migrations, repositories, seed/test utilities, state-machine module | Migrations apply locally; repository and state-machine tests pass |
 | **2. Contacts import** | R2 upload, CSV parsing, column mapping, validation preview, dedupe, persistence, invalid-row download | Acceptance items 1–2 pass on fixtures including hostile files |
 | **3. Campaigns** | CRUD, HTML/text content, recipient selection, safe templating, preview | Draft + preview works; HTML-escaping tests pass |
-| **4. Gmail integration** | Google Cloud project, service account and domain-wide delegation setup, JWT/token minting, Gmail provider, error classifier, test-send | Test email sent from the test mailbox; sender allowlist enforced; classifier tests pass |
+| **4. Gmail integration** | **Connect, reconnect and disconnect are built** (per-tenant OAuth, encrypted token storage). Still to do: the Gmail sending provider (MIME, `messages.send`, token refresh), the error classifier, and test-send | Test email sent from a real connected account; classifier tests pass; the connection tried against real Google |
 | **5. Queue processing and drip** | Producer/consumer, daily-tick cron, per-day cap, staggered delays, retries, DLQ, idempotent claim, reconciliation | Duplicate-delivery, crash-recovery and tick-twice tests pass; staging run on real Queues over at least two simulated days |
 | **6. Dashboard** | Overview, campaign list/detail, recipient table, retry/pause/cancel controls | Counts match persisted state |
 | **7. Hardening and deploy** | Suppression/unsubscribe (public route, signed tokens), retention jobs, audit events, security review, staging then production rollout, monitoring | Security checks pass; staging soak test; production runbook |
@@ -497,10 +618,12 @@ Items are ordered by impact. **Rec.** is the recommended default, used if no dec
 | ID | Decision | Consequence |
 |---|---|---|
 | D-01 | **Multi-user** with Administrator, Campaign Manager and Viewer roles | `users` table, RBAC middleware and audit events are in scope from Phase 1 |
-| D-02 | **Cloudflare Access** in front of the Worker, with the Access JWT validated in-app. Roles are stored in D1, keyed by verified email | No password, session or CSRF code to write. Needs a Cloudflare Zero Trust org and an Access policy per environment. The first admin is bootstrapped from a configured email |
+| D-02 | **App-managed sign-in** (decided): each tenant's users sign in with email and password. This **replaces the earlier Cloudflare Access plan** | `users.password_hash` (PBKDF2), `must_change_password` and `access` already exist. Built: the login page, sessions, throttling, sign out. Not built yet: forced change and reset password. Users are added by invitation (see **Inviting users**) |
 | D-04 | **One-time import, about 8K+ rows, stored in D1, worked from the database. Input is now CSV (`template.csv`), not Excel** | See §7.1 and §7.5. No SheetJS or other parsing dependency. Row cap 20k and 10 MB. The CSV file is deletable after confirmation. Supersedes the Excel parser concerns below |
-| D-05 | **Service account with domain-wide delegation** | See §7.2. No OAuth callback or refresh tokens. Needs a Workspace super-admin to grant the scope. `oauth_accounts` becomes `sender_accounts` |
-| D-06 | **Global contacts**, unique on `normalized_email` | Re-imports update blank fields only and never overwrite edits |
+| D-05 | **Revised: each tenant connects its own Google account through OAuth** (was: a service account with domain-wide delegation) | See **Connecting Gmail**. Delegation only works inside one Workspace organization, and every tenant is a different one. Costs: Google's app verification for the sensitive `gmail.send` scope before public use, and 7-day token expiry while the app is in Testing |
+| D-06 | **Contacts unique per tenant** on `normalized_email` (was: global) | Re-imports skip existing contacts and never overwrite edits. Another tenant's identical address is a separate contact |
+| D-28 | **Invitations are sent through the tenant's connected Gmail account** | A tenant connects Gmail before it can invite anyone. Settings says so |
+| D-27 | **Multi-tenant, single database.** Tenants own users, contacts, imports and campaigns. Access levels: Administrator, Campaign Manager, Viewer | See **Multi-tenancy**. Isolation by `tenant_id` on every row, tenant-scoped repositories, and composite foreign keys |
 | D-07 | **Suppression and unsubscribe in MVP**, using suggested defaults | Signed-token public unsubscribe route, `List-Unsubscribe` and one-click header, a suppression list checked at enqueue and send. Launch is blocked until a sender postal address and an unsubscribe footer are configured |
 | D-18 | **Scale: about 8K contacts, 500 per day, daily until exhausted** | Drip design in §7.5. This is far below Gmail Workspace limits and avoids needing rate-limit infrastructure beyond a daily cap and staggered delays |
 | D-03 | *Resolved by design:* per-day cap checked from D1, plus `delaySeconds` staggering and low `max_concurrency`. A Durable Object is unnecessary at this scale | Revisit only if volume grows |
@@ -613,25 +736,18 @@ Add the returned IDs and names to the matching environment block in `wrangler.js
 }
 ```
 
-### 13.4 Google service account and domain-wide delegation setup
+### 13.4 Google OAuth client setup
 
-1. Create a **dedicated** Google Cloud project and enable the Gmail API.
-2. Create a service account and a JSON key. Treat the key as a credential: it goes only into a Worker secret, never into the repo, and the downloaded file is deleted afterward.
-3. Note the service account's numeric **client ID**.
-4. In the Google Workspace Admin console (super-admin required), go to Security → API controls → Domain-wide delegation, and add the client ID with **only** the scope `https://www.googleapis.com/auth/gmail.send`.
-5. Set the sender mailbox (the user to impersonate) in app config. Verify SPF, DKIM and DMARC for the sending domain (D-09).
-6. Use separate service accounts and keys for staging and production.
-7. If the key policy blocks key creation (a common Workspace organization policy), the admin must relax it for this project, or the team must evaluate an alternative.
+See **Connecting Gmail** near the top of this file for the steps (Google Cloud project, consent screen, OAuth client, redirect address). Use a separate OAuth client, or at least a separate redirect address, for each environment. Verify SPF, DKIM and DMARC for any domain you send from (D-09).
 
 ### 13.5 Secrets and variables
 
 | Name | Kind | Purpose |
 |---|---|---|
-| `GOOGLE_SA_CLIENT_EMAIL` | var | Service-account email |
-| `GOOGLE_SA_PRIVATE_KEY` | secret | Service-account private key (PEM) |
-| `GMAIL_SENDER_MAILBOX` | var | The single allowed impersonated sender |
-| `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD` | var | Cloudflare Access JWT validation (D-02) |
-| `BOOTSTRAP_ADMIN_EMAIL` | var | First Administrator |
+| `GOOGLE_CLIENT_ID` | secret | Google OAuth client id (Connecting Gmail) |
+| `GOOGLE_CLIENT_SECRET` | secret | Google OAuth client secret |
+| `TOKEN_ENCRYPTION_KEY` | secret | 32 random bytes, base64. Encrypts stored Gmail refresh tokens. **Losing or changing it makes every stored token unreadable, so every tenant must reconnect** |
+| `APP_BASE_URL` | var | The app's public address. The Google redirect address is `<APP_BASE_URL>/api/sender/gmail/callback`. Set per environment in `wrangler.jsonc` |
 | `UNSUBSCRIBE_SIGNING_KEY` | secret | Signs unsubscribe tokens (D-07) |
 | `SENDER_POSTAL_ADDRESS` | setting | Required footer content before launch (D-07) |
 | `MAX_UPLOAD_BYTES`, `MAX_IMPORT_ROWS` | var | Import limits (start around 20k rows) |
@@ -639,7 +755,9 @@ Add the returned IDs and names to the matching environment block in `wrangler.js
 | `SEND_WINDOW_START`, `SEND_WINDOW_END`, `SEND_TIMEZONE` | setting | Drip window |
 
 ```bash
-npx wrangler secret put GOOGLE_SA_PRIVATE_KEY --env staging
+npx wrangler secret put GOOGLE_CLIENT_ID --env staging
+npx wrangler secret put GOOGLE_CLIENT_SECRET --env staging
+npx wrangler secret put TOKEN_ENCRYPTION_KEY --env staging
 npx wrangler secret put UNSUBSCRIBE_SIGNING_KEY --env staging
 ```
 

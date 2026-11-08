@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { check, foreignKey, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import {
   CAMPAIGN_STATUSES,
   RECIPIENT_STATUSES,
@@ -8,6 +8,8 @@ import {
 } from "../../../shared/types";
 import { contacts } from "./contacts";
 import { createdAt, idColumn, inList, updatedAt } from "./helpers";
+import { tenants } from "./tenants";
+import { users } from "./users";
 
 const hhmm = (column: string) =>
   `("${column}" GLOB '[01][0-9]:[0-5][0-9]' OR "${column}" GLOB '2[0-3]:[0-5][0-9]')`;
@@ -16,11 +18,15 @@ const hhmm = (column: string) =>
  * A campaign sends one separate email per recipient, in daily batches (the "drip"):
  * a daily tick takes up to `daily_limit` Pending recipients, in `sequence` order, until none are left.
  * Subject, body and drip settings lock once the campaign leaves Draft (enforced in the service layer).
+ * Owned by one tenant, and created by one of that tenant's users.
  */
 export const campaigns = sqliteTable(
   "campaigns",
   {
     id: idColumn(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "restrict" }),
     name: text("name").notNull(),
     /** May contain merge fields, e.g. {{firstName}}. */
     subject: text("subject").notNull(),
@@ -32,14 +38,14 @@ export const campaigns = sqliteTable(
 
     /** Becomes a foreign key to `sender_accounts.id` when that table is added. */
     senderAccountId: text("sender_account_id"),
-    /** Becomes a foreign key to `users.id` when that table is added. Holds the verified identity for now. */
+    /** The user who created it. The composite key below guarantees that user belongs to the same tenant. */
     createdBy: text("created_by").notNull(),
 
     /**
-     * Who gets the emails: null means every contact, otherwise the people in that import.
-     * Resolved into campaign_recipients at launch. A soft reference (no foreign key) because adding
-     * one to an existing SQLite table would force a table rebuild, which cascades into recipients.
-     * The API checks that the import exists and is Completed.
+     * Who gets the emails: null means every contact of the tenant, otherwise the people in that import.
+     * Resolved into campaign_recipients at launch. A soft reference (no foreign key): a SET NULL action on a
+     * composite key would also null the required tenant_id. The API checks the import is the tenant's own
+     * and Completed.
      */
     recipientImportId: text("recipient_import_id"),
 
@@ -61,9 +67,12 @@ export const campaigns = sqliteTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    index("campaigns_status_idx").on(t.status),
-    index("campaigns_created_at_idx").on(t.createdAt),
-    // Lets the daily tick find due campaigns without scanning.
+    // Lets recipients reference "a campaign of the SAME tenant" with a composite foreign key.
+    uniqueIndex("campaigns_tenant_id_uq").on(t.tenantId, t.id),
+    foreignKey({ columns: [t.tenantId, t.createdBy], foreignColumns: [users.tenantId, users.id], name: "campaigns_creator_fk" }),
+    index("campaigns_tenant_status_idx").on(t.tenantId, t.status),
+    index("campaigns_tenant_created_at_idx").on(t.tenantId, t.createdAt),
+    // The daily tick scans for due campaigns across every tenant, so this one is deliberately not tenant-led.
     index("campaigns_due_idx").on(t.status, t.nextRunAt),
     check("campaigns_status_chk", inList("status", CAMPAIGN_STATUSES)),
     check("campaigns_daily_limit_chk", sql.raw(`"daily_limit" BETWEEN 1 AND 2000`)),
@@ -77,20 +86,23 @@ export const campaigns = sqliteTable(
 
 /**
  * One row per (campaign, contact). Created for the whole list at launch, so a lost HTTP request
- * never loses recipient work. Only each day's batch is enqueued.
+ * never loses recipient work. Only each day's batch is enqueued. Carries its own `tenant_id`, and the
+ * composite keys guarantee the campaign and the contact belong to that same tenant.
  */
 export const campaignRecipients = sqliteTable(
   "campaign_recipients",
   {
     id: idColumn(),
-    campaignId: text("campaign_id")
+    tenantId: text("tenant_id")
       .notNull()
-      .references(() => campaigns.id, { onDelete: "cascade" }),
+      .references(() => tenants.id, { onDelete: "restrict" }),
+    campaignId: text("campaign_id").notNull(),
     /**
-     * SET NULL (not RESTRICT) so a contact can be erased on request while the campaign keeps its
-     * audit trail through the snapshots below.
+     * Nullable so a contact can be erased on request while the campaign keeps its audit trail through the
+     * snapshots below. Erasing a contact first sets this to NULL (see contactsRepo.delete): the composite key
+     * cannot use SET NULL, because that would also null the required tenant_id.
      */
-    contactId: text("contact_id").references(() => contacts.id, { onDelete: "set null" }),
+    contactId: text("contact_id"),
 
     /** Normalized address at launch time. Historical campaigns stay auditable if the contact later changes. */
     emailSnapshot: text("email_snapshot").notNull(),
@@ -118,13 +130,15 @@ export const campaignRecipients = sqliteTable(
     updatedAt: updatedAt(),
   },
   (t) => [
+    foreignKey({ columns: [t.tenantId, t.campaignId], foreignColumns: [campaigns.tenantId, campaigns.id], name: "recipients_campaign_fk" }).onDelete("cascade"),
+    foreignKey({ columns: [t.tenantId, t.contactId], foreignColumns: [contacts.tenantId, contacts.id], name: "recipients_contact_fk" }),
     uniqueIndex("campaign_recipients_campaign_contact_uq").on(t.campaignId, t.contactId),
     uniqueIndex("campaign_recipients_campaign_sequence_uq").on(t.campaignId, t.sequence),
     // Dashboard counts and the daily "next N Pending in order" query.
     index("campaign_recipients_pick_idx").on(t.campaignId, t.status, t.sequence),
-    // Reconciliation: stuck Processing rows with expired leases.
+    // Reconciliation: stuck Processing rows with expired leases (runs across tenants).
     index("campaign_recipients_lease_idx").on(t.status, t.leaseExpiresAt),
-    index("campaign_recipients_contact_idx").on(t.contactId),
+    index("campaign_recipients_contact_idx").on(t.tenantId, t.contactId),
     check("campaign_recipients_status_chk", inList("status", RECIPIENT_STATUSES)),
     check("campaign_recipients_skip_reason_chk", sql.raw(
       `"skip_reason" IS NULL OR "skip_reason" IN (${SKIP_REASONS.map((r) => `'${r}'`).join(", ")})`,

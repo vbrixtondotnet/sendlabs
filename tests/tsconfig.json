@@ -8,7 +8,7 @@
   "include": [
     "./**/*.ts",
     "../scripts/**/*.ts",
-    "../worker-configuration.d.ts"
+    "../worker-configuration.d.ts", "../src/server/secrets.d.ts"
   ],
   "exclude": [
     "./ui"

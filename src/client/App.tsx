@@ -7,10 +7,14 @@ import { Campaigns } from "@/pages/Campaigns";
 import { CampaignEditor } from "@/pages/CampaignEditor";
 import { CampaignDetails } from "@/pages/CampaignDetails";
 import { Settings } from "@/pages/Settings";
+import { AcceptInvitation } from "@/pages/AcceptInvitation";
+import { Login } from "@/pages/Login";
 
 export function App() {
   return (
     <Routes>
+      <Route path="login" element={<Login />} />
+      <Route path="invite/:token" element={<AcceptInvitation />} />
       <Route element={<Layout />}>
         <Route index element={<Overview />} />
         <Route path="imports" element={<Imports />} />

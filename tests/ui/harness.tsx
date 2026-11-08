@@ -1,9 +1,9 @@
 import type { ReactElement } from "react";
 import { cleanup, render } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, vi } from "vitest";
-import type { CampaignDto, CampaignSummaryDto, ContactDto, ImportDto, Page, RecipientDto } from "../../src/shared/api";
+import type { CampaignDto, CampaignSummaryDto, ContactDto, ImportDto, InvitationDto, Page, RecipientDto, SenderDto, SenderStatusDto, UserDto } from "../../src/shared/api";
 import type { Role } from "../../src/shared/types";
 import { RoleProvider } from "../../src/client/hooks/useRole";
 import { ToastProvider } from "../../src/client/hooks/useToast";
@@ -42,6 +42,12 @@ export function stubApi(handler: Handler) {
   return calls;
 }
 
+/** Where the router ends up when the page under test sends the user somewhere else. `data-location` is the full address. */
+function Elsewhere() {
+  const l = useLocation();
+  return <div data-testid="elsewhere" data-location={l.pathname + l.search} />;
+}
+
 export function renderAt(ui: ReactElement, opts: { path?: string; route?: string; role?: Role } = {}) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } });
   const { path = "/", route = "*", role = "Administrator" } = opts;
@@ -52,7 +58,7 @@ export function renderAt(ui: ReactElement, opts: { path?: string; route?: string
           <ToastProvider>
             <Routes>
               <Route path={route} element={ui} />
-              <Route path="*" element={<div data-testid="elsewhere" />} />
+              <Route path="*" element={<Elsewhere />} />
             </Routes>
           </ToastProvider>
         </RoleProvider>
@@ -101,3 +107,21 @@ export const importDto = (over: Partial<ImportDto> = {}): ImportDto => ({
   createdContacts: 25, existingContacts: 0, counts: { malformed: 0, badRow: 0, duplicate: 0, blank: 0 }, rejectedRows: 0, numericWarnings: 0,
   error: null, createdBy: "dev@local", createdAt: ts, completedAt: ts, ...over,
 });
+
+export const userDto = (over: Partial<UserDto> = {}): UserDto => ({
+  id: "u1", email: "admin@sabertoothsoftwarelabs.net", firstName: "", lastName: "", displayName: "Administrator", access: "Administrator", accessId: "administrator",
+  status: "Active", mustChangePassword: false, lastLoginAt: null, createdAt: ts, ...over,
+});
+
+export const invitationDto = (over: Partial<InvitationDto> = {}): InvitationDto => ({
+  id: "inv1", email: "pat@example.test", firstName: "Pat", lastName: "Lee", access: "Viewer", accessId: "viewer", status: "Pending",
+  invitedBy: "admin@sabertoothsoftwarelabs.net", createdAt: ts, expiresAt: "2026-11-13T14:30:00.000Z", ...over,
+});
+
+export const senderDto =(over: Partial<SenderDto> = {}): SenderDto => ({
+  id: "s1", provider: "gmail", email: "sales@acme.test", status: "Connected", permissions: ["Send email"],
+  connectedBy: "admin@sabertoothsoftwarelabs.net", connectedAt: ts, ...over,
+});
+
+/** What GET /api/sender returns. `sender: null` = nothing connected. */
+export const senderStatus = (sender: SenderDto | null = senderDto(), configured = true): SenderStatusDto => ({ configured, sender });

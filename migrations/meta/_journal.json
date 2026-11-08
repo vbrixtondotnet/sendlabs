@@ -15,6 +15,41 @@
       "when": 1794118201110,
       "tag": "0001_csv_imports",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1794145924124,
+      "tag": "0002_multi_tenancy",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1794147521106,
+      "tag": "0003_gmail_sender",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1794150991985,
+      "tag": "0004_invitations_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1794152710608,
+      "tag": "0005_soft_delete_users",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1794153262938,
+      "tag": "0006_login_attempts",
+      "breakpoints": true
     }
   ]
 }

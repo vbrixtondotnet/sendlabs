@@ -26,7 +26,8 @@ export function isUniqueViolation(err: unknown): boolean {
 export function isConstraintViolation(err: unknown): boolean {
   return constraintMessage(err).includes("constraint failed");
 }
-function constraintMessage(err: unknown): string {
+/** The messages of an error and its causes, joined. D1 reports SQLite constraint names in these. */
+export function constraintMessage(err: unknown): string {
   const parts: string[] = [];
   let cur: unknown = err;
   for (let i = 0; i < 4 && cur instanceof Error; i++) {

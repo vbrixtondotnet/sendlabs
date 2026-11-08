@@ -23,13 +23,28 @@ import { nowMs } from "../../lib/id";
 import type { Database } from "../client";
 import { campaignRecipients, campaigns } from "../schema";
 import { importsRepo } from "./imports";
+import { usersRepo } from "./users";
 
 /** Everything except the (potentially large) bodies. */
 const { htmlBody: _html, textBody: _text, ...summaryColumns } = getTableColumns(campaigns);
 
-export function campaignsRepo(db: Database) {
+/** The person creating something. `id` is stored, `email` is shown. */
+export interface Creator {
+  id: string;
+  email: string;
+}
+
+/**
+ * Scoped to `tenantId`: another tenant's campaigns and recipients do not exist as far as this repository
+ * is concerned (reads find nothing, writes change nothing, the API answers 404).
+ */
+export function campaignsRepo(db: Database, tenantId: string) {
+  const mine = eq(campaigns.tenantId, tenantId);
+  const imports = importsRepo(db, tenantId);
+  const users = usersRepo(db, tenantId);
+
   const rowById = async (id: string) => {
-    const [row] = await db.select().from(campaigns).where(eq(campaigns.id, id)).limit(1);
+    const [row] = await db.select().from(campaigns).where(and(mine, eq(campaigns.id, id))).limit(1);
     return row ?? null;
   };
 
@@ -40,7 +55,7 @@ export function campaignsRepo(db: Database) {
     const rows = await db
       .select({ campaignId: campaignRecipients.campaignId, status: campaignRecipients.status, n: count() })
       .from(campaignRecipients)
-      .where(inArray(campaignRecipients.campaignId, ids))
+      .where(and(eq(campaignRecipients.tenantId, tenantId), inArray(campaignRecipients.campaignId, ids)))
       .groupBy(campaignRecipients.campaignId, campaignRecipients.status);
     for (const r of rows) {
       const t = out.get(r.campaignId);
@@ -53,12 +68,13 @@ export function campaignsRepo(db: Database) {
     const row = await rowById(id);
     if (!row) throw notFound("Campaign");
     const totals = (await totalsFor([id])).get(id) ?? emptyTotals();
-    return toCampaignDto(row, totals);
+    const emails = await users.emails([row.createdBy]);
+    return toCampaignDto(row, totals, emails.get(row.createdBy) ?? "");
   };
 
   return {
     async list(q: CampaignListQuery): Promise<Page<CampaignSummaryDto>> {
-      const conditions: (SQL | undefined)[] = [];
+      const conditions: (SQL | undefined)[] = [mine];
       if (q.status) conditions.push(eq(campaigns.status, q.status));
       if (q.archived === "exclude") conditions.push(isNull(campaigns.archivedAt));
       if (q.archived === "only") conditions.push(isNotNull(campaigns.archivedAt));
@@ -83,9 +99,9 @@ export function campaignsRepo(db: Database) {
           .offset(offsetOf(q.page, q.pageSize)),
         db.select({ n: count() }).from(campaigns).where(where),
       ]);
-      const totals = await totalsFor(rows.map((r) => r.id));
+      const [totals, emails] = await Promise.all([totalsFor(rows.map((r) => r.id)), users.emails(rows.map((r) => r.createdBy))]);
       return pageOf(
-        rows.map((r) => toCampaignSummaryDto(r, totals.get(r.id) ?? emptyTotals())),
+        rows.map((r) => toCampaignSummaryDto(r, totals.get(r.id) ?? emptyTotals(), emails.get(r.createdBy) ?? "")),
         totalRows[0]?.n ?? 0,
         q.page,
         q.pageSize,
@@ -94,11 +110,11 @@ export function campaignsRepo(db: Database) {
 
     get: full,
 
-    async create(input: CampaignCreate, createdBy: string): Promise<CampaignDto> {
-      if (input.recipientImportId) await importsRepo(db).assertUsable(input.recipientImportId);
-      const [row] = await db.insert(campaigns).values({ ...input, createdBy }).returning();
+    async create(input: CampaignCreate, creator: Creator): Promise<CampaignDto> {
+      if (input.recipientImportId) await imports.assertUsable(input.recipientImportId);
+      const [row] = await db.insert(campaigns).values({ ...input, tenantId, createdBy: creator.id }).returning();
       if (!row) throw new Error("Insert returned no row");
-      return toCampaignDto(row, emptyTotals());
+      return toCampaignDto(row, emptyTotals(), creator.email);
     },
 
     /** Only drafts are editable. Status never changes here. */
@@ -108,7 +124,7 @@ export function campaignsRepo(db: Database) {
       if (!isCampaignEditable(current.status)) {
         throw conflict("Only draft campaigns can be edited", "CAMPAIGN_LOCKED", { status: current.status });
       }
-      if (patch.recipientImportId) await importsRepo(db).assertUsable(patch.recipientImportId);
+      if (patch.recipientImportId) await imports.assertUsable(patch.recipientImportId);
       const start = patch.sendWindowStart ?? current.sendWindowStart;
       const end = patch.sendWindowEnd ?? current.sendWindowEnd;
       if (!windowIsValid(start, end)) {
@@ -118,19 +134,20 @@ export function campaignsRepo(db: Database) {
       const [row] = await db
         .update(campaigns)
         .set(patch)
-        .where(and(eq(campaigns.id, id), eq(campaigns.status, "Draft")))
+        .where(and(mine, eq(campaigns.id, id), eq(campaigns.status, "Draft")))
         .returning({ id: campaigns.id });
       if (!row) throw conflict("Only draft campaigns can be edited", "CAMPAIGN_LOCKED");
       return full(id);
     },
 
     /** A new Draft with the same content and schedule and no recipients. */
-    async duplicate(id: string, createdBy: string): Promise<CampaignDto> {
+    async duplicate(id: string, creator: Creator): Promise<CampaignDto> {
       const src = await rowById(id);
       if (!src) throw notFound("Campaign");
       const [row] = await db
         .insert(campaigns)
         .values({
+          tenantId,
           name: `Copy of ${src.name}`.slice(0, 200),
           subject: src.subject,
           htmlBody: src.htmlBody,
@@ -141,11 +158,11 @@ export function campaignsRepo(db: Database) {
           sendWindowStart: src.sendWindowStart,
           sendWindowEnd: src.sendWindowEnd,
           timezone: src.timezone,
-          createdBy,
+          createdBy: creator.id,
         })
         .returning();
       if (!row) throw new Error("Insert returned no row");
-      return toCampaignDto(row, emptyTotals());
+      return toCampaignDto(row, emptyTotals(), creator.email);
     },
 
     async setArchived(id: string, archived: boolean): Promise<CampaignDto> {
@@ -157,7 +174,7 @@ export function campaignsRepo(db: Database) {
       await db
         .update(campaigns)
         .set({ archivedAt: archived ? (row.archivedAt ?? nowMs()) : null })
-        .where(eq(campaigns.id, id));
+        .where(and(mine, eq(campaigns.id, id)));
       return full(id);
     },
 
@@ -165,7 +182,7 @@ export function campaignsRepo(db: Database) {
     async deleteDraft(id: string): Promise<void> {
       const rows = await db
         .delete(campaigns)
-        .where(and(eq(campaigns.id, id), eq(campaigns.status, "Draft")))
+        .where(and(mine, eq(campaigns.id, id), eq(campaigns.status, "Draft")))
         .returning({ id: campaigns.id });
       if (rows.length > 0) return;
       if (!(await rowById(id))) throw notFound("Campaign");
@@ -201,7 +218,7 @@ export function campaignsRepo(db: Database) {
       const campaignUpdate = db
         .update(campaigns)
         .set(set)
-        .where(and(eq(campaigns.id, id), eq(campaigns.status, row.status)))
+        .where(and(mine, eq(campaigns.id, id), eq(campaigns.status, row.status)))
         .returning({ id: campaigns.id });
 
       if (action === "cancel") {
@@ -210,10 +227,11 @@ export function campaignsRepo(db: Database) {
           .set({ status: "Cancelled", leaseExpiresAt: null })
           .where(
             and(
+              eq(campaignRecipients.tenantId, tenantId),
               eq(campaignRecipients.campaignId, id),
               inArray(campaignRecipients.status, [...UNSENT_RECIPIENT_STATUSES]),
               // Only if the first statement in this batch really cancelled the campaign.
-              exists(db.select({ one: sql`1` }).from(campaigns).where(and(eq(campaigns.id, id), eq(campaigns.status, "Cancelled")))),
+              exists(db.select({ one: sql`1` }).from(campaigns).where(and(mine, eq(campaigns.id, id), eq(campaigns.status, "Cancelled")))),
             ),
           );
         const [updated] = await db.batch([campaignUpdate, cancelRecipients]);
@@ -227,7 +245,7 @@ export function campaignsRepo(db: Database) {
 
     async listRecipients(campaignId: string, q: RecipientListQuery): Promise<Page<RecipientDto>> {
       if (!(await rowById(campaignId))) throw notFound("Campaign");
-      const conditions: (SQL | undefined)[] = [eq(campaignRecipients.campaignId, campaignId)];
+      const conditions: (SQL | undefined)[] = [eq(campaignRecipients.tenantId, tenantId), eq(campaignRecipients.campaignId, campaignId)];
       if (q.status) conditions.push(eq(campaignRecipients.status, q.status));
       if (q.q) conditions.push(sql`lower(${campaignRecipients.emailSnapshot}) LIKE ${likeContains(q.q.toLowerCase())} ESCAPE '\\'`);
       const where = and(...conditions);

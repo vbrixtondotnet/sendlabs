@@ -15,8 +15,8 @@ async function launched(status: CampaignStatus, recipients: RecipientStatus[] = 
   await h.sql("UPDATE campaigns SET status = ?, launched_at = ?, next_run_at = ? WHERE id = ?", status, Date.now(), Date.now() + 1000, c.id);
   for (const [i, st] of recipients.entries()) {
     await h.sql(
-      "INSERT INTO campaign_recipients (id,campaign_id,contact_id,email_snapshot,personalization_snapshot,sequence,status,skip_reason,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-      `${c.id}-r${i}`, c.id, null, `person${i}@example.test`, "{}", i + 1, st, st === "Skipped" ? "Suppressed" : null, Date.now(), Date.now(),
+      "INSERT INTO campaign_recipients (id,tenant_id,campaign_id,contact_id,email_snapshot,personalization_snapshot,sequence,status,skip_reason,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+      `${c.id}-r${i}`, h.tenantId, c.id, null, `person${i}@example.test`, "{}", i + 1, st, st === "Skipped" ? "Suppressed" : null, Date.now(), Date.now(),
     );
   }
   return c.id as string;
@@ -29,7 +29,7 @@ describe("campaign CRUD", () => {
     expect(r.json).toMatchObject({
       name: "Access-to-SQL",
       status: "Draft",
-      createdBy: "dev@local",
+      createdBy: h.adminEmail,
       dailyLimit: 500,
       sendWindowStart: "09:00",
       sendWindowEnd: "17:00",
