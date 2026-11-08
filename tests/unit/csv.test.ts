@@ -8,8 +8,25 @@ const load = (file: string) => {
   return { header, rows, mapping, result: validateRows(rows, header.length, mapping) };
 };
 
-describe("template.csv", () => {
+describe("template.csv (what users download)", () => {
+  const raw = readFileSync("public/template.csv", "utf8");
   const t = load("template.csv");
+
+  it("is the header row only: no sample contacts", () => {
+    expect(raw.split("\n").filter((l) => l.trim() !== "")).toHaveLength(1);
+    expect(t.rows).toHaveLength(0);
+  });
+  it("has all 13 columns, and every one maps automatically", () => {
+    expect(t.header).toEqual(["First Name", "Last Name", "Title", "Company Name", "Email", "# Employees", "Industry", "Person Linkedin Url", "Website", "City", "State", "Country", "Annual Revenue"]);
+    expect(Object.keys(t.mapping)).toHaveLength(13);
+  });
+  it("is exactly the file in the project root, so the two cannot drift apart", () => {
+    expect(raw).toBe(readFileSync("template.csv", "utf8"));
+  });
+});
+
+describe("sample-contacts.csv (the 25 bundled sample contacts)", () => {
+  const t = load("sample-contacts.csv");
 
   it("maps all 13 columns automatically", () => {
     expect(t.header).toHaveLength(13);

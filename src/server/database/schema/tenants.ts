@@ -15,6 +15,8 @@ export const tenants = sqliteTable(
     name: text("name").notNull(),
     /** URL-safe identifier: lower-case letters, digits and hyphens. Reserved for sign-in and subdomains. */
     slug: text("slug").notNull(),
+    /** The organization's postal address, printed in the footer of its emails (a legal requirement for marketing email). Free text, may be several lines; empty until set. */
+    postalAddress: text("postal_address").notNull().default(""),
     status: text("status", { enum: TENANT_STATUSES }).notNull().default("Active"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

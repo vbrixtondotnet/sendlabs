@@ -5,7 +5,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { Imports } from "../../src/client/pages/Imports";
 import { importDto, page, renderAt, stubApi, type Handler } from "./harness";
 
-const template = readFileSync("public/template.csv", "utf8");
+const template = readFileSync("public/sample-contacts.csv", "utf8");
 const withErrors = readFileSync("public/sample-with-errors.csv", "utf8");
 
 const csvFile = (text: string, name = "leads.csv") => new File([text], name, { type: "text/csv" });
@@ -33,6 +33,26 @@ describe("Imports page (live)", () => {
     expect(within(rowOf("messy.csv")).getByRole("link", { name: "Rejected rows" }).getAttribute("href")).toBe("/api/imports/b/rejected-rows.csv");
     expect(within(rowOf("clean.csv")).queryByRole("link", { name: "Rejected rows" })).toBeNull();
     expect(within(rowOf("broken.csv")).getByText("Failed")).toBeTruthy();
+  });
+
+  it("offers the blank template for download, and loads the sample contacts from their own file", async () => {
+    stubApi(history([]));
+    renderAt(<Imports />);
+    const link = (await screen.findByRole("link", { name: "Download template.csv" })) as HTMLAnchorElement;
+    expect(link.getAttribute("href")).toBe("/template.csv");
+    expect(link.getAttribute("download")).toBe("template.csv");
+
+    const fetched: string[] = [];
+    const calls = stubApi(history([]));
+    void calls;
+    const real = globalThis.fetch;
+    globalThis.fetch = (async (input: string, init?: RequestInit) => {
+      if (input.endsWith(".csv")) { fetched.push(input); return new Response(template, { status: 200 }); }
+      return real(input, init);
+    }) as typeof fetch;
+    fireEvent.click(screen.getByRole("button", { name: "Try the sample (25 contacts)" }));
+    await screen.findByRole("button", { name: "Validate rows" });
+    expect(fetched).toEqual(["/sample-contacts.csv"]);
   });
 
   it("says so when there is no history yet, and when the API is down", async () => {

@@ -50,6 +50,20 @@
       "when": 1794153262938,
       "tag": "0006_login_attempts",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1794170243586,
+      "tag": "0007_tenant_postal_address",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1794175307440,
+      "tag": "0008_test_recipients",
+      "breakpoints": true
     }
   ]
 }

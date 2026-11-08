@@ -1,8 +1,8 @@
-# Sendlab
+# Sendrix
 
 > **Status:** Early build. **Multi-tenant** (one database, many tenants, each with its own users). The UI is connected to a real local API for **Contacts, Campaigns and CSV imports**. Each tenant can **connect its own Gmail account** (needs Google credentials, see **Connecting Gmail**). Sign-in, tenant sign-up, launch, test send, sending and suppression are not built yet. This README is the implementation plan derived from `email_campaign_platform_project_brief_v2.pdf` (prepared 6 Nov 2026). Section 12 records the decisions made so far (multi-user, Cloudflare Access, service-account Gmail auth, global contacts, one-time import with a 500/day drip send) and the items that are still open.
 
-Sendlab is a web application that imports client contacts from CSV files, lets users build email campaigns, and sends **one individually addressed email per recipient** through a Google Workspace Gmail account. Sending is asynchronous, using Cloudflare Queues and Workers.
+Sendrix is a web application that imports client contacts from CSV files, lets users build email campaigns, and sends **one individually addressed email per recipient** through a Google Workspace Gmail account. Sending is asynchronous, using Cloudflare Queues and Workers.
 
 ### Backend (started: Contacts and Campaigns only)
 
@@ -102,9 +102,9 @@ What is stored, and how it is protected:
 - **Disconnect** deletes the account and asks Google to cancel the token. Reconnecting replaces it in place and cancels the old one. One sender per tenant for now.
 - Only **Administrators** can connect or disconnect. Everyone signed in can see which account is connected, because the campaign editor needs it. A campaign cannot be launched without a connected sender.
 
-Sendlab asks for exactly three permissions: `openid`, `email` (to learn which address was connected) and `gmail.send` (to send). It never asks to read the inbox.
+Sendrix asks for exactly three permissions: `openid`, `email` (to learn which address was connected) and `gmail.send` (to send). It never asks to read the inbox.
 
-**Setting up Google (needed once per environment, by whoever runs Sendlab)**
+**Setting up Google (needed once per environment, by whoever runs Sendrix)**
 
 1. In the [Google Cloud console](https://console.cloud.google.com/), create a project and enable the **Gmail API**.
 2. **APIs & Services > OAuth consent screen:** choose **External** (tenants are other organizations). Add the three scopes above. While the app is in **Testing**, only the test users you list can connect, and Google expires their refresh tokens after **7 days**, which is fine for development.
@@ -123,7 +123,7 @@ Sendlab asks for exactly three permissions: `openid`, `email` (to learn which ad
 Decided: sign-in is **app-managed** (email and password). People sign in on the login page; accepting an invitation also signs them in.
 
 1. **Settings > Users & access > Add user.** An Administrator enters first name, last name, email address and a role (Administrator, Campaign Manager or Viewer).
-2. **Sendlab emails the invitation** through the tenant's connected Gmail account (decision D-28), so Gmail must be connected first. The email is plain text plus an HTML version: "{Tenant Name} has invited you to SendLab", with an **Accept invitation** button and the plain link.
+2. **Sendrix emails the invitation** through the tenant's connected Gmail account (decision D-28), so Gmail must be connected first. The email is plain text plus an HTML version: "{Tenant Name} has invited you to Sendrix", with an **Accept invitation** button and the plain link.
 3. **The person opens `/invite/<token>`** (a public page outside the app layout), sees who invited them, and chooses a password (8 to 256 characters, typed twice).
 4. **Accepting activates them** as a user of that tenant with the invited role, signs them in, and sends them to the dashboard.
 
@@ -134,24 +134,51 @@ How it is kept safe:
 - Accepting is **one atomic D1 batch** (create user, mark invitation accepted, start session): two simultaneous clicks make one user. A wrong or short password is rejected first, so a typo does not use the link up. An address that already has an account gets `409 EMAIL_EXISTS` and the invitation stays usable.
 - The tenant and role come from the invitation row, never from the request. Unknown fields are rejected.
 - One open invitation per address per tenant: **resend** issues a new link and the old one stops working; **revoke** kills it. A person cannot be mailed twice within 60 seconds, and a tenant can have at most 50 open invitations.
-- Inviting an address that belongs to another tenant answers a generic `CANNOT_INVITE`, so the API does not reveal who uses Sendlab.
+- Inviting an address that belongs to another tenant answers a generic `CANNOT_INVITE`, so the API does not reveal who uses Sendrix.
 - If the email cannot be sent, the invitation is withdrawn again (no phantom entries). If Google rejects the stored token, the connection is flagged "Needs reconnecting" and the Administrator is told.
-- **Sessions:** cookie `sendlab_session` (`HttpOnly`, `SameSite=Lax`, `Secure` on https, 14 days), only a hash stored in the `sessions` table. A disabled user or suspended tenant is refused, never silently downgraded. `POST /api/auth/logout` ends the session; the header shows **Sign out** when the session is real.
+- **Sessions:** cookie `sendrix_session` (`HttpOnly`, `SameSite=Lax`, `Secure` on https, 30 days that restart each time the app is used), only a hash stored in the `sessions` table. A disabled user or suspended tenant is refused, never silently downgraded. `POST /api/auth/logout` ends the session; the header shows **Sign out** when the session is real.
 - **Cross-site writes:** a POST, PATCH or DELETE whose `Origin` is not `APP_BASE_URL` is refused with `403 BAD_ORIGIN`.
 
 **Removing a user** (Settings > Users & access > Remove, Administrators only) is a **soft delete**: `users.is_deleted` is set (with `deleted_at`) and nothing is erased, so what the person created keeps its owner and the email stays reserved. Removed users are not listed, all their sessions end at once, and they cannot sign in. You cannot remove yourself, and the last active Administrator cannot be removed (the rule is inside the UPDATE, so two Administrators removing each other at once cannot both succeed). A removed person can be **invited again**: accepting clears `is_deleted` on the same account (new password, name and role from the new invitation) instead of creating a second one. An address removed from a different tenant still cannot be invited here.
 
-**Signing in** (`/login`): email and password, a Show/Hide toggle, and an optional `?next=` to return to the page you were heading for (only in-app paths are honored). Anyone not signed in who opens the app is sent to the login page. The header's **Sign out** ends the session. Every wrong answer (unknown address, wrong password, a removed user) is the same `401 INVALID_CREDENTIALS` after the same amount of work, so it cannot be used to find out who has an account. **Throttling:** 5 failures for one address within 15 minutes lock that address for 15 minutes (even the right password is refused, with `429 TOO_MANY_ATTEMPTS` and `Retry-After`); 30 failures from one network address lock that address. Unknown addresses are counted too, a good sign-in clears the count, and the counters live in the `login_attempts` table (no passwords). A disabled user or suspended organization is told so only after giving the right password.
+**Signing in** (`/login`): email and password, a Show/Hide toggle, and an optional `?next=` to return to the page you were heading for (only in-app paths are honored). Anyone not signed in who opens the app is sent to the login page. **Logout** in the header's user menu ends the session. Every wrong answer (unknown address, wrong password, a removed user) is the same `401 INVALID_CREDENTIALS` after the same amount of work, so it cannot be used to find out who has an account. **Your own settings:** the round initials button in the header opens a menu with **Settings** and **Logout**. Settings (`/account`, titled "My settings") has three tabs:
+
+- **Company Details** (first): the organization's **Name** and **Postal address** (a multi-line text, stored in `tenants.postal_address`, included in the footer of every email). Editable by Administrators only (`PATCH /api/tenant`: send either or both, saved all-or-nothing; the name must be unique ignoring letter case; the address may be cleared; the slug never changes). Everyone else sees the saved values read-only.
+- **User Details**: first and last name (email and role are shown read-only; the name shown around the app follows).
+- **Account Details**: change your password. It needs the current password, applies the same length rules, and refuses reusing the current one. Wrong current passwords are throttled (5 in 15 minutes, separately from sign-in). A successful change ends your **other** sessions, keeps this one, and clears `must_change_password`.
+
+These are `PATCH /api/tenant`, `PATCH /api/me` and `POST /api/me/password`; they only ever act on the signed-in user or their own organization. (The Compliance tab under Settings in the sidebar still shows its own, unconnected "Sender postal address" preview field.)
+
+**Stay signed in:** a session lasts 30 days from its last use. The cookie is persistent (it survives closing the browser) and every time the app is used the 30 days start again, with the cookie re-issued; the database is written at most once an hour per session. Someone who does not use the app for 30 days is signed out. There is no absolute cap on how long an actively used session can last. **Throttling:** 5 failures for one address within 15 minutes lock that address for 15 minutes (even the right password is refused, with `429 TOO_MANY_ATTEMPTS` and `Retry-After`); 30 failures from one network address lock that address. Unknown addresses are counted too, a good sign-in clears the count, and the counters live in the `login_attempts` table (no passwords). A disabled user or suspended organization is told so only after giving the right password.
 
 Still not built: a forced password change for accounts flagged `must_change_password` (the login response reports the flag, nothing acts on it yet), password reset, changing a user's access or disabling (without removing) them, and enforcing roles on every route. The default development admin is flagged, so it signs in normally.
+
+#### Test sends (built)
+
+Every test email from a campaign goes to the **test-send allowlist** (Settings > Sender), and nowhere else.
+
+- **The list:** per organization, up to 20 addresses, one row each in `test_recipients` (case-insensitive, no duplicates). Administrators add and remove addresses; everyone signed in can see it, so the editor can show who a test will reach.
+- **The button:** *Send test email* in the campaign editor saves the draft first (so the test is exactly what is on screen), then asks the server to test-send it. The request carries **no addresses**: the server reads the list itself, so a test cannot be aimed anywhere else, whatever a client sends. With an empty list the button is off and says why.
+- **The message:** one email per address, through the organization's connected Gmail account, with `[TEST] ` in front of the subject. The **sender name** recipients see is the organization's name (Settings > My settings > Company Details), with the connected Gmail address behind it. Real campaign sending, when built, must use the same name. Merge fields are filled in with sample data (Alex Sample, Example Co), exactly as the editor's preview does. The plain-text part is the campaign's text body, or one made from the HTML.
+- **What it does not do:** it never touches the campaign's real recipients or its status, and works on any campaign. Administrators and Campaign Managers may test; Viewers may not.
+- **Not yet:** test sends are not counted against the daily quota (D-23 asks for that once real sending exists), and there is no per-address delivery report: if Gmail fails part-way, the error says how many went out.
 
 #### State machines
 
 `src/shared/status.ts` is the single source of truth for legal status changes (campaign and recipient), shared by the API and the UI, with exhaustive unit tests. Highlights: a recipient reaches `Accepted` only from `Processing` and `Processing` only from `Queued`. `Accepted`, `Skipped` and `Cancelled` are final. Campaigns launch `Draft -> Sending`, only `Draft` is editable, and `Completed` and `Cancelled` are final. Updates are guarded by the status that was read, so two concurrent actions cannot both succeed.
 
+#### Branding
+
+The look comes from the logo, `src/client/assets/logo.png` (kept as supplied). Its two colours were measured from the artwork: **teal `#01a4c2`** and **navy `#091a34`**.
+
+- **Logo:** the header, the login page and the invitation page use `src/client/assets/logo-wordmark.png`, the same artwork trimmed of its empty margin and scaled down (74 KB instead of 460 KB). The navy lettering would vanish on a dark background, so in dark mode the logo sits on a small white plate. The browser tab icon (`public/favicon.png`) is the paper plane from the logo.
+- **Palette:** defined once, in the `@theme` block of `src/client/index.css`. `brand-50` to `brand-950` is the logo teal (500) with lighter tints and navy-leaning shades; it is used for buttons, links, the active menu item, focus rings, progress bars, the user circle and the invitation email's button. The neutral `slate` scale is tinted with the logo navy (`slate-900` is exactly `#091a34`), so body text, headings and dark-mode backgrounds are navy rather than grey. Status colours (green for success, amber for warnings, red for errors) are unchanged on purpose.
+- **Readability:** the combinations the app uses were checked against WCAG contrast (white on the button colour 4.6:1, body text 17:1, secondary text 5:1, and the dark-mode equivalents). To change the brand, edit those two scales in `index.css`; nothing else holds a colour.
+- **If the logo changes:** replace `logo.png`, then regenerate `logo-wordmark.png` and `public/favicon.png` from it (crop to the artwork, scale to 720 px wide).
+
 #### Tests
 
-`npm test` runs 457 tests: state machines, validation schemas, IDs, password hashing, the CSV parser, the API including tenant isolation, CSV imports up to 8,000 rows and the whole Gmail connection and invitation flow against a stand-in for Google (all on in-memory D1), the migrations, and the UI pages (rendered in a simulated browser with the network stubbed, checking they call the API correctly and handle errors, empty states and read-only roles). The integration tests run the real Hono app and repositories against an in-memory D1 database (Miniflare) built from the committed migrations, so they never touch your local dev data. `npm run typecheck` covers the front end, the server, the server-side tests and the UI tests (the last two use separate configs, because browser and Cloudflare Worker types define clashing globals).
+`npm test` runs 587 tests: state machines, validation schemas, IDs, password hashing, the CSV parser, the API including tenant isolation, CSV imports up to 8,000 rows and the whole Gmail connection and invitation flow against a stand-in for Google (all on in-memory D1), the migrations, and the UI pages (rendered in a simulated browser with the network stubbed, checking they call the API correctly and handle errors, empty states and read-only roles). The integration tests run the real Hono app and repositories against an in-memory D1 database (Miniflare) built from the committed migrations, so they never touch your local dev data. `npm run typecheck` covers the front end, the server, the server-side tests and the UI tests (the last two use separate configs, because browser and Cloudflare Worker types define clashing globals).
 
 | Table | Purpose |
 |---|---|
@@ -194,10 +221,10 @@ npm run db:seed:tenant:local   # once: the default tenant and admin (see Multi-t
 cp .dev.vars.example .dev.vars   # optional: Google credentials, to try Connect Gmail (see Connecting Gmail)
 npm run dev:api            # terminal 1: the API (wrangler dev, http://127.0.0.1:8787). Refuses to start if the port is taken
 npm run dev                # terminal 2: the UI (Vite). Vite proxies /api to the API
-npm run seed:local         # optional sample data for the default tenant: imports the 25 contacts in public/template.csv and creates one sample draft
+npm run seed:local         # optional sample data for the default tenant: imports the 25 contacts in public/sample-contacts.csv and creates one sample draft
 ```
 
-The seed script imports `public/template.csv` through the real import endpoint, and is safe to run twice. It refuses to talk to anything but a local API.
+The seed script imports `public/sample-contacts.csv` through the real import endpoint, and is safe to run twice. It refuses to talk to anything but a local API.
 
 **What is live and what is still a preview**
 
@@ -208,15 +235,16 @@ The seed script imports `public/template.csv` through the real import endpoint, 
 | Campaign details: totals, recipients, pause, resume, cancel | **Live**. Refreshes every 10 seconds while a campaign is Sending |
 | Overview | **Live**, derived from the campaigns list (there is no dashboard endpoint yet) |
 | Imports (CSV): upload, map, review, confirm, history, rejected-rows download | **Live**. The browser previews, the server imports and answers with the real counts |
-| Campaign recipients (all contacts, a saved import, or upload a CSV there) | **Live and saved with the draft**. The recipient list itself is built at launch, which is not built yet |
-| Launch, test send, retry failed | Not built. The launch dialog saves a draft and says so |
+| Campaign recipients (all contacts, a saved import, or upload a CSV there) | **Live and saved with the draft**. A CSV chosen in the editor is validated and mapped there, then imported with the **Import N contacts and use them** button. The recipient list itself is built at launch, which is not built yet |
+| Settings > Sender > Test-send allowlist, and the editor's **Send test email** | **Live**. See "Test sends" below |
+| Launch, retry failed | Not built. The launch dialog saves a draft and says so |
 | Header: tenant name and signed-in user | **Live** (`/api/me`) |
 | Settings > Sender: Connect Gmail, reconnect, disconnect | **Live**, once the Google credentials are supplied. Until then it says it is not set up. Not yet tried against real Google |
 | Campaign editor sender | **Live**: shows the tenant's connected address and blocks launching without one |
 | Settings: limits, compliance, suppression, retention | Preview only. The mock records were removed: everything starts empty and nothing is saved |
 | Settings > Users & access | **Live, read-only**: lists the tenant's real users and the three access levels. **Add user** and the role selectors are visible but do nothing yet (see below) |
 | Sign-in, tenant sign-up, password change | Not built. Locally the API acts as the seeded Administrator |
-| Role enforcement | Not built. The "Preview as" selector (which starts at your real access level) only changes what the UI shows. The API does not enforce roles yet |
+| Role enforcement | Not built. The UI shows or hides controls by your real access level (there is no longer a "Preview as" switch). The API enforces roles only on the user and invitation routes so far |
 
 The UI talks to the API through `src/client/services/` (a small typed client plus TanStack Query hooks). Request and response shapes come from `src/shared/`, so the UI and server cannot drift apart. The CSV parsing and validation (`src/shared/csv.ts`) runs in the browser for the preview and in the Worker as the authority.
 
@@ -507,7 +535,8 @@ Brief's proposal (all lists paginated, consistent error envelope, Zod-validated 
 | `POST /api/imports/:id/contacts` | Confirm and persist valid contacts |
 | `GET /api/contacts` | List/search |
 | `POST /api/campaigns` · `GET /api/campaigns` · `GET /api/campaigns/:id` · `PATCH /api/campaigns/:id` | Campaign CRUD |
-| `POST /api/campaigns/:id/test-send` | Test to an authorized address |
+| `POST /api/campaigns/:id/test-send` | Mails the campaign to the test-send allowlist (Administrator or Campaign Manager). No body: it never takes an address |
+| `GET /api/test-recipients` · `POST` · `DELETE /api/test-recipients/:id` | The allowlist. Anyone signed in reads it, Administrators change it |
 | `POST /api/campaigns/:id/launch` | Validate, create jobs, enqueue |
 | `POST /api/campaigns/:id/pause` · `/cancel` · `/retry-failed` | Controls |
 | `GET /api/campaigns/:id/recipients` | Paginated statuses and errors |
@@ -517,6 +546,8 @@ Brief's proposal (all lists paginated, consistent error envelope, Zod-validated 
 | `DELETE /api/users/:id` | Administrators: remove a user (soft delete, they can be invited again) |
 | `POST /api/users/invitations/:id/resend` · `DELETE /api/users/invitations/:id` | Administrators: send a fresh link, or withdraw an invitation |
 | `GET /api/invitations/:token` · `POST /api/invitations/:token/accept` | Public: show the invitation, set a password and activate (sets the session cookie) |
+| `GET /api/me` · `PATCH /api/me` · `POST /api/me/password` | The signed-in user: who they are, edit own name, change own password |
+| `PATCH /api/tenant` | Administrators: edit your own organization's name and postal address |
 | `POST /api/auth/login` · `POST /api/auth/logout` | Public: sign in (sets the session cookie, throttled), and sign out |
 
 **Missing from the brief and needed for the stated features (see D-15):** `POST /api/imports/:id/mapping` (column mapping), `GET /api/oauth/google/start` and `/callback`, `PATCH /api/contacts/:id`, `POST /api/campaigns/:id/preview`, `/duplicate`, `/archive`, `/resume`, `POST /api/campaigns/:id/recipients/upload` (CSV upload from the campaign editor, creating an import), suppression CRUD, public signed `GET|POST /unsubscribe/:token`, invalid-row download, user/role admin, settings and limits, audit-event listing, DLQ inspection.
@@ -547,7 +578,7 @@ Brief's proposal (all lists paginated, consistent error envelope, Zod-validated 
 The brief's tree was garbled in extraction. This is the reconstructed intent.
 
 ```
-sendlab/
+sendrix/
 ├── src/
 │   ├── client/                 # React app
 │   │   ├── components/
@@ -600,7 +631,7 @@ Each phase is small, reviewable and ends with passing tests. Exit criteria are p
 | **1. Data layer** | Drizzle schema, migrations, repositories, seed/test utilities, state-machine module | Migrations apply locally; repository and state-machine tests pass |
 | **2. Contacts import** | R2 upload, CSV parsing, column mapping, validation preview, dedupe, persistence, invalid-row download | Acceptance items 1–2 pass on fixtures including hostile files |
 | **3. Campaigns** | CRUD, HTML/text content, recipient selection, safe templating, preview | Draft + preview works; HTML-escaping tests pass |
-| **4. Gmail integration** | **Connect, reconnect and disconnect are built** (per-tenant OAuth, encrypted token storage). Still to do: the Gmail sending provider (MIME, `messages.send`, token refresh), the error classifier, and test-send | Test email sent from a real connected account; classifier tests pass; the connection tried against real Google |
+| **4. Gmail integration** | **Connect, reconnect and disconnect are built** (per-tenant OAuth, encrypted token storage). **Test-send is built** (it sends through the tenant's account). Still to do: the bulk sending provider, and the error classifier | Test email sent from a real connected account; classifier tests pass; the connection tried against real Google |
 | **5. Queue processing and drip** | Producer/consumer, daily-tick cron, per-day cap, staggered delays, retries, DLQ, idempotent claim, reconciliation | Duplicate-delivery, crash-recovery and tick-twice tests pass; staging run on real Queues over at least two simulated days |
 | **6. Dashboard** | Overview, campaign list/detail, recipient table, retry/pause/cancel controls | Counts match persisted state |
 | **7. Hardening and deploy** | Suppression/unsubscribe (public route, signed tokens), retention jobs, audit events, security review, staging then production rollout, monitoring | Security checks pass; staging soak test; production runbook |
@@ -712,17 +743,17 @@ Local D1 data is separate from remote. Never point local development at producti
 ```bash
 npx wrangler login
 
-npx wrangler d1 create sendlab-db-<env>
-npx wrangler r2 bucket create sendlab-uploads-<env>        # keep private
-npx wrangler queues create sendlab-email-jobs-<env>
-npx wrangler queues create sendlab-email-dlq-<env>
+npx wrangler d1 create sendrix-db-<env>
+npx wrangler r2 bucket create sendrix-uploads-<env>        # keep private
+npx wrangler queues create sendrix-email-jobs-<env>
+npx wrangler queues create sendrix-email-dlq-<env>
 ```
 
 Add the returned IDs and names to the matching environment block in `wrangler.jsonc`. An illustrative shape (final values set in Phase 0):
 
 ```jsonc
 {
-  "name": "sendlab",
+  "name": "sendrix",
   "main": "src/server/index.ts",
   "assets": { "directory": "dist/client", "not_found_handling": "single-page-application" },
   "d1_databases": [{ "binding": "DB", "database_name": "<name>", "database_id": "<id>", "migrations_dir": "migrations" }],

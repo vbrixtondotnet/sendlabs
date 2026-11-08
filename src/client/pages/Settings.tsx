@@ -9,6 +9,7 @@ import { goTo } from "@/lib/navigate";
 import { ApiClientError } from "@/services/http";
 import { useConnectGmail, useDisconnectSender, useSender } from "@/services/sender";
 import { useMe } from "@/services/me";
+import { useAddTestRecipient, useRemoveTestRecipient, useTestRecipients } from "@/services/testRecipients";
 import { useInvitations, useInviteUser, useRemoveUser, useResendInvitation, useRevokeInvitation, useUsers } from "@/services/users";
 import type { UserDto } from "@shared/api";
 
@@ -17,14 +18,16 @@ type Tab = (typeof TABS)[number];
 const PAGE_SIZE = 25;
 
 export function Settings() {
-  const { isAdmin } = useRole();
+  const { isAdmin, ready } = useRole();
   const [tab, setTab] = useState<Tab>("Sender");
+
+  if (!ready) return <PageHeader title="Settings" />; // who you are is still loading
 
   if (!isAdmin) {
     return (
       <>
         <PageHeader title="Settings" />
-        <Notice tone="warn" title="Administrators only">Settings and the sender connection require the Administrator role. Use "Preview as" at the top right to switch.</Notice>
+        <Notice tone="warn" title="Administrators only">Settings and the sender connection require the Administrator role.</Notice>
       </>
     );
   }
@@ -32,10 +35,10 @@ export function Settings() {
   return (
     <>
       <PageHeader title="Settings" description="Sender connection, sending limits, compliance, users and data retention." />
-      <div className="mb-5"><Notice tone="warn" title="Preview only">Only the Gmail sender and the Users & access tab are connected to the server. The other tabs are not saved yet; settings will be stored per tenant once they are connected.</Notice></div>
+      <div className="mb-5"><Notice tone="warn" title="Preview only">Only the Gmail sender (with its test-send allowlist) and the Users & access tab are connected to the server. The other tabs are not saved yet; settings will be stored per tenant once they are connected.</Notice></div>
       <div className="mb-5 flex gap-1 overflow-x-auto border-b border-slate-200 dark:border-slate-800" role="tablist">
         {TABS.map((t) => (
-          <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={`whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium ${tab === t ? "border-indigo-600 text-indigo-600 dark:text-indigo-400" : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"}`}>{t}</button>
+          <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={`whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium ${tab === t ? "border-brand-600 text-brand-600 dark:text-brand-400" : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"}`}>{t}</button>
         ))}
       </div>
       {tab === "Sender" && <SenderTab />}
@@ -49,12 +52,12 @@ export function Settings() {
 
 /** What each failure code means to a person, and what to do about it. The server only ever sends the code. */
 const CONNECT_ERROR_TEXT: Record<SenderConnectError, string> = {
-  denied: "Google access was not granted. Connect again and allow Sendlab to send email on your behalf.",
+  denied: "Google access was not granted. Connect again and allow Sendrix to send email on your behalf.",
   invalid_state: "That connection link expired or was already used. Start again with Connect Gmail.",
   exchange_failed: "Google did not accept the connection. Please try again in a moment.",
-  missing_permission: "Sendlab needs permission to send email. On Google's screen, leave the box for sending email ticked, then try again.",
-  no_refresh_token: "Google did not let Sendlab stay connected. Remove Sendlab at myaccount.google.com/permissions, then connect again.",
-  email_unavailable: "Sendlab could not confirm which email address you connected. Please try again.",
+  missing_permission: "Sendrix needs permission to send email. On Google's screen, leave the box for sending email ticked, then try again.",
+  no_refresh_token: "Google did not let Sendrix stay connected. Remove Sendrix at myaccount.google.com/permissions, then connect again.",
+  email_unavailable: "Sendrix could not confirm which email address you connected. Please try again.",
   not_configured: "Gmail connection is not set up on this server yet.",
   inactive: "Your account or organization is not active, so nothing was connected.",
 };
@@ -190,7 +193,7 @@ function SenderTab() {
             <div>
               {connectButton("Connect Gmail")}
               <p className="mt-2 max-w-md text-sm text-slate-500">
-                Required to send campaigns to your leads and to invite people to your account. You will be taken to Google to approve, then brought back here. Sendlab only asks to send email on your behalf and to see which address you connected, never to read your inbox.
+                Required to send campaigns to your leads and to invite people to your account. You will be taken to Google to approve, then brought back here. Sendrix only asks to send email on your behalf and to see which address you connected, never to read your inbox.
               </p>
             </div>
             {connectError && <Notice tone="error" title="Could not start the connection">{connectError.code === "GMAIL_NOT_CONFIGURED" ? "Gmail connection is not set up on this server yet." : connectError.message}</Notice>}
@@ -198,16 +201,9 @@ function SenderTab() {
         )}
       </Card>
 
-      <Card>
-        <CardHeader title="Test-send allowlist" subtitle="Test emails can only go to these addresses." />
-        <Empty>No test addresses yet.</Empty>
-        <div className="flex gap-2 border-t border-slate-200 p-4 dark:border-slate-800">
-          <TextInput type="email" placeholder="Add address" aria-label="Add test address" />
-          <Button onClick={() => toast("Not connected yet: nothing was saved", "info")}>Add</Button>
-        </div>
-      </Card>
+      <TestAllowlistCard />
 
-      <div className="lg:col-span-2"><Notice tone="info">Sendlab stores a secure, encrypted key that lets it send on your behalf. It never sees your Google password, and you can disconnect at any time here or at myaccount.google.com/permissions.</Notice></div>
+      <div className="lg:col-span-2"><Notice tone="info">Sendrix stores a secure, encrypted key that lets it send on your behalf. It never sees your Google password, and you can disconnect at any time here or at myaccount.google.com/permissions.</Notice></div>
 
       <Modal
         open={confirming}
@@ -220,9 +216,72 @@ function SenderTab() {
           </>
         }
       >
-        <p className="text-sm">Sendlab will stop being able to send from <strong>{connectedSender?.email}</strong> and Google will be told to cancel its permission. Campaigns cannot be sent and invitations cannot be emailed until you connect an account again. Campaigns already sent are not affected.</p>
+        <p className="text-sm">Sendrix will stop being able to send from <strong>{connectedSender?.email}</strong> and Google will be told to cancel its permission. Campaigns cannot be sent and invitations cannot be emailed until you connect an account again. Campaigns already sent are not affected.</p>
       </Modal>
     </div>
+  );
+}
+
+/** The addresses a campaign's "Send test email" goes to. A test is only ever mailed here, never to anyone else. */
+function TestAllowlistCard() {
+  const { toast } = useToast();
+  const list = useTestRecipients();
+  const add = useAddTestRecipient();
+  const remove = useRemoveTestRecipient();
+  const [address, setAddress] = useState("");
+  const [problem, setProblem] = useState<string | null>(null);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    const value = address.trim();
+    if (!value || add.isPending) return;
+    setProblem(null);
+    try {
+      await add.mutateAsync(value);
+      setAddress("");
+      toast(`${value} added to the test-send allowlist`);
+    } catch (err) {
+      setProblem(err instanceof ApiClientError ? (err.fieldErrors[0]?.message ?? err.message) : "Something went wrong. Please try again.");
+    }
+  }
+
+  async function doRemove(id: string, email: string) {
+    try {
+      await remove.mutateAsync(id);
+      toast(`${email} removed from the allowlist`, "info");
+    } catch (err) {
+      toast(err instanceof ApiClientError ? err.message : "Something went wrong", "error");
+    }
+  }
+
+  const items = list.data?.items ?? [];
+  return (
+    <Card>
+      <CardHeader title="Test-send allowlist" subtitle="Every test email from a campaign goes to these addresses, and only these." />
+      {list.isError ? (
+        <div className="p-4"><ErrorNotice error={list.error} onRetry={() => void list.refetch()} /></div>
+      ) : list.isPending ? (
+        <LoadingRows rows={2} cols={2} />
+      ) : items.length === 0 ? (
+        <Empty>No test addresses yet. Add one to be able to send a test.</Empty>
+      ) : (
+        <ul className="divide-y divide-slate-100 text-sm dark:divide-slate-800">
+          {items.map((r) => (
+            <li key={r.id} className="flex items-center justify-between gap-3 px-5 py-2.5">
+              <span className="min-w-0 truncate font-medium">{r.email}</span>
+              <Button variant="ghost" className="text-rose-600" aria-label={`Remove ${r.email}`} disabled={remove.isPending} onClick={() => void doRemove(r.id, r.email)}>Remove</Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form onSubmit={submit} noValidate className="border-t border-slate-200 p-4 dark:border-slate-800">
+        <div className="flex gap-2">
+          <TextInput type="email" placeholder="Add address" aria-label="Add test address" autoComplete="off" value={address} onChange={(e) => { setAddress(e.target.value); setProblem(null); }} />
+          <Button type="submit" disabled={!address.trim() || add.isPending}>{add.isPending ? "Adding…" : "Add"}</Button>
+        </div>
+        {problem && <p role="alert" className="mt-2 text-xs text-rose-600">{problem}</p>}
+      </form>
+    </Card>
   );
 }
 
@@ -314,7 +373,7 @@ function AddUserModal({ open, onClose }: { open: boolean; onClose: () => void })
       }
     >
       <form id="add-user-form" onSubmit={submit} noValidate className="space-y-4">
-        <p className="text-sm text-slate-600 dark:text-slate-300">Sendlab emails them an invitation. When they accept and choose a password, they become a user of your organization.</p>
+        <p className="text-sm text-slate-600 dark:text-slate-300">Sendrix emails them an invitation. When they accept and choose a password, they become a user of your organization.</p>
         {noSender && (
           <Notice tone="warn" title="Connect Gmail first">Invitations are sent from your connected Gmail account. Connect one on the Sender tab, then come back.</Notice>
         )}

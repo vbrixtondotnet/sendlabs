@@ -8,3 +8,4 @@ export * from "./sender";
 export * from "./invitations";
 export * from "./sessions";
 export * from "./login-attempts";
+export * from "./test-recipients";

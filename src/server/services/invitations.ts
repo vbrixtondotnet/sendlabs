@@ -18,7 +18,7 @@ import type { Actor } from "../middleware/auth";
 import { GmailSendError, GoogleError, type GoogleConfig, type GoogleOAuth } from "./google-oauth";
 
 /** The name recipients see on an invitation email, instead of the tenant's mailbox address. */
-export const INVITATION_SENDER_NAME = "SendLab";
+export const INVITATION_SENDER_NAME = "Sendrix";
 export const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 /** The same address cannot be invited again for this long, so the button cannot be used to mail-bomb someone. */
 export const RESEND_COOLDOWN_MS = 60 * 1000;
@@ -36,7 +36,7 @@ const INVALID = () => new ApiError(404, "INVITATION_INVALID", "This invitation l
 /** Tokens are exactly what randomToken makes. Anything else cannot be one of ours, so it is not even looked up. */
 const looksLikeToken = (t: string) => /^[A-Za-z0-9_-]{43}$/.test(t);
 
-const cleanName = (s: string) => s.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim();
+export const cleanName = (s: string) => s.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim();
 
 /* ------------------------------------------------------------------------------------------ */
 /*  Sending                                                                                    */
@@ -50,7 +50,7 @@ export function invitationEmail(input: { tenantName: string; firstName: string; 
   const text = [
     `Hi ${first},`,
     "",
-    `${tenant} has invited you to SendLab.`,
+    `${tenant} has invited you to Sendrix.`,
     "",
     "Accept the invitation:",
     input.link,
@@ -60,12 +60,12 @@ export function invitationEmail(input: { tenantName: string; firstName: string; 
   ].join("\n");
   const html = [
     `<p>Hi ${escapeHtml(first)},</p>`,
-    `<p><strong>${escapeHtml(tenant)}</strong> has invited you to SendLab.</p>`,
-    `<p><a href="${escapeHtml(input.link)}" style="display:inline-block;padding:10px 18px;background:#4f46e5;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600">Accept invitation</a></p>`,
+    `<p><strong>${escapeHtml(tenant)}</strong> has invited you to Sendrix.</p>`,
+    `<p><a href="${escapeHtml(input.link)}" style="display:inline-block;padding:10px 18px;background:#03809d;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600">Accept invitation</a></p>`,
     `<p style="color:#666666;font-size:13px">Or paste this link into your browser:<br>${escapeHtml(input.link)}</p>`,
     `<p style="color:#666666;font-size:13px">This invitation expires in ${expires}. If you were not expecting it, you can ignore this email.</p>`,
   ].join("\n");
-  return { subject: `${tenant} has invited you to SendLab`, text, html };
+  return { subject: `${tenant} has invited you to Sendrix`, text, html };
 }
 
 /**
@@ -130,7 +130,7 @@ export async function createInvitation(deps: InviteDeps, inviter: Inviter, input
   const [existing] = await db.select({ tenantId: users.tenantId, isDeleted: users.isDeleted }).from(users).where(eq(users.normalizedEmail, normalizedEmail)).limit(1);
   // Someone removed from THIS tenant can be invited again: accepting reactivates their account.
   if (existing?.tenantId === inviter.tenantId && !existing.isDeleted) throw new ApiError(409, "ALREADY_MEMBER", "That person is already a user of your account");
-  // An address that belongs to ANOTHER tenant must not be confirmed as a SendLab user: one generic answer.
+  // An address that belongs to ANOTHER tenant must not be confirmed as a Sendrix user: one generic answer.
   if (existing && existing.tenantId !== inviter.tenantId) throw new ApiError(409, "CANNOT_INVITE", "That email address cannot be invited");
 
   const last = await repo.lastSentTo(normalizedEmail);

@@ -4,7 +4,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { Settings } from "../../src/client/pages/Settings";
 import { ACCESS_LEVELS } from "../../src/shared/types";
 import type { InvitationDto } from "../../src/shared/api";
-import { invitationDto, page, renderAt, senderDto, senderStatus, stubApi, userDto, type Handler } from "./harness";
+import { invitationDto, page, renderAt, senderDto, senderStatus, stubApi, testRecipientDto, userDto, type Handler } from "./harness";
 
 const team = [
   userDto(),
@@ -15,6 +15,7 @@ const usersApi = (items = team): Handler => ({ method, path }) =>
   method === "GET" && path === "/api/users" ? { json: page(items) }
   : method === "GET" && path === "/api/users/invitations" ? { json: { items: [] } }
   : method === "GET" && path === "/api/sender" ? { json: senderStatus(null) }
+  : method === "GET" && path === "/api/test-recipients" ? { json: { items: [] } }
   : undefined;
 
 /** A server with a connected sender and a changing list of invitations. */
@@ -24,6 +25,7 @@ function inviteServer(opts: { invitations?: InvitationDto[]; sender?: boolean; r
     if (method === "GET" && path === "/api/users") return { json: page(team) };
     if (method === "GET" && path === "/api/sender") return { json: senderStatus(opts.sender === false ? null : senderDto()) };
     if (method === "GET" && path === "/api/users/invitations") return { json: { items: open } };
+    if (method === "GET" && path === "/api/test-recipients") return { json: { items: [] } };
     if (method === "POST" && path === "/api/users/invitations") {
       if (opts.reply) return opts.reply;
       const made = invitationDto({ id: "new1", email: body.email, firstName: body.firstName, lastName: body.lastName, accessId: body.accessId });
@@ -61,7 +63,7 @@ describe("Settings tabs", () => {
     renderAt(<Settings />);
     expect(await screen.findByText("Not connected")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Connect Gmail" })).toBeTruthy();
-    expect(screen.getByText("No test addresses yet.")).toBeTruthy();
+    expect(await screen.findByText(/No test addresses yet/)).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "Compliance" }));
     expect(screen.getByText("No suppressed addresses yet.")).toBeTruthy();
     expect((screen.getByLabelText("Sender postal address") as HTMLTextAreaElement).value).toBe("");
@@ -86,6 +88,98 @@ describe("Settings tabs", () => {
       view.unmount();
     }
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe("Test-send allowlist", () => {
+  /** A server that keeps the list, as the real one does. */
+  function allowlistServer(initial = [testRecipientDto()], reply?: { status: number; json: unknown }) {
+    let items = initial;
+    const handler: Handler = ({ method, path, body }) => {
+      if (method === "GET" && path === "/api/sender") return { json: senderStatus(null) };
+      if (method === "GET" && path === "/api/test-recipients") return { json: { items } };
+      if (method === "POST" && path === "/api/test-recipients") {
+        if (reply) return reply;
+        const made = testRecipientDto({ id: `n${items.length + 1}`, email: body.email });
+        items = [...items, made];
+        return { status: 201, json: made };
+      }
+      const m = /^\/api\/test-recipients\/([^/]+)$/.exec(path);
+      if (m && method === "DELETE") { items = items.filter((i) => i.id !== m[1]); return { status: 204 }; }
+      return undefined;
+    };
+    return handler;
+  }
+  const address = () => screen.getByLabelText("Add test address") as HTMLInputElement;
+
+  it("lists the saved addresses from the server", async () => {
+    stubApi(allowlistServer([testRecipientDto(), testRecipientDto({ id: "t2", email: "pm@acme.test" })]));
+    renderAt(<Settings />);
+    expect(await screen.findByText("qa@acme.test")).toBeTruthy();
+    expect(screen.getByText("pm@acme.test")).toBeTruthy();
+    expect(screen.queryByText(/No test addresses yet/)).toBeNull();
+  });
+
+  it("adds an address for real: it is sent to the server, listed afterwards, and the box is cleared", async () => {
+    const calls = stubApi(allowlistServer([]));
+    renderAt(<Settings />);
+    await screen.findByText(/No test addresses yet/);
+    fireEvent.change(address(), { target: { value: "  New@Acme.test " } });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(await screen.findByText("New@Acme.test")).toBeTruthy();
+    expect(calls.find((c) => c.method === "POST" && c.path === "/api/test-recipients")!.body).toEqual({ email: "New@Acme.test" });
+    expect(address().value).toBe("");
+    expect(screen.queryByText("Not connected yet: nothing was saved")).toBeNull();
+  });
+
+  it("adds on Enter", async () => {
+    const calls = stubApi(allowlistServer([]));
+    renderAt(<Settings />);
+    await screen.findByText(/No test addresses yet/);
+    fireEvent.change(address(), { target: { value: "enter@acme.test" } });
+    fireEvent.submit(address().closest("form")!);
+    await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
+  });
+
+  it("does nothing for a blank box", async () => {
+    const calls = stubApi(allowlistServer([]));
+    renderAt(<Settings />);
+    await screen.findByText(/No test addresses yet/);
+    expect((screen.getByRole("button", { name: "Add" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(address(), { target: { value: "   " } });
+    expect((screen.getByRole("button", { name: "Add" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+  });
+
+  it("shows the server's reason (bad address, duplicate) and keeps what was typed", async () => {
+    stubApi(allowlistServer([], { status: 409, json: { error: { code: "TEST_RECIPIENT_EXISTS", message: "That address is already on the list", details: [{ path: "email", message: "That address is already on the list" }], correlationId: "x" } } }));
+    renderAt(<Settings />);
+    await screen.findByText(/No test addresses yet/);
+    fireEvent.change(address(), { target: { value: "dup@acme.test" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("That address is already on the list");
+    expect(address().value).toBe("dup@acme.test");
+  });
+
+  it("removes an address on the server", async () => {
+    const calls = stubApi(allowlistServer([testRecipientDto(), testRecipientDto({ id: "t2", email: "pm@acme.test" })]));
+    renderAt(<Settings />);
+    await screen.findByText("qa@acme.test");
+    fireEvent.click(screen.getByRole("button", { name: "Remove qa@acme.test" }));
+    await waitFor(() => expect(screen.queryByText("qa@acme.test")).toBeNull());
+    expect(calls.some((c) => c.method === "DELETE" && c.path === "/api/test-recipients/t1")).toBe(true);
+    expect(screen.getByText("pm@acme.test")).toBeTruthy();
+  });
+
+  it("says why it could not load, instead of looking empty", async () => {
+    stubApi(({ method, path }) =>
+      method === "GET" && path === "/api/sender" ? { json: senderStatus(null) }
+        : path === "/api/test-recipients" ? { status: 500, json: { error: { code: "INTERNAL_ERROR", message: "Something went wrong", correlationId: "ref-9" } } }
+        : undefined,
+    );
+    renderAt(<Settings />);
+    expect(await screen.findByText("Reference: ref-9")).toBeTruthy();
+    expect(screen.queryByText(/No test addresses yet/)).toBeNull();
   });
 });
 

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
 import { Button, Field, Notice, TextInput } from "@/components/ui";
+import { Logo } from "@/components/Logo";
 import { goTo } from "@/lib/navigate";
 import { safeNext, useLogin } from "@/services/auth";
 import { ApiClientError } from "@/services/http";
@@ -53,16 +54,13 @@ export function Login() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10 dark:bg-slate-950">
       <div className="w-full max-w-sm">
-        <div className="mb-6 flex items-center justify-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-600 text-white">
-            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 7l9 6 9-6M3 7v10h18V7H3z" /></svg>
-          </div>
-          <span className="text-xl font-semibold tracking-tight">Sendlab</span>
+        <div className="mb-6 flex justify-center">
+          <Logo className="h-12" />
         </div>
 
         <form onSubmit={submit} noValidate className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <h1 className="text-lg font-semibold">Sign in</h1>
-          <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Use the email address and password for your Sendlab account.</p>
+          <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Use the email address and password for your Sendrix account.</p>
 
           <div className="mt-5 space-y-4">
             <Field label="Email address" htmlFor="login-email">

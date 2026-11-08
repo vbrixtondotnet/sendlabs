@@ -1,9 +1,18 @@
 import type { Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 
-export const SESSION_COOKIE = "sendlab_session";
-/** How long a sign-in lasts. There is no sliding renewal yet. */
-export const SESSION_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+export const SESSION_COOKIE = "sendrix_session";
+/**
+ * How long a session stays valid without being used: 30 days. It slides: every time the app is used, the 30 days start
+ * again (see SESSION_RENEW_AFTER_MS), so someone who opens the app at least once a month stays signed in, even after
+ * closing the browser. Someone who does not use it for 30 days has to sign in again.
+ */
+export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+/**
+ * Renewal is written at most this often per session, so a busy page does not write to the database on every request.
+ * The cost is that a session can end up to this much sooner than 30 days after its LAST use.
+ */
+export const SESSION_RENEW_AFTER_MS = 60 * 60 * 1000;
 
 const isHttps = (appBaseUrl: string | undefined) => (appBaseUrl ?? "").startsWith("https:");
 

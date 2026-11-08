@@ -16,6 +16,7 @@ import { ApiClientError } from "@/services/http";
 import { useCampaign, useCreateCampaign, useUpdateCampaign } from "@/services/campaigns";
 import { useContacts } from "@/services/contacts";
 import { useSender } from "@/services/sender";
+import { useSendTest, useTestRecipients } from "@/services/testRecipients";
 import { useCreateImport, useImports } from "@/services/imports";
 
 const TIMEZONES = ["America/Los_Angeles", "America/Denver", "America/Chicago", "America/New_York", "UTC"];
@@ -35,7 +36,7 @@ export function CampaignEditor() {
     return (
       <>
         <PageHeader title={notFound ? "Campaign not found" : "Edit draft"} />
-        {notFound ? <Link to="/campaigns" className="text-indigo-600 hover:underline">Back to campaigns</Link> : <ErrorNotice error={existing.error} onRetry={() => void existing.refetch()} />}
+        {notFound ? <Link to="/campaigns" className="text-brand-600 hover:underline">Back to campaigns</Link> : <ErrorNotice error={existing.error} onRetry={() => void existing.refetch()} />}
       </>
     );
   }
@@ -62,6 +63,10 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
   const senderStatus = useSender();
   const senderEmail = senderStatus.data?.sender?.email ?? null;
   const imports = useImports(1, 100);
+  const { isAdmin } = useRole();
+  const testRecipients = useTestRecipients();
+  const sendTest = useSendTest();
+  const testAddresses = (testRecipients.data?.items ?? []).map((r) => r.email);
 
   const [name, setName] = useState(initial?.name ?? "");
   const [subject, setSubject] = useState(initial?.subject ?? "");
@@ -75,7 +80,8 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
   const [tz, setTz] = useState(initial?.timezone ?? "America/Los_Angeles");
   const [tab, setTab] = useState<"edit" | "preview">("edit");
   const [previewIdx, setPreviewIdx] = useState(0);
-  const [testTo, setTestTo] = useState("");
+  const [draftId, setDraftId] = useState<string | null>(initial?.id ?? null);
+  const [testProblem, setTestProblem] = useState<string | null>(null);
   const [launchOpen, setLaunchOpen] = useState(false);
   const [ack1, setAck1] = useState(false);
   const [ack2, setAck2] = useState(false);
@@ -119,6 +125,9 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
   else if (source === "upload") problems.push("Import the uploaded CSV first (use the button in Recipients)");
   else if (audienceTotal < 1) problems.push("There are no recipients");
 
+  // A test needs what the server needs to save a draft, a connected sender, and someone to send it to.
+  const canTest = !!name.trim() && !!subject.trim() && !!html.trim() && senderStatus.data?.sender?.status === "Connected" && testAddresses.length > 0;
+
   function insert(tag: string) {
     const el = bodyRef.current;
     if (!el) return setHtml(html + tag);
@@ -136,7 +145,10 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
       recipientImportId: source === "import" && importId ? importId : null,
     };
     try {
-      return initial ? await update.mutateAsync({ id: initial.id, patch: fields }) : await create.mutateAsync(fields);
+      // After the first save the draft exists, so saving again (e.g. before another test) updates it instead of making a copy.
+      const saved = draftId ? await update.mutateAsync({ id: draftId, patch: fields }) : await create.mutateAsync(fields);
+      setDraftId(saved.id);
+      return saved;
     } catch {
       return null; // the error is shown from the mutation state
     }
@@ -153,6 +165,19 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
       toast(`Imported ${fmt(imported.createdContacts)} new contacts. ${fmt(imported.validRows)} will be emailed.`);
     } catch {
       /* shown in the Recipients card */
+    }
+  }
+
+  /** Saves the draft (so the test is exactly what is on screen), then mails it to the allowlist. */
+  async function onSendTest() {
+    setTestProblem(null);
+    const saved = await save();
+    if (!saved) return; // the save error is shown above
+    try {
+      const result = await sendTest.mutateAsync(saved.id);
+      toast(`Test sent to ${result.sent.join(", ")}`);
+    } catch (e) {
+      setTestProblem(e instanceof ApiClientError ? e.message : "Something went wrong. Please try again.");
     }
   }
 
@@ -233,7 +258,7 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
               action={
                 <div className="inline-flex rounded-lg border border-slate-300 p-0.5 text-sm dark:border-slate-700" role="tablist" aria-label="Recipient source">
                   {([["contacts", "All contacts"], ["import", "An import"], ["upload", "Upload CSV"]] as const).map(([k, label]) => (
-                    <button key={k} role="tab" aria-selected={source === k} onClick={() => setSource(k)} className={`rounded-md px-3 py-1 font-medium ${source === k ? "bg-indigo-600 text-white" : "text-slate-600 dark:text-slate-300"}`}>{label}</button>
+                    <button key={k} role="tab" aria-selected={source === k} onClick={() => setSource(k)} className={`rounded-md px-3 py-1 font-medium ${source === k ? "bg-brand-600 text-white" : "text-slate-600 dark:text-slate-300"}`}>{label}</button>
                   ))}
                 </div>
               }
@@ -294,7 +319,7 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
               action={
                 <div className="inline-flex rounded-lg border border-slate-300 p-0.5 text-sm dark:border-slate-700" role="tablist">
                   {(["edit", "preview"] as const).map((t) => (
-                    <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={`rounded-md px-3 py-1 font-medium capitalize ${tab === t ? "bg-indigo-600 text-white" : "text-slate-600 dark:text-slate-300"}`}>{t}</button>
+                    <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={`rounded-md px-3 py-1 font-medium capitalize ${tab === t ? "bg-brand-600 text-white" : "text-slate-600 dark:text-slate-300"}`}>{t}</button>
                   ))}
                 </div>
               }
@@ -354,7 +379,7 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
                   {(TIMEZONES.includes(tz) ? TIMEZONES : [tz, ...TIMEZONES]).map((z) => <option key={z}>{z}</option>)}
                 </Select>
               </Field>
-              <p className="rounded-lg bg-indigo-50 p-3 text-sm text-indigo-900 dark:bg-indigo-950/50 dark:text-indigo-200">
+              <p className="rounded-lg bg-brand-50 p-3 text-sm text-brand-900 dark:bg-brand-950/50 dark:text-brand-200">
                 At {fmt(daily)} per day, {fmt(audienceTotal)} recipients take about <strong>{Math.max(days, 0)} sending day{days === 1 ? "" : "s"}</strong>. Sending stops by itself after the last recipient.
               </p>
             </div>
@@ -363,10 +388,19 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
           <Card>
             <CardHeader title="Test send" />
             <div className="space-y-3 p-5">
-              <Field label="Send a test to" htmlFor="test" hint="Test sending is not connected yet. It needs the Gmail sender.">
-                <TextInput id="test" type="email" placeholder="you@itimpact.example" value={testTo} onChange={(e) => setTestTo(e.target.value)} />
-              </Field>
-              <Button className="w-full" disabled>Send test email</Button>
+              <div>
+                <p className="text-sm font-medium">Test emails go to</p>
+                {testRecipients.isPending ? (
+                  <p className="mt-1 text-sm text-slate-500">Loading…</p>
+                ) : testAddresses.length === 0 ? (
+                  <p className="mt-1 text-sm text-slate-500">No test addresses yet. {isAdmin ? <Link to="/settings" className="font-medium text-brand-600 hover:underline">Add one in Settings</Link> : "Ask an Administrator to add one in Settings."}</p>
+                ) : (
+                  <ul className="mt-1 space-y-0.5 text-sm text-slate-600 dark:text-slate-300">{testAddresses.map((a) => <li key={a} className="truncate">{a}</li>)}</ul>
+                )}
+                <p className="mt-2 text-xs text-slate-500">Only the addresses on the test-send allowlist are ever mailed. Your changes are saved as a draft first, and merge fields are filled in with sample data.</p>
+              </div>
+              {testProblem && <p role="alert" className="text-xs text-rose-600">{testProblem}</p>}
+              <Button className="w-full" disabled={!canTest || sendTest.isPending || saving} onClick={() => void onSendTest()}>{sendTest.isPending ? "Sending…" : "Send test email"}</Button>
             </div>
           </Card>
         </div>

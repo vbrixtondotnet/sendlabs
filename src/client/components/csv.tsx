@@ -22,7 +22,7 @@ export function CsvDropzone({ csv, compact = false }: { csv: CsvFile; compact?: 
           const f = e.dataTransfer.files[0];
           if (f) void csv.load(f);
         }}
-        className={`flex flex-col items-center rounded-xl border-2 border-dashed text-center transition ${compact ? "px-4 py-7" : "px-6 py-12"} ${drag ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/40" : "border-slate-300 dark:border-slate-700"}`}
+        className={`flex flex-col items-center rounded-xl border-2 border-dashed text-center transition ${compact ? "px-4 py-7" : "px-6 py-12"} ${drag ? "border-brand-500 bg-brand-50 dark:bg-brand-950/40" : "border-slate-300 dark:border-slate-700"}`}
       >
         <svg viewBox="0 0 24 24" className="mb-2 h-9 w-9 text-slate-400" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 16V4m0 0l-4 4m4-4l4 4M4 16v4h16v-4" /></svg>
         <p className="font-medium">{loading ? "Reading file…" : "Drop a .csv file here, or choose one"}</p>
@@ -46,8 +46,8 @@ export function CsvDropzone({ csv, compact = false }: { csv: CsvFile; compact?: 
           <a href="/template.csv" download="template.csv"><Button type="button">Download template.csv</Button></a>
         </div>
         <div className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs">
-          <button className="text-indigo-600 hover:underline disabled:opacity-50 dark:text-indigo-400" disabled={loading} onClick={() => void csv.loadSample("/template.csv", "template.csv")}>Try the sample (25 contacts)</button>
-          <button className="text-indigo-600 hover:underline disabled:opacity-50 dark:text-indigo-400" disabled={loading} onClick={() => void csv.loadSample("/sample-with-errors.csv", "sample-with-errors.csv")}>Try a sample with bad rows</button>
+          <button className="text-brand-600 hover:underline disabled:opacity-50 dark:text-brand-400" disabled={loading} onClick={() => void csv.loadSample("/sample-contacts.csv", "sample-contacts.csv")}>Try the sample (25 contacts)</button>
+          <button className="text-brand-600 hover:underline disabled:opacity-50 dark:text-brand-400" disabled={loading} onClick={() => void csv.loadSample("/sample-with-errors.csv", "sample-with-errors.csv")}>Try a sample with bad rows</button>
         </div>
       </div>
       {csv.status === "error" && (
@@ -128,7 +128,7 @@ export function ColumnMapper({ csv }: { csv: CsvFile }) {
                 {csv.headers.map((h, i) => (
                   <Th key={i}>
                     {h || `(column ${i + 1})`}
-                    {i === emailIdx && <span className="ml-1.5 normal-case"><Badge tone="indigo">email</Badge></span>}
+                    {i === emailIdx && <span className="ml-1.5 normal-case"><Badge tone="brand">email</Badge></span>}
                   </Th>
                 ))}
               </tr>

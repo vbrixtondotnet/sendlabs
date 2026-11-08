@@ -28,7 +28,7 @@ export function CampaignDetails() {
     return (
       <>
         <PageHeader title={notFound ? "Campaign not found" : "Campaign"} />
-        {notFound ? <Link to="/campaigns" className="text-indigo-600 hover:underline">Back to campaigns</Link> : <ErrorNotice error={campaign.error} onRetry={() => void campaign.refetch()} />}
+        {notFound ? <Link to="/campaigns" className="text-brand-600 hover:underline">Back to campaigns</Link> : <ErrorNotice error={campaign.error} onRetry={() => void campaign.refetch()} />}
       </>
     );
   }

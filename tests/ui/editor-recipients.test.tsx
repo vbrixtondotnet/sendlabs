@@ -5,7 +5,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { CampaignEditor } from "../../src/client/pages/CampaignEditor";
 import { campaign, contact, importDto, page, renderAt, senderStatus, stubApi, type Handler } from "./harness";
 
-const template = readFileSync("public/template.csv", "utf8");
+const template = readFileSync("public/sample-contacts.csv", "utf8");
 const ready = importDto({ id: "imp-ready", filename: "q4-leads.csv", validRows: 7968, createdAt: "2026-11-01T10:00:00.000Z" });
 const failed = importDto({ id: "imp-failed", filename: "broken.csv", status: "Failed", validRows: 0 });
 
@@ -174,6 +174,6 @@ describe("uploading a CSV from the editor", () => {
     fireEvent.click(screen.getAllByRole("tab", { name: "preview" })[0]!);
     const select = (await screen.findByLabelText("Preview as")) as HTMLSelectElement;
     const options = within(select).getAllByRole("option").map((o) => o.textContent);
-    expect(options[0]).toContain("Nick Harbaugh"); // the first row of template.csv, not the database's first contact
+    expect(options[0]).toContain("Nick Harbaugh"); // the first row of the sample file, not the database's first contact
   });
 });

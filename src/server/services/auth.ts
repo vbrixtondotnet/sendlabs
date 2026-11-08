@@ -29,7 +29,7 @@ export interface LoginContext {
   ip: string | null;
 }
 
-async function lockedFor(d1: D1Database, keys: string[], now: number): Promise<number> {
+export async function lockedFor(d1: D1Database, keys: string[], now: number): Promise<number> {
   const marks = keys.map((_, i) => `?${i + 2}`).join(",");
   const row = await d1
     .prepare(`SELECT max(locked_until) AS until FROM login_attempts WHERE locked_until > ?1 AND key IN (${marks})`)
@@ -39,7 +39,7 @@ async function lockedFor(d1: D1Database, keys: string[], now: number): Promise<n
 }
 
 /** One atomic upsert: count the failure, start a new window if the last one is over, and lock at the limit. */
-function recordFailure(d1: D1Database, key: string, max: number, now: number) {
+export function recordFailure(d1: D1Database, key: string, max: number, now: number) {
   const fresh = `(window_start <= ?2 - ?3 OR (locked_until IS NOT NULL AND locked_until <= ?2))`;
   return d1
     .prepare(

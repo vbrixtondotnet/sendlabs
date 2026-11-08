@@ -3,7 +3,7 @@ import { cleanup, render } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, vi } from "vitest";
-import type { CampaignDto, CampaignSummaryDto, ContactDto, ImportDto, InvitationDto, Page, RecipientDto, SenderDto, SenderStatusDto, UserDto } from "../../src/shared/api";
+import type { CampaignDto, CampaignSummaryDto, ContactDto, ImportDto, InvitationDto, Page, RecipientDto, SenderDto, SenderStatusDto, TestRecipientDto, UserDto } from "../../src/shared/api";
 import type { Role } from "../../src/shared/types";
 import { RoleProvider } from "../../src/client/hooks/useRole";
 import { ToastProvider } from "../../src/client/hooks/useToast";
@@ -54,7 +54,7 @@ export function renderAt(ui: ReactElement, opts: { path?: string; route?: string
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={[path]}>
-        <RoleProvider initial={role}>
+        <RoleProvider fixed={role}>
           <ToastProvider>
             <Routes>
               <Route path={route} element={ui} />
@@ -121,6 +121,10 @@ export const invitationDto = (over: Partial<InvitationDto> = {}): InvitationDto 
 export const senderDto =(over: Partial<SenderDto> = {}): SenderDto => ({
   id: "s1", provider: "gmail", email: "sales@acme.test", status: "Connected", permissions: ["Send email"],
   connectedBy: "admin@sabertoothsoftwarelabs.net", connectedAt: ts, ...over,
+});
+
+export const testRecipientDto = (over: Partial<TestRecipientDto> = {}): TestRecipientDto => ({
+  id: "t1", email: "qa@acme.test", addedBy: "admin@sabertoothsoftwarelabs.net", createdAt: ts, ...over,
 });
 
 /** What GET /api/sender returns. `sender: null` = nothing connected. */

@@ -78,7 +78,7 @@ export function Campaigns() {
                 {list.data.items.map((c) => (
                   <tr key={c.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                     <Td>
-                      <Link to={c.status === "Draft" ? `/campaigns/${c.id}/edit` : `/campaigns/${c.id}`} className="font-medium hover:text-indigo-600 dark:hover:text-indigo-400">{c.name}</Link>
+                      <Link to={c.status === "Draft" ? `/campaigns/${c.id}/edit` : `/campaigns/${c.id}`} className="font-medium hover:text-brand-600 dark:hover:text-brand-400">{c.name}</Link>
                       <p className="max-w-md truncate text-xs text-slate-500">{c.subject}</p>
                     </Td>
                     <Td><CampaignStatusBadge status={c.status} /></Td>

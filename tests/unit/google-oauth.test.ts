@@ -8,9 +8,9 @@ const cfg = googleConfig(env)!;
 describe("googleConfig", () => {
   it("builds the redirect address from the app address", () => {
     expect(cfg.redirectUri).toBe("http://localhost:5173/api/sender/gmail/callback");
-    expect(googleConfig({ ...env, APP_BASE_URL: "https://app.sendlab.example/" })!.redirectUri).toBe("https://app.sendlab.example/api/sender/gmail/callback");
+    expect(googleConfig({ ...env, APP_BASE_URL: "https://app.sendrix.example/" })!.redirectUri).toBe("https://app.sendrix.example/api/sender/gmail/callback");
     // only the origin counts: a path or query on the setting cannot redirect somewhere unexpected
-    expect(googleConfig({ ...env, APP_BASE_URL: "https://app.sendlab.example/x?y=1" })!.appBaseUrl).toBe("https://app.sendlab.example");
+    expect(googleConfig({ ...env, APP_BASE_URL: "https://app.sendrix.example/x?y=1" })!.appBaseUrl).toBe("https://app.sendrix.example");
   });
 
   it("is null unless EVERYTHING is present and valid, so 'not configured' is one clear state", () => {
@@ -24,9 +24,9 @@ describe("googleConfig", () => {
   });
 
   it("insists on https, except for localhost during development", () => {
-    expect(googleConfig({ ...env, APP_BASE_URL: "http://app.sendlab.example" })).toBeNull();
+    expect(googleConfig({ ...env, APP_BASE_URL: "http://app.sendrix.example" })).toBeNull();
     expect(googleConfig({ ...env, APP_BASE_URL: "http://127.0.0.1:5173" })).not.toBeNull();
-    expect(googleConfig({ ...env, APP_BASE_URL: "https://app.sendlab.example" })).not.toBeNull();
+    expect(googleConfig({ ...env, APP_BASE_URL: "https://app.sendrix.example" })).not.toBeNull();
   });
 });
 

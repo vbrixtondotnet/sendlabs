@@ -39,15 +39,15 @@ describe("buildMime", () => {
   });
 
   it("shows a display name on From when given, and keeps it from injecting headers or breaking the address", () => {
-    expect(parse(buildMime({ ...base, fromName: "SendLab" })).headers.get("from")).toBe('"SendLab" <sales@acme.test>');
+    expect(parse(buildMime({ ...base, fromName: "Sendrix" })).headers.get("from")).toBe('"Sendrix" <sales@acme.test>');
     expect(parse(buildMime({ ...base, fromName: "" })).headers.get("from")).toBe("sales@acme.test");
     const evil = parse(buildMime({ ...base, fromName: 'X" <evil@x.test>\r\nBcc: a@b.test' }));
     expect(evil.names).not.toContain("bcc");
     expect(evil.headers.get("from")).toMatch(/<sales@acme\.test>$/);
     expect(evil.headers.get("from")).not.toContain("evil@x.test>"  + " <");
-    const accented = parse(buildMime({ ...base, fromName: "Café Sendlab" })).headers.get("from")!;
+    const accented = parse(buildMime({ ...base, fromName: "Café Sendrix" })).headers.get("from")!;
     expect(accented).toMatch(/^[\x20-\x7e]+$/);
-    expect(decodeWords(accented)).toBe("Café Sendlab <sales@acme.test>");
+    expect(decodeWords(accented)).toBe("Café Sendrix <sales@acme.test>");
   });
 
   it("sends a single plain-text part when there is no HTML", () => {

@@ -64,7 +64,7 @@ export function Imports() {
             <ol className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm" aria-label="Import progress">
               {STEPS.map((s, i) => (
                 <li key={s} className="flex items-center gap-2" aria-current={i === step ? "step" : undefined}>
-                  <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${i < step ? "bg-emerald-500 text-white" : i === step ? "bg-indigo-600 text-white" : "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300"}`}>
+                  <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${i < step ? "bg-emerald-500 text-white" : i === step ? "bg-brand-600 text-white" : "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300"}`}>
                     {i < step ? "✓" : i + 1}
                   </span>
                   <span className={i === step ? "font-medium" : "text-slate-500"}>{s}</span>
@@ -160,7 +160,7 @@ export function Imports() {
                     <Td className="text-right tabular-nums">{fmt(i.existingContacts)}</Td>
                     <Td className="text-right tabular-nums">{fmt(i.rejectedRows)}</Td>
                     <Td><Badge tone={statusTone[i.status]}>{i.status}</Badge></Td>
-                    <Td className="text-right">{i.rejectedRows > 0 && <a className="text-sm font-medium text-indigo-600 hover:underline dark:text-indigo-400" href={rejectedRowsUrl(i.id)} download>Rejected rows</a>}</Td>
+                    <Td className="text-right">{i.rejectedRows > 0 && <a className="text-sm font-medium text-brand-600 hover:underline dark:text-brand-400" href={rejectedRowsUrl(i.id)} download>Rejected rows</a>}</Td>
                   </tr>
                 ))}
               </tbody>

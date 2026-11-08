@@ -1,11 +1,9 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
-import type { Role } from "@shared/types";
-import { useRole } from "@/hooks/useRole";
-import { goTo } from "@/lib/navigate";
-import { useSignOut } from "@/services/auth";
+import { Logo } from "@/components/Logo";
+import { UserMenu } from "@/components/UserMenu";
 import { ApiClientError } from "@/services/http";
-import { initialsOf, useMe } from "@/services/me";
+import { useMe } from "@/services/me";
 
 const NAV: { to: string; label: string; icon: ReactNode; end?: boolean }[] = [
   { to: "/", label: "Overview", end: true, icon: <path d="M3 12l9-8 9 8M5 10v10h5v-6h4v6h5V10" /> },
@@ -14,8 +12,6 @@ const NAV: { to: string; label: string; icon: ReactNode; end?: boolean }[] = [
   { to: "/campaigns", label: "Campaigns", icon: <path d="M3 7l9 6 9-6M3 7v10h18V7H3z" /> },
   { to: "/settings", label: "Settings", icon: <path d="M12 15a3 3 0 100-6 3 3 0 000 6zM19 12l2-1-2-4-2 1-2-1-1-2h-4l-1 2-2 1-2-1-2 4 2 1v2l-2 1 2 4 2-1 2 1 1 2h4l1-2 2-1 2 1 2-4-2-1v-2z" /> },
 ];
-
-const ROLES: Role[] = ["Administrator", "Campaign Manager", "Viewer"];
 
 function NavIcon({ children }: { children: ReactNode }) {
   return (
@@ -26,20 +22,9 @@ function NavIcon({ children }: { children: ReactNode }) {
 }
 
 export function Layout() {
-  const { role, setRole } = useRole();
   const [open, setOpen] = useState(false);
   const me = useMe();
-  const signOut = useSignOut();
   const location = useLocation();
-
-  // Start the "Preview as" selector at the signed-in user's real access level. After that it is the user's to change.
-  const [synced, setSynced] = useState(false);
-  useEffect(() => {
-    if (me.data && !synced) {
-      setRole(me.data.user.access);
-      setSynced(true);
-    }
-  }, [me.data, synced, setRole]);
 
   // Not signed in: go to the login page, and come back to this page afterwards.
   if (me.error instanceof ApiClientError && me.error.status === 401) {
@@ -57,7 +42,7 @@ export function Layout() {
           className={({ isActive }) =>
             `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
               isActive
-                ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300"
+                ? "bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300"
                 : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
             }`
           }
@@ -100,38 +85,7 @@ export function Layout() {
             <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">Not signed in</span>
           ) : null}
           <div className="ml-auto flex items-center gap-2">
-            <label htmlFor="role-switch" className="hidden text-xs text-slate-500 sm:block">
-              Preview as
-            </label>
-            <select
-              id="role-switch"
-              value={role}
-              onChange={(e) => setRole(e.target.value as Role)}
-              className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900"
-            >
-              {ROLES.map((r) => (
-                <option key={r}>{r}</option>
-              ))}
-            </select>
-            {me.data && (
-              <div
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-600 text-xs font-semibold text-white"
-                title={`${me.data.user.displayName || me.data.user.email} (${me.data.user.email})`}
-                aria-label={`Signed in as ${me.data.user.email}`}
-              >
-                {initialsOf(me.data.user.displayName, me.data.user.email)}
-              </div>
-            )}
-            {me.data && (
-              <button
-                type="button"
-                disabled={signOut.isPending}
-                onClick={() => signOut.mutate(undefined, { onSettled: () => goTo("/login") })}
-                className="rounded-lg px-2.5 py-1.5 text-sm text-slate-600 hover:bg-slate-100 disabled:opacity-50 dark:text-slate-300 dark:hover:bg-slate-800"
-              >
-                Sign out
-              </button>
-            )}
+            {me.data && <UserMenu user={me.data.user} />}
           </div>
         </header>
         <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6">
@@ -144,11 +98,8 @@ export function Layout() {
 
 function Brand() {
   return (
-    <div className="flex items-center gap-2.5 px-6">
-      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white">
-        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 7l9 6 9-6M3 7v10h18V7H3z" /></svg>
-      </div>
-      <span className="text-lg font-semibold tracking-tight">Sendlab</span>
+    <div className="px-6">
+      <Logo className="h-8" />
     </div>
   );
 }

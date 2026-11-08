@@ -61,7 +61,7 @@ export function StatCard({ label, value, hint, tone = "default" }: { label: stri
 /* ---------- Buttons ---------- */
 type Variant = "primary" | "secondary" | "danger" | "ghost";
 const variants: Record<Variant, string> = {
-  primary: "bg-indigo-600 text-white hover:bg-indigo-700 disabled:hover:bg-indigo-600",
+  primary: "bg-brand-600 text-white hover:bg-brand-700 disabled:hover:bg-brand-600",
   secondary:
     "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800",
   danger: "bg-rose-600 text-white hover:bg-rose-700 disabled:hover:bg-rose-600",
@@ -84,8 +84,8 @@ export function Button({
 /* ---------- Badges ---------- */
 const badgeTones = {
   slate: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
-  blue: "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300",
-  indigo: "bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300",
+  blue: "bg-brand-100 text-brand-800 dark:bg-brand-950 dark:text-brand-300",
+  brand: "bg-brand-100 text-brand-800 dark:bg-brand-950 dark:text-brand-300",
   green: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
   amber: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
   red: "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300",
@@ -104,7 +104,7 @@ const campaignTone: Record<CampaignStatus, BadgeTone> = {
   Draft: "slate",
   Queuing: "blue",
   Queued: "blue",
-  Sending: "indigo",
+  Sending: "brand",
   Paused: "amber",
   Completed: "green",
   CompletedWithErrors: "amber",
@@ -129,7 +129,7 @@ export function CampaignStatusBadge({ status }: { status: CampaignStatus }) {
 export const recipientTone: Record<RecipientStatus, BadgeTone> = {
   Pending: "slate",
   Queued: "blue",
-  Processing: "indigo",
+  Processing: "brand",
   Accepted: "green",
   Failed: "red",
   Skipped: "amber",
@@ -152,8 +152,8 @@ export function RecipientStatusBadge({ status }: { status: RecipientStatus }) {
 /* ---------- Progress ---------- */
 export const segmentColors: Record<RecipientStatus, string> = {
   Accepted: "bg-emerald-500",
-  Processing: "bg-indigo-500",
-  Queued: "bg-sky-400",
+  Processing: "bg-brand-500",
+  Queued: "bg-brand-300",
   Failed: "bg-rose-500",
   Skipped: "bg-amber-400",
   Cancelled: "bg-slate-400",
@@ -176,7 +176,7 @@ export function StackedBar({ totals }: { totals: Record<RecipientStatus, number>
   );
 }
 
-export function ProgressBar({ value, max, tone = "indigo" }: { value: number; max: number; tone?: "indigo" | "green" }) {
+export function ProgressBar({ value, max, tone = "brand" }: { value: number; max: number; tone?: "brand" | "green" }) {
   const pct = Math.min(100, (value / (max || 1)) * 100);
   return (
     <div
@@ -186,7 +186,7 @@ export function ProgressBar({ value, max, tone = "indigo" }: { value: number; ma
       aria-valuemin={0}
       aria-valuemax={max}
     >
-      <div className={`h-full ${tone === "green" ? "bg-emerald-500" : "bg-indigo-500"}`} style={{ width: `${pct}%` }} />
+      <div className={`h-full ${tone === "green" ? "bg-emerald-500" : "bg-brand-500"}`} style={{ width: `${pct}%` }} />
     </div>
   );
 }
@@ -288,7 +288,7 @@ export function Modal({ open, title, onClose, children, footer, wide = false }: 
 
 export function Notice({ tone = "info", title, children }: { tone?: "info" | "warn" | "error" | "good"; title?: string; children: ReactNode }) {
   const tones = {
-    info: "border-sky-200 bg-sky-50 text-sky-900 dark:border-sky-900 dark:bg-sky-950/50 dark:text-sky-200",
+    info: "border-brand-200 bg-brand-50 text-brand-900 dark:border-brand-900 dark:bg-brand-950/50 dark:text-brand-200",
     warn: "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-200",
     error: "border-rose-200 bg-rose-50 text-rose-900 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-200",
     good: "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-200",

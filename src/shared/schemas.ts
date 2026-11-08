@@ -186,8 +186,43 @@ export const invitationCreateSchema = z.strictObject({
 });
 export type InvitationCreate = z.infer<typeof invitationCreateSchema>;
 
+/** Adding an address to the test-send allowlist. */
+export const testRecipientCreateSchema = z.strictObject({ email });
+export type TestRecipientCreate = z.infer<typeof testRecipientCreateSchema>;
+/** Test sends fan out to everyone on the list, so the list is kept small. */
+export const MAX_TEST_RECIPIENTS = 20;
+
 /** The invited person's chosen password. Length rules live in password-rules.ts and are applied by the service. */
 export const acceptInvitationSchema = z.strictObject({ password: z.string().min(1, "Choose a password").max(PASSWORD_MAX_LENGTH) });
+
+/** The signed-in user editing their own name. Email, role and tenant are not editable here, so they are not accepted. */
+export const profileUpdateSchema = z.strictObject({
+  firstName: personName("First name"),
+  lastName: personName("Last name"),
+});
+export type ProfileUpdate = z.infer<typeof profileUpdateSchema>;
+
+/** Longest postal address accepted, in characters. */
+export const POSTAL_ADDRESS_MAX = 500;
+
+/**
+ * Editing the organization's company details: its name and its postal address. Send only what changes. The slug,
+ * status and everything else are not editable. The postal address may be cleared (empty string).
+ */
+export const tenantUpdateSchema = z
+  .strictObject({
+    name: z.string().trim().min(1, "Name is required").max(100, "Use at most 100 characters").optional(),
+    postalAddress: z.string().max(POSTAL_ADDRESS_MAX, `Use at most ${POSTAL_ADDRESS_MAX} characters`).optional(),
+  })
+  .refine((v) => v.name !== undefined || v.postalAddress !== undefined, { message: "Nothing to change" });
+export type TenantUpdate = z.infer<typeof tenantUpdateSchema>;
+
+/** Changing your own password. Length rules live in password-rules.ts and are applied by the service. */
+export const passwordChangeSchema = z.strictObject({
+  currentPassword: z.string().min(1, "Enter your current password").max(PASSWORD_MAX_LENGTH),
+  newPassword: z.string().min(1, "Choose a new password").max(PASSWORD_MAX_LENGTH),
+});
+export type PasswordChange = z.infer<typeof passwordChangeSchema>;
 
 /** Sign-in. Deliberately no length or format rules beyond sanity bounds: the answer to a wrong value is always the same. */
 export const loginSchema = z.strictObject({

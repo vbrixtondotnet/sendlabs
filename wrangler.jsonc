@@ -1,7 +1,7 @@
 {
-  // Sendlab Worker. Only the D1 binding is configured so far. R2, Queues, Cron and static
+  // Sendrix Worker. Only the D1 binding is configured so far. R2, Queues, Cron and static
   // assets are added in later phases.
-  "name": "sendlab",
+  "name": "sendrix",
   "main": "src/server/index.ts",
   "compatibility_date": "2026-11-01",
 
@@ -19,7 +19,7 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "sendlab-db-local",
+      "database_name": "sendrix-db-local",
       "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "migrations"
     }
@@ -29,24 +29,24 @@
   // Replace the placeholder IDs with the values printed by `wrangler d1 create`.
   "env": {
     "staging": {
-      "name": "sendlab-staging",
+      "name": "sendrix-staging",
       "vars": { "ENVIRONMENT": "staging", "APP_BASE_URL": "https://REPLACE_WITH_STAGING_URL" },
       "d1_databases": [
         {
           "binding": "DB",
-          "database_name": "sendlab-db-staging",
+          "database_name": "sendrix-db-staging",
           "database_id": "REPLACE_WITH_STAGING_DATABASE_ID",
           "migrations_dir": "migrations"
         }
       ]
     },
     "production": {
-      "name": "sendlab-production",
+      "name": "sendrix-production",
       "vars": { "ENVIRONMENT": "production", "APP_BASE_URL": "https://REPLACE_WITH_PRODUCTION_URL" },
       "d1_databases": [
         {
           "binding": "DB",
-          "database_name": "sendlab-db-production",
+          "database_name": "sendrix-db-production",
           "database_id": "REPLACE_WITH_PRODUCTION_DATABASE_ID",
           "migrations_dir": "migrations"
         }

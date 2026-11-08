@@ -33,7 +33,7 @@ const invite = (over: Record<string, unknown> = {}, who: Caller = h) => who.api(
 function lastMail() {
   const raw = google.mailbox.at(-1)!.raw;
   const parts = raw
-    .split(/--=_sendlab_[0-9a-f]+/)
+    .split(/--=_sendrix_[0-9a-f]+/)
     .slice(1)
     .filter((p) => p.trim() && p.trim() !== "--")
     .map((p) => Buffer.from(p.split("\r\n\r\n").slice(1).join("").replace(/\s+/g, ""), "base64").toString("utf8"));
@@ -46,8 +46,8 @@ function tokenFromMail(): string {
 }
 
 const expireCooldown = (email: string) => h.sql("UPDATE invitations SET created_at = created_at - ? WHERE normalized_email = ?", RESEND_COOLDOWN_MS + 1000, email.toLowerCase());
-const cookieOf = (r: { headers: Headers }) => /sendlab_session=([^;]+)/.exec(r.headers.get("set-cookie") ?? "")?.[1] ?? "";
-const asSession = (s: string) => ({ cookie: `sendlab_session=${s}` });
+const cookieOf = (r: { headers: Headers }) => /sendrix_session=([^;]+)/.exec(r.headers.get("set-cookie") ?? "")?.[1] ?? "";
+const asSession = (s: string) => ({ cookie: `sendrix_session=${s}` });
 const ids = (r: { json: { items: { id: string }[] } }) => r.json.items.map((i) => i.id);
 
 describe("who can invite", () => {
@@ -79,13 +79,13 @@ describe("inviting", () => {
     expect(google.mailbox[0]!.from).toBe(SENDER);
     const { head } = lastMail();
     expect(head).toContain("To: Pat.Smith@Example.test");
-    expect(head).toContain("Subject: Sabertooth Software Labs has invited you to SendLab");
+    expect(head).toContain("Subject: Sabertooth Software Labs has invited you to Sendrix");
     expect(ids(await h.api("GET", "/api/users/invitations"))).toContain(r.json.id);
   });
 
-  it("shows the sender as SendLab, still sent from the tenant's own mailbox", async () => {
+  it("shows the sender as Sendrix, still sent from the tenant's own mailbox", async () => {
     await invite();
-    expect(lastMail().head).toContain(`From: "SendLab" <${SENDER}>`);
+    expect(lastMail().head).toContain(`From: "Sendrix" <${SENDER}>`);
     expect(google.mailbox.at(-1)!.from).toBe(SENDER);
   });
 
@@ -93,7 +93,7 @@ describe("inviting", () => {
     await invite({ firstName: "Grace" });
     const { text, html } = lastMail();
     expect(text).toContain("Hi Grace,");
-    expect(text).toContain("Sabertooth Software Labs has invited you to SendLab.");
+    expect(text).toContain("Sabertooth Software Labs has invited you to Sendrix.");
     expect(text).toMatch(/http:\/\/localhost:5173\/invite\/[A-Za-z0-9_-]{43}/);
     expect(html).toContain(">Accept invitation</a>");
     expect(html).toMatch(/href="http:\/\/localhost:5173\/invite\/[A-Za-z0-9_-]{43}"/);
@@ -313,12 +313,12 @@ describe("accepting", () => {
     expect(inv).toMatchObject({ status: "Accepted", accepted_user_id: u!.id });
 
     const cookie = r.headers.get("set-cookie")!;
-    expect(cookie).toMatch(/^sendlab_session=/);
+    expect(cookie).toMatch(/^sendrix_session=/);
     expect(cookie).toMatch(/HttpOnly/i);
     expect(cookie).toMatch(/SameSite=Lax/i);
     expect(cookie).toMatch(/Path=\//i);
     expect(cookie).not.toMatch(/Secure/i); // http://localhost
-    expect(Number(/Max-Age=(\d+)/i.exec(cookie)![1])).toBeGreaterThan(13 * 86400);
+    expect(Number(/Max-Age=(\d+)/i.exec(cookie)![1])).toBeGreaterThan(29.99 * 86400);
     expect(r.headers.get("cache-control")).toBe("no-store");
     const session = cookieOf(r);
     expect(JSON.stringify(await h.rows("SELECT * FROM sessions"))).not.toContain(session);
@@ -437,7 +437,7 @@ describe("sessions", () => {
     const s = await newSession();
     const out = await h.api("POST", "/api/auth/logout", undefined, asSession(s));
     expect(out.status).toBe(204);
-    expect(out.headers.get("set-cookie")).toMatch(/sendlab_session=;/);
+    expect(out.headers.get("set-cookie")).toMatch(/sendrix_session=;/);
     expect((await who(s)).json.session).toBe(false);
     expect((await h.api("POST", "/api/auth/logout")).status).toBe(204);
   });

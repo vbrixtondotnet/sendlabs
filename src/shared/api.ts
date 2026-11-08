@@ -121,10 +121,10 @@ export interface ImportRowDto {
 
 /** The signed-in user and the tenant they belong to. */
 export interface MeDto {
-  user: { id: string; email: string; displayName: string; access: Role; mustChangePassword: boolean };
+  user: { id: string; email: string; firstName: string; lastName: string; displayName: string; access: Role; mustChangePassword: boolean };
   /** True when signed in through a real session (e.g. after accepting an invitation), false for the local development placeholder user. */
   session: boolean;
-  tenant: { id: string; name: string; slug: string };
+  tenant: { id: string; name: string; slug: string; postalAddress: string };
 }
 
 /** A user of the caller's tenant. Deliberately has no password or hash field. */
@@ -155,6 +155,20 @@ export interface SenderDto {
   /** Email of the user who connected it. */
   connectedBy: string;
   connectedAt: string;
+}
+
+/** One address on the test-send allowlist. */
+export interface TestRecipientDto {
+  id: string;
+  email: string;
+  /** Who added it (their email). Empty if that user can no longer be found. */
+  addedBy: string;
+  createdAt: string;
+}
+
+/** The result of a campaign's test send: who it went to. */
+export interface TestSendResultDto {
+  sent: string[];
 }
 
 export interface SenderStatusDto {

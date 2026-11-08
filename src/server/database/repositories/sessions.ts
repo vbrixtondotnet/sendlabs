@@ -10,14 +10,19 @@ export function sessionsRepo(db: Database) {
     async find(tokenHash: string) {
       const [row] = await db
         .select({
+          sessionId: sessions.id,
+          expiresAt: sessions.expiresAt,
           userId: users.id,
           email: users.email,
+          firstName: users.firstName,
+          lastName: users.lastName,
           displayName: users.displayName,
           userStatus: users.status,
           mustChangePassword: users.mustChangePassword,
           tenantId: tenants.id,
           tenantName: tenants.name,
           tenantSlug: tenants.slug,
+          tenantPostalAddress: tenants.postalAddress,
           tenantStatus: tenants.status,
           access: access.name,
         })
@@ -28,6 +33,20 @@ export function sessionsRepo(db: Database) {
         .where(and(eq(sessions.tokenHash, tokenHash), sql`${sessions.expiresAt} > ${nowMs()}`, eq(users.isDeleted, false)))
         .limit(1);
       return row ?? null;
+    },
+
+    /**
+     * Pushes a still-valid session's expiry out to `expiresAt`. Never revives an expired session and never shortens one
+     * (the conditions are in the UPDATE, so a racing request cannot undo another's renewal).
+     */
+    async renew(sessionId: string, expiresAt: number): Promise<boolean> {
+      const now = nowMs();
+      const rows = await db
+        .update(sessions)
+        .set({ expiresAt })
+        .where(and(eq(sessions.id, sessionId), sql`${sessions.expiresAt} > ${now}`, sql`${sessions.expiresAt} < ${expiresAt}`))
+        .returning({ id: sessions.id });
+      return rows.length === 1;
     },
 
     /** Ends one session (sign out). Quietly does nothing if it is already gone. */

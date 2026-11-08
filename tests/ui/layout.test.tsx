@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { Layout } from "../../src/client/components/Layout";
 import { initialsOf } from "../../src/client/services/me";
 import type { MeDto } from "../../src/shared/api";
@@ -12,13 +12,12 @@ import { goTo } from "../../src/client/lib/navigate";
 beforeEach(() => vi.mocked(goTo).mockClear());
 
 const me = (over: Partial<MeDto["user"]> = {}, tenantName = "Sabertooth Software Labs"): MeDto => ({
-  user: { id: "u1", email: "admin@sabertoothsoftwarelabs.net", displayName: "Administrator", access: "Administrator", mustChangePassword: false, ...over },
-  tenant: { id: "t1", name: tenantName, slug: "sabertooth-software-labs" },
+  user: { id: "u1", email: "admin@sabertoothsoftwarelabs.net", firstName: "", lastName: "", displayName: "Administrator", access: "Administrator", mustChangePassword: false, ...over },
+  tenant: { id: "t1", name: tenantName, slug: "sabertooth-software-labs", postalAddress: "" },
   session: false,
 });
 
 const open = () => renderAt(<Layout />);
-const role = () => (screen.getByLabelText("Preview as") as HTMLSelectElement).value;
 
 describe("the header shows the real tenant and user", () => {
   it("shows the tenant's name and the signed-in user, and nothing hardcoded", async () => {
@@ -32,22 +31,13 @@ describe("the header shows the real tenant and user", () => {
     expect(screen.queryByLabelText("Signed in as Brian V.")).toBeNull();
   });
 
-  it("starts the 'Preview as' selector at the user's real access level", async () => {
-    stubApi(({ path }) => (path === "/api/me" ? { json: me({ access: "Campaign Manager" }) } : undefined));
+  it("has no \"Preview as\" role switch: what you can do is what your account allows", async () => {
+    stubApi(({ path }) => (path === "/api/me" ? { json: me() } : undefined));
     open();
     await screen.findByText("Sabertooth Software Labs");
-    await waitFor(() => expect(role()).toBe("Campaign Manager"));
-  });
-
-  it("then leaves the selector to the user: choosing another role sticks", async () => {
-    stubApi(({ path }) => (path === "/api/me" ? { json: me({ access: "Viewer" }) } : undefined));
-    open();
-    await waitFor(() => expect(role()).toBe("Viewer"));
-    fireEvent.change(screen.getByLabelText("Preview as"), { target: { value: "Administrator" } });
-    expect(role()).toBe("Administrator");
-    // a re-render must not snap it back
-    fireEvent.click(screen.getByRole("link", { name: "Contacts" }));
-    expect(role()).toBe("Administrator");
+    expect(screen.queryByLabelText("Preview as")).toBeNull();
+    expect(screen.queryByText("Preview as")).toBeNull();
+    expect(screen.queryByRole("combobox")).toBeNull();
   });
 
   it("shows another tenant's name for another tenant's user", async () => {
@@ -73,12 +63,53 @@ describe("the header shows the real tenant and user", () => {
     expect(screen.queryByTestId("elsewhere")).toBeNull();
   });
 
-  it("has a Sign out button that ends the session and returns to the login page", async () => {
+  it("the initials circle opens a menu with Settings and Logout, and closes again", async () => {
+    stubApi(({ path }) => (path === "/api/me" ? { json: me() } : undefined));
+    open();
+    const circle = await screen.findByRole("button", { name: "Signed in as admin@sabertoothsoftwarelabs.net" });
+    expect(circle.className).toContain("cursor-pointer"); // the hand cursor says it can be clicked
+    expect(circle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("menu")).toBeNull();
+
+    fireEvent.click(circle);
+    expect(circle.getAttribute("aria-expanded")).toBe("true");
+    const menu = screen.getByRole("menu");
+    expect(within(menu).getAllByRole("menuitem").map((i) => i.textContent)).toEqual(["Settings", "Logout"]);
+    for (const item of within(menu).getAllByRole("menuitem")) expect(item.className, item.textContent ?? "").toContain("cursor-pointer");
+    expect(within(menu).getByText("admin@sabertoothsoftwarelabs.net")).toBeTruthy();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    fireEvent.click(circle);
+    fireEvent.mouseDown(document.body); // a click anywhere else
+    expect(screen.queryByRole("menu")).toBeNull();
+    fireEvent.click(circle);
+    fireEvent.click(circle); // the circle toggles it
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("Settings in the menu goes to the user's own settings page and closes the menu", async () => {
+    stubApi(({ path }) => (path === "/api/me" ? { json: me() } : undefined));
+    renderAt(<Layout />, { path: "/campaigns", route: "/campaigns" });
+    fireEvent.click(await screen.findByRole("button", { name: /Signed in as/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Settings" }));
+    expect((await screen.findByTestId("elsewhere")).getAttribute("data-location")).toBe("/account");
+  });
+
+  it("Logout ends the session and returns to the login page", async () => {
     const calls = stubApi(({ path, method }) => (path === "/api/me" ? { json: me() } : method === "POST" && path === "/api/auth/logout" ? { status: 204 } : undefined));
     open();
-    fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Signed in as/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Logout" }));
     await waitFor(() => expect(goTo).toHaveBeenCalledWith("/login"));
     expect(calls.some((c) => c.method === "POST" && c.path === "/api/auth/logout")).toBe(true);
+  });
+
+  it("there is no separate Sign out button any more", async () => {
+    stubApi(({ path }) => (path === "/api/me" ? { json: me() } : undefined));
+    open();
+    await screen.findByRole("button", { name: /Signed in as/ });
+    expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
   });
 });
 

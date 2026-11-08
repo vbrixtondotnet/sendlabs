@@ -50,7 +50,7 @@ export function Overview() {
           <CardHeader
             title="Now sending"
             subtitle={sendingNow ? sendingNow.name : "No campaign is sending"}
-            action={sendingNow && <Link to={`/campaigns/${sendingNow.id}`} className="text-sm font-medium text-indigo-600 hover:underline dark:text-indigo-400">View campaign</Link>}
+            action={sendingNow && <Link to={`/campaigns/${sendingNow.id}`} className="text-sm font-medium text-brand-600 hover:underline dark:text-brand-400">View campaign</Link>}
           />
           {sendingNow ? (
             <div className="space-y-5 p-5">
@@ -97,7 +97,7 @@ export function Overview() {
       </div>
 
       <Card className="mt-6">
-        <CardHeader title="Recent campaigns" action={<Link to="/campaigns" className="text-sm font-medium text-indigo-600 hover:underline dark:text-indigo-400">All campaigns</Link>} />
+        <CardHeader title="Recent campaigns" action={<Link to="/campaigns" className="text-sm font-medium text-brand-600 hover:underline dark:text-brand-400">All campaigns</Link>} />
         {campaigns.length === 0 ? (
           <div className="p-5"><Notice>No campaigns yet. Create one to get started.</Notice></div>
         ) : (

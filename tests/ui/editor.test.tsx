@@ -2,10 +2,11 @@
 import { describe, expect, it } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { CampaignEditor } from "../../src/client/pages/CampaignEditor";
-import { campaign, contact, page, renderAt, senderStatus, stubApi, type Handler } from "./harness";
+import { campaign, contact, page, renderAt, senderStatus, stubApi, testRecipientDto, type Handler } from "./harness";
 
 const contacts: Handler = ({ method, path }) =>
   path === "/api/contacts" && method === "GET" ? { json: page([contact()], 8214) }
+    : path === "/api/test-recipients" && method === "GET" ? { json: { items: [] } }
     : path === "/api/imports" && method === "GET" ? { json: page([]) }
     : path === "/api/sender" && method === "GET" ? { json: senderStatus() }
     : undefined;
@@ -161,9 +162,96 @@ describe("Campaign editor (live drafts)", () => {
     expect(screen.queryByRole("button", { name: "Save draft" })).toBeNull();
   });
 
-  it("does not claim to send test emails", async () => {
-    stubApi(contacts);
-    newCampaign();
-    expect((screen.getByRole("button", { name: "Send test email" }) as HTMLButtonElement).disabled).toBe(true);
+  describe("test send", () => {
+    const allowlisted = (items = [testRecipientDto(), testRecipientDto({ id: "t2", email: "pm@acme.test" })]): Handler => (c) =>
+      c.path === "/api/test-recipients" && c.method === "GET" ? { json: { items } } : contacts(c);
+    const testButton = () => screen.getByRole("button", { name: "Send test email" }) as HTMLButtonElement;
+
+    it("shows who a test goes to, with no field to type another address", async () => {
+      stubApi(allowlisted());
+      newCampaign();
+      expect(await screen.findByText("qa@acme.test")).toBeTruthy();
+      expect(screen.getByText("pm@acme.test")).toBeTruthy();
+      expect(screen.queryByLabelText("Send a test to")).toBeNull();
+    });
+
+    it("is disabled, and says why, when the allowlist is empty (an Administrator is pointed to Settings)", async () => {
+      stubApi(allowlisted([]));
+      newCampaign();
+      fill("Campaign name", "N");
+      fill("Subject", "S");
+      expect(await screen.findByText(/No test addresses yet/)).toBeTruthy();
+      expect(screen.getByRole("link", { name: "Add one in Settings" }).getAttribute("href")).toBe("/settings");
+      expect(testButton().disabled).toBe(true);
+    });
+
+    it("tells a Campaign Manager to ask an Administrator instead of linking to Settings", async () => {
+      stubApi(allowlisted([]));
+      renderAt(<CampaignEditor />, { path: "/campaigns/new", route: "/campaigns/new", role: "Campaign Manager" });
+      expect(await screen.findByText(/Ask an Administrator/)).toBeTruthy();
+      expect(screen.queryByRole("link", { name: "Add one in Settings" })).toBeNull();
+    });
+
+    it("saves the draft, then asks the server to test-send it with no addresses in the request", async () => {
+      const calls = stubApi((c) =>
+        c.method === "POST" && c.path === "/api/campaigns" ? { status: 201, json: campaign({ id: "new1" }) }
+          : c.method === "POST" && c.path === "/api/campaigns/new1/test-send" ? { json: { sent: ["qa@acme.test", "pm@acme.test"] } }
+          : allowlisted()(c),
+      );
+      newCampaign();
+      await screen.findByText("qa@acme.test");
+      fill("Campaign name", "N");
+      fill("Subject", "S");
+      await waitFor(() => expect(testButton().disabled).toBe(false));
+      fireEvent.click(testButton());
+      expect(await screen.findByText("Test sent to qa@acme.test, pm@acme.test")).toBeTruthy();
+      const order = calls.filter((c) => c.method === "POST").map((c) => c.path);
+      expect(order).toEqual(["/api/campaigns", "/api/campaigns/new1/test-send"]);
+      expect(calls.find((c) => c.path.endsWith("/test-send"))!.body).toBeUndefined();
+      expect(screen.queryByTestId("elsewhere")).toBeNull(); // stays in the editor
+    });
+
+    it("sends a second test by updating the same draft, not by creating another", async () => {
+      const calls = stubApi((c) =>
+        c.method === "POST" && c.path === "/api/campaigns" ? { status: 201, json: campaign({ id: "new1" }) }
+          : c.method === "PATCH" && c.path === "/api/campaigns/new1" ? { json: campaign({ id: "new1" }) }
+          : c.method === "POST" && c.path.endsWith("/test-send") ? { json: { sent: ["qa@acme.test"] } }
+          : allowlisted()(c),
+      );
+      newCampaign();
+      await screen.findByText("qa@acme.test");
+      fill("Campaign name", "N");
+      fill("Subject", "S");
+      await waitFor(() => expect(testButton().disabled).toBe(false));
+      fireEvent.click(testButton());
+      await waitFor(() => expect(calls.filter((c) => c.path.endsWith("/test-send"))).toHaveLength(1));
+      await waitFor(() => expect(testButton().disabled).toBe(false));
+      fireEvent.click(testButton());
+      await waitFor(() => expect(calls.filter((c) => c.path.endsWith("/test-send"))).toHaveLength(2));
+      expect(calls.filter((c) => c.method === "POST" && c.path === "/api/campaigns")).toHaveLength(1);
+      expect(calls.some((c) => c.method === "PATCH" && c.path === "/api/campaigns/new1")).toBe(true);
+    });
+
+    it("shows the server's reason when the test cannot be sent", async () => {
+      stubApi((c) =>
+        c.method === "POST" && c.path === "/api/campaigns" ? { status: 201, json: campaign({ id: "new1" }) }
+          : c.method === "POST" && c.path.endsWith("/test-send") ? { status: 409, json: { error: { code: "SENDER_RECONNECT", message: "Reconnect your Gmail account in Settings before sending a test" } } }
+          : allowlisted()(c),
+      );
+      newCampaign();
+      await screen.findByText("qa@acme.test");
+      fill("Campaign name", "N");
+      fill("Subject", "S");
+      await waitFor(() => expect(testButton().disabled).toBe(false));
+      fireEvent.click(testButton());
+      expect((await screen.findByRole("alert")).textContent).toContain("Reconnect your Gmail account");
+    });
+
+    it("is disabled until the draft could be saved (name and subject)", async () => {
+      stubApi(allowlisted());
+      newCampaign();
+      await screen.findByText("qa@acme.test");
+      expect(testButton().disabled).toBe(true);
+    });
   });
 });

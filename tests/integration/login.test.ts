@@ -12,8 +12,8 @@ afterAll(async () => { await h.dispose(); });
 beforeEach(async () => { await h.sql("DELETE FROM login_attempts"); });
 
 const login = (email: string, password: string, headers?: Record<string, string>) => h.anonymous.api("POST", "/api/auth/login", { email, password }, headers);
-const cookieOf = (r: { headers: Headers }) => /sendlab_session=([^;]+)/.exec(r.headers.get("set-cookie") ?? "")?.[1] ?? "";
-const asSession = (s: string) => ({ cookie: `sendlab_session=${s}` });
+const cookieOf = (r: { headers: Headers }) => /sendrix_session=([^;]+)/.exec(r.headers.get("set-cookie") ?? "")?.[1] ?? "";
+const asSession = (s: string) => ({ cookie: `sendrix_session=${s}` });
 const attempts = (key: string) => h.rows<{ failures: number; locked_until: number | null }>("SELECT failures, locked_until FROM login_attempts WHERE key = ?", key);
 
 /** A user with a known password, made the way the app makes them. */
@@ -33,7 +33,7 @@ describe("signing in", () => {
     expect(r.status).toBe(200);
     expect(r.json).toEqual({ redirectTo: "/", mustChangePassword: false });
     const cookie = r.headers.get("set-cookie")!;
-    expect(cookie).toMatch(/^sendlab_session=/);
+    expect(cookie).toMatch(/^sendrix_session=/);
     expect(cookie).toMatch(/HttpOnly/i);
     expect(cookie).toMatch(/SameSite=Lax/i);
     expect(cookie).not.toMatch(/Secure/i); // http://localhost
@@ -244,5 +244,121 @@ describe("where signing in is allowed", () => {
   it("the local shortcut user exists only when asked for", async () => {
     expect((await h.anonymous.api("GET", "/api/me")).status).toBe(401);
     expect((await h.as(EMAIL).api("GET", "/api/me")).status).toBe(200); // DEV_ACTOR_EMAIL set explicitly
+  });
+});
+
+describe("staying signed in (30 days that restart on use)", () => {
+  const DAY = 86_400_000;
+  const expiryOf = async (session: string) => (await h.rows<{ expires_at: number }>("SELECT expires_at FROM sessions WHERE token_hash = ?", await sha256Base64Url(session)))[0]!.expires_at;
+  const setExpiry = async (session: string, at: number) => h.sql("UPDATE sessions SET expires_at = ? WHERE token_hash = ?", at, await sha256Base64Url(session));
+  const maxAge = (r: { headers: Headers }) => Number(/Max-Age=(\d+)/i.exec(r.headers.get("set-cookie") ?? "")?.[1] ?? 0);
+  const newSession = async () => cookieOf(await login(EMAIL, PASSWORD));
+
+  it("a new sign-in lasts 30 days, in the cookie and in the database, and survives closing the browser", async () => {
+    const r = await login(EMAIL, PASSWORD);
+    const cookie = r.headers.get("set-cookie")!;
+    expect(cookie).toMatch(/Expires=/i); // a persistent cookie, not a session-only one that dies with the browser
+    expect(maxAge(r)).toBeGreaterThan(29.99 * 86400);
+    expect(maxAge(r)).toBeLessThanOrEqual(30 * 86400);
+    const days = ((await expiryOf(cookieOf(r))) - Date.now()) / DAY;
+    expect(days).toBeGreaterThan(29.99);
+    expect(days).toBeLessThanOrEqual(30);
+  });
+
+  it("opening the app later restarts the 30 days and re-issues the cookie with the new date", async () => {
+    const s = await newSession();
+    await setExpiry(s, Date.now() + 5 * DAY); // used 25 days ago
+    const r = await h.anonymous.api("GET", "/api/me", undefined, asSession(s));
+    expect(r.status).toBe(200);
+    expect(((await expiryOf(s)) - Date.now()) / DAY).toBeGreaterThan(29.99);
+    expect(maxAge(r)).toBeGreaterThan(29.99 * 86400);
+    expect(r.headers.get("set-cookie")).toContain(`sendrix_session=${s}`); // same secret, new date
+    expect(r.headers.get("set-cookie")).toMatch(/HttpOnly/i);
+  });
+
+  it("any protected request counts as using the app, not only /api/me", async () => {
+    const s = await newSession();
+    await setExpiry(s, Date.now() + 2 * DAY);
+    expect((await h.anonymous.api("GET", "/api/contacts", undefined, asSession(s))).status).toBe(200);
+    expect(((await expiryOf(s)) - Date.now()) / DAY).toBeGreaterThan(29.99);
+  });
+
+  it("does not write on every request: a session renewed within the hour is left alone", async () => {
+    const s = await newSession();
+    const before = await expiryOf(s);
+    const r = await h.anonymous.api("GET", "/api/me", undefined, asSession(s));
+    expect(r.headers.get("set-cookie")).toBeNull();
+    expect(await expiryOf(s)).toBe(before);
+  });
+
+  it("renews once the last renewal is over an hour old", async () => {
+    const s = await newSession();
+    await setExpiry(s, Date.now() + 30 * DAY - 2 * 3_600_000);
+    const r = await h.anonymous.api("GET", "/api/me", undefined, asSession(s));
+    expect(r.headers.get("set-cookie")).toContain("sendrix_session=");
+    expect(((await expiryOf(s)) - Date.now()) / DAY).toBeGreaterThan(29.99);
+  });
+
+  it("a session not used for 30 days has expired: it is refused, never revived by the request", async () => {
+    const s = await newSession();
+    const past = Date.now() - 1000;
+    await setExpiry(s, past);
+    const r = await h.anonymous.api("GET", "/api/me", undefined, asSession(s));
+    expect(r.status).toBe(401);
+    expect(r.headers.get("set-cookie")).toBeNull();
+    expect(await expiryOf(s)).toBe(past);
+    expect((await h.anonymous.api("GET", "/api/contacts", undefined, asSession(s))).status).toBe(401);
+  });
+
+  it("someone who comes back every few weeks never has to sign in again", async () => {
+    const s = await newSession();
+    for (let visit = 0; visit < 4; visit++) {
+      await setExpiry(s, Date.now() + 2 * DAY); // 28 idle days later
+      expect((await h.anonymous.api("GET", "/api/me", undefined, asSession(s))).status, `visit ${visit}`).toBe(200);
+    }
+  });
+
+  it("a disabled user's session is refused and not extended", async () => {
+    const u = await addUser();
+    const s = cookieOf(await login(u.email, "Correct-horse-1"));
+    await setExpiry(s, Date.now() + 5 * DAY);
+    const stale = await expiryOf(s);
+    await h.sql("UPDATE users SET status = 'Disabled' WHERE id = ?", u.id);
+    expect((await h.anonymous.api("GET", "/api/me", undefined, asSession(s))).status).toBe(403);
+    expect(await expiryOf(s)).toBe(stale);
+  });
+
+  it("renewal never shortens a session and one session's use does not extend another's", async () => {
+    const a = await newSession();
+    const b = await newSession();
+    await setExpiry(b, Date.now() + 3 * DAY);
+    await h.anonymous.api("GET", "/api/me", undefined, asSession(a));
+    expect(((await expiryOf(b)) - Date.now()) / DAY).toBeLessThan(3.01);
+    const { SESSION_TTL_MS } = await import("../../src/server/lib/session");
+    expect(SESSION_TTL_MS).toBe(30 * DAY);
+  });
+
+  it("the renewal itself refuses to revive an expired session or to shorten a live one (guards against racing requests)", async () => {
+    const { sessionsRepo } = await import("../../src/server/database/repositories/sessions");
+    const { createDb } = await import("../../src/server/database/client");
+    const repo = sessionsRepo(createDb(h.env.DB));
+    const idOf = async (s: string) => (await h.rows<{ id: string }>("SELECT id FROM sessions WHERE token_hash = ?", await sha256Base64Url(s)))[0]!.id;
+
+    const dead = await newSession();
+    await setExpiry(dead, Date.now() - 1000);
+    expect(await repo.renew(await idOf(dead), Date.now() + 30 * DAY)).toBe(false);
+    expect(await expiryOf(dead)).toBeLessThan(Date.now());
+
+    const live = await newSession();
+    const before = await expiryOf(live);
+    expect(await repo.renew(await idOf(live), before - DAY)).toBe(false); // would shorten it
+    expect(await expiryOf(live)).toBe(before);
+    expect(await repo.renew(await idOf(live), before + DAY)).toBe(true);
+  });
+
+  it("signing out still ends the session for good", async () => {
+    const s = await newSession();
+    await h.anonymous.api("POST", "/api/auth/logout", undefined, asSession(s));
+    expect((await h.anonymous.api("GET", "/api/me", undefined, asSession(s))).status).toBe(401);
   });
 });

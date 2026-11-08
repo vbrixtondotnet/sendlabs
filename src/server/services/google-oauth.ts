@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { isValidEncryptionKey } from "../lib/crypto";
 
-/** The only permissions Sendlab asks for: send email, and read which address was connected. Nothing about the inbox. */
+/** The only permissions Sendrix asks for: send email, and read which address was connected. Nothing about the inbox. */
 export const GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
 export const REQUESTED_SCOPES = ["openid", "email", GMAIL_SEND_SCOPE] as const;
 

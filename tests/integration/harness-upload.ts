@@ -15,7 +15,7 @@ export async function upload(
   opts: { filename?: string; text?: string | Uint8Array; mapping?: unknown; omit?: "file" | "mapping" } = {},
 ) {
   const form = new FormData();
-  const body = opts.text ?? publicFile("template.csv");
+  const body = opts.text ?? publicFile("sample-contacts.csv");
   if (opts.omit !== "file") form.set("file", new File([body], opts.filename ?? "template.csv", { type: "text/csv" }));
   if (opts.omit !== "mapping") {
     form.set("mapping", typeof opts.mapping === "string" ? opts.mapping : JSON.stringify(opts.mapping ?? TEMPLATE_MAPPING));

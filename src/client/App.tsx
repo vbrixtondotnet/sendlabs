@@ -9,6 +9,7 @@ import { CampaignDetails } from "@/pages/CampaignDetails";
 import { Settings } from "@/pages/Settings";
 import { AcceptInvitation } from "@/pages/AcceptInvitation";
 import { Login } from "@/pages/Login";
+import { MySettings } from "@/pages/MySettings";
 
 export function App() {
   return (
@@ -24,6 +25,7 @@ export function App() {
         <Route path="campaigns/:id/edit" element={<CampaignEditor />} />
         <Route path="campaigns/:id" element={<CampaignDetails />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="account" element={<MySettings />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

@@ -12,7 +12,7 @@ import { isValidEmail } from "../../shared/email";
 export interface OutgoingEmail {
   /** The connected account's address. Gmail sends as this account regardless. */
   from: string;
-  /** Shown to the recipient instead of the bare address, e.g. "SendLab". Optional. */
+  /** Shown to the recipient instead of the bare address, e.g. "Sendrix". Optional. */
   fromName?: string;
   to: string;
   subject: string;
@@ -60,7 +60,7 @@ function addressOf(value: string, label: string): string {
   return v;
 }
 
-/** `SendLab <sales@acme.test>`, or just the address when there is no (usable) name. Non-ASCII names are RFC 2047 encoded. */
+/** `Sendrix <sales@acme.test>`, or just the address when there is no (usable) name. Non-ASCII names are RFC 2047 encoded. */
 function fromDisplay(name: string | undefined, address: string): string {
   const clean = cleanHeaderValue(name ?? "").replace(/["\\<>]/g, "");
   if (!clean) return address;
@@ -78,7 +78,7 @@ export function buildMime(msg: OutgoingEmail): string {
   const from = addressOf(msg.from, "From");
   const to = addressOf(msg.to, "To");
   const domain = from.split("@")[1] ?? "localhost";
-  const boundary = `=_sendlab_${crypto.randomUUID().replace(/-/g, "")}`;
+  const boundary = `=_sendrix_${crypto.randomUUID().replace(/-/g, "")}`;
 
   const headers = [
     // The display name is cleaned of line breaks and quoted, so it cannot add headers or break the address.

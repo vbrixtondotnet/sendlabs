@@ -4,7 +4,7 @@
  *   npm run dev:api        (terminal 1)
  *   npm run seed:local     (terminal 2)
  *
- * It imports public/template.csv through the real import endpoint (the same path the UI uses) and
+ * It imports public/sample-contacts.csv through the real import endpoint (the same path the UI uses) and
  * creates one sample draft campaign. Safe to run twice: existing contacts are skipped, and the campaign
  * is only created if it does not exist. It refuses to talk to anything but localhost.
  */
@@ -33,10 +33,10 @@ if (!health || health.status !== 200) {
   process.exit(1);
 }
 
-const text = readFileSync("public/template.csv", "utf8");
+const text = readFileSync("public/sample-contacts.csv", "utf8");
 const mapping = autoMap(parseCsv(text)[0] ?? []);
 const form = new FormData();
-form.set("file", new File([text], "template.csv", { type: "text/csv" }));
+form.set("file", new File([text], "sample-contacts.csv", { type: "text/csv" }));
 form.set("mapping", JSON.stringify(mapping));
 
 const imported = await call("POST", "/api/imports", form);

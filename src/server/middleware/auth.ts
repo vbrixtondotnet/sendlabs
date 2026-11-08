@@ -7,7 +7,8 @@ import { access, tenants, users } from "../database/schema";
 import { sessionsRepo } from "../database/repositories/sessions";
 import { sha256Base64Url } from "../lib/crypto";
 import { ApiError } from "../lib/errors";
-import { readSessionCookie } from "../lib/session";
+import { nowMs } from "../lib/id";
+import { readSessionCookie, SESSION_RENEW_AFTER_MS, SESSION_TTL_MS, setSessionCookie } from "../lib/session";
 
 /** Who is making the request, and which tenant they belong to. Every repository is scoped by `tenantId`. */
 export interface Actor {
@@ -15,12 +16,17 @@ export interface Actor {
   tenantId: string;
   tenantName: string;
   tenantSlug: string;
+  tenantPostalAddress: string;
   email: string;
+  firstName: string;
+  lastName: string;
   displayName: string;
   access: Role;
   mustChangePassword: boolean;
   /** True when this request carries a real session, false for the local development placeholder. */
   viaSession: boolean;
+  /** The session this request belongs to, or null for the placeholder. */
+  sessionId: string | null;
 }
 
 /**
@@ -57,11 +63,17 @@ export const requireActor: MiddlewareHandler<AppEnv> = async (c, next) => {
   const db = c.get("db");
 
   let viaSession = false;
-  let row = null as Awaited<ReturnType<ReturnType<typeof sessionsRepo>["find"]>>;
+  let session: { id: string; expiresAt: number; token: string } | null = null;
+  type Found = NonNullable<Awaited<ReturnType<ReturnType<typeof sessionsRepo>["find"]>>>;
+  let row = null as Omit<Found, "sessionId" | "expiresAt"> | null;
   const cookie = readSessionCookie(c);
   if (cookie) {
-    row = await sessionsRepo(db).find(await sha256Base64Url(cookie));
-    viaSession = row !== null;
+    const found = await sessionsRepo(db).find(await sha256Base64Url(cookie));
+    if (found) {
+      row = found;
+      viaSession = true;
+      session = { id: found.sessionId, expiresAt: found.expiresAt, token: cookie };
+    }
   }
 
   if (!row && c.env.DEV_ACTOR_EMAIL) {
@@ -70,12 +82,15 @@ export const requireActor: MiddlewareHandler<AppEnv> = async (c, next) => {
       .select({
         userId: users.id,
         email: users.email,
+        firstName: users.firstName,
+        lastName: users.lastName,
         displayName: users.displayName,
         userStatus: users.status,
         mustChangePassword: users.mustChangePassword,
         tenantId: tenants.id,
         tenantName: tenants.name,
         tenantSlug: tenants.slug,
+        tenantPostalAddress: tenants.postalAddress,
         tenantStatus: tenants.status,
         access: access.name,
       })
@@ -93,16 +108,27 @@ export const requireActor: MiddlewareHandler<AppEnv> = async (c, next) => {
   if (row.userStatus !== "Active") throw new ApiError(403, "USER_DISABLED", "This user is disabled");
   if (row.tenantStatus !== "Active") throw new ApiError(403, "TENANT_SUSPENDED", "This tenant is suspended");
 
+  // Stay-signed-in: using the app restarts the 30 days. Only after the checks above, so a disabled user's session is
+  // never extended, and only when the last renewal is old enough to be worth a write.
+  if (session && session.expiresAt - nowMs() < SESSION_TTL_MS - SESSION_RENEW_AFTER_MS) {
+    const expiresAt = nowMs() + SESSION_TTL_MS;
+    if (await sessionsRepo(db).renew(session.id, expiresAt)) setSessionCookie(c, session.token, expiresAt);
+  }
+
   c.set("actor", {
     userId: row.userId,
     tenantId: row.tenantId,
     tenantName: row.tenantName,
     tenantSlug: row.tenantSlug,
+    tenantPostalAddress: row.tenantPostalAddress,
     email: row.email,
+    firstName: row.firstName,
+    lastName: row.lastName,
     displayName: row.displayName,
     access: row.access as Role,
     mustChangePassword: row.mustChangePassword,
     viaSession,
+    sessionId: session?.id ?? null,
   });
   await next();
 };

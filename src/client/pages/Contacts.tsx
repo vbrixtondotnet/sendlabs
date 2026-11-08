@@ -62,7 +62,7 @@ export function Contacts() {
                 {list.data.items.map((c) => (
                   <tr key={c.id} className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40" onClick={() => setEditing(c)}>
                     <Td>
-                      <button className="text-left font-medium hover:text-indigo-600 dark:hover:text-indigo-400" onClick={(e) => { e.stopPropagation(); setEditing(c); }}>
+                      <button className="text-left font-medium hover:text-brand-600 dark:hover:text-brand-400" onClick={(e) => { e.stopPropagation(); setEditing(c); }}>
                         {fullName(c) || "(no name)"}
                       </button>
                       <p className="max-w-[16rem] truncate text-xs text-slate-500">{c.title}</p>
