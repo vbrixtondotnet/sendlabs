@@ -1,0 +1,47 @@
+{
+  "name": "sendlab",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:api": "wrangler dev",
+    "build": "npm run typecheck && vite build",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tests && tsc --noEmit -p tests/ui",
+    "test": "vitest run",
+    "seed:local": "tsx scripts/seed-local.ts",
+    "preview": "vite preview",
+    "cf-typegen": "wrangler types",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply sendlab-db-local --local",
+    "db:clear:local": "wrangler d1 execute sendlab-db-local --local --file scripts/clear-local-data.sql",
+    "db:migrate:staging": "wrangler d1 migrations apply sendlab-db-staging --remote --env staging",
+    "db:migrate:production": "wrangler d1 migrations apply sendlab-db-production --remote --env production"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.107.1",
+    "drizzle-orm": "^0.45.4",
+    "hono": "^4.13.17",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router-dom": "^7.18.5",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.5",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.2.1",
+    "drizzle-kit": "^0.31.11",
+    "jsdom": "^31.0.0",
+    "tailwindcss": "^4.3.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0",
+    "wrangler": "^4.158.0"
+  }
+}

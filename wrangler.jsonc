@@ -1,0 +1,51 @@
+{
+  // Sendlab Worker. Only the D1 binding is configured so far. R2, Queues, Cron and static
+  // assets are added in later phases.
+  "name": "sendlab",
+  "main": "src/server/index.ts",
+  "compatibility_date": "2026-11-01",
+
+  // Only "local" may use the placeholder auth. Every other value makes protected routes answer 503
+  // until Cloudflare Access is wired in. Vars are not inherited by environments either.
+  "vars": { "ENVIRONMENT": "local" },
+
+  // Top level = local development. Wrangler simulates D1 on disk under .wrangler/, so the
+  // database_id below is a placeholder and is never sent anywhere.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "sendlab-db-local",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // Bindings are NOT inherited by environments, so each one declares its own database.
+  // Replace the placeholder IDs with the values printed by `wrangler d1 create`.
+  "env": {
+    "staging": {
+      "name": "sendlab-staging",
+      "vars": { "ENVIRONMENT": "staging" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "sendlab-db-staging",
+          "database_id": "REPLACE_WITH_STAGING_DATABASE_ID",
+          "migrations_dir": "migrations"
+        }
+      ]
+    },
+    "production": {
+      "name": "sendlab-production",
+      "vars": { "ENVIRONMENT": "production" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "sendlab-db-production",
+          "database_id": "REPLACE_WITH_PRODUCTION_DATABASE_ID",
+          "migrations_dir": "migrations"
+        }
+      ]
+    }
+  }
+}

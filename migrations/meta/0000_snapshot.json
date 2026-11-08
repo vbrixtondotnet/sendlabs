@@ -1,0 +1,619 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "e5ccd043-19b3-4568-b490-199711aaacf3",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "tables": {
+    "contacts": {
+      "name": "contacts",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "normalized_email": {
+          "name": "normalized_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "first_name": {
+          "name": "first_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "last_name": {
+          "name": "last_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "company_name": {
+          "name": "company_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "employees": {
+          "name": "employees",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "industry": {
+          "name": "industry",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "linkedin_url": {
+          "name": "linkedin_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "website": {
+          "name": "website",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "city": {
+          "name": "city",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "country": {
+          "name": "country",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "annual_revenue": {
+          "name": "annual_revenue",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "consent_status": {
+          "name": "consent_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'Unknown'"
+        },
+        "consent_source": {
+          "name": "consent_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "source_import_id": {
+          "name": "source_import_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "contacts_normalized_email_uq": {
+          "name": "contacts_normalized_email_uq",
+          "columns": [
+            "normalized_email"
+          ],
+          "isUnique": true
+        },
+        "contacts_industry_idx": {
+          "name": "contacts_industry_idx",
+          "columns": [
+            "industry"
+          ],
+          "isUnique": false
+        },
+        "contacts_source_import_idx": {
+          "name": "contacts_source_import_idx",
+          "columns": [
+            "source_import_id"
+          ],
+          "isUnique": false
+        },
+        "contacts_created_at_idx": {
+          "name": "contacts_created_at_idx",
+          "columns": [
+            "created_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "contacts_consent_chk": {
+          "name": "contacts_consent_chk",
+          "value": "\"consent_status\" IN ('Granted', 'Unknown', 'Withdrawn')"
+        },
+        "contacts_normalized_email_chk": {
+          "name": "contacts_normalized_email_chk",
+          "value": "\"normalized_email\" <> '' AND \"normalized_email\" = lower(trim(\"normalized_email\"))"
+        },
+        "contacts_employees_chk": {
+          "name": "contacts_employees_chk",
+          "value": "\"employees\" IS NULL OR \"employees\" >= 0"
+        },
+        "contacts_revenue_chk": {
+          "name": "contacts_revenue_chk",
+          "value": "\"annual_revenue\" IS NULL OR \"annual_revenue\" >= 0"
+        }
+      }
+    },
+    "campaign_recipients": {
+      "name": "campaign_recipients",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "campaign_id": {
+          "name": "campaign_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "contact_id": {
+          "name": "contact_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "email_snapshot": {
+          "name": "email_snapshot",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "personalization_snapshot": {
+          "name": "personalization_snapshot",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sequence": {
+          "name": "sequence",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'Pending'"
+        },
+        "skip_reason": {
+          "name": "skip_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "attempt_count": {
+          "name": "attempt_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "lease_expires_at": {
+          "name": "lease_expires_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "queued_at": {
+          "name": "queued_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "accepted_at": {
+          "name": "accepted_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "last_error": {
+          "name": "last_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "campaign_recipients_campaign_contact_uq": {
+          "name": "campaign_recipients_campaign_contact_uq",
+          "columns": [
+            "campaign_id",
+            "contact_id"
+          ],
+          "isUnique": true
+        },
+        "campaign_recipients_campaign_sequence_uq": {
+          "name": "campaign_recipients_campaign_sequence_uq",
+          "columns": [
+            "campaign_id",
+            "sequence"
+          ],
+          "isUnique": true
+        },
+        "campaign_recipients_pick_idx": {
+          "name": "campaign_recipients_pick_idx",
+          "columns": [
+            "campaign_id",
+            "status",
+            "sequence"
+          ],
+          "isUnique": false
+        },
+        "campaign_recipients_lease_idx": {
+          "name": "campaign_recipients_lease_idx",
+          "columns": [
+            "status",
+            "lease_expires_at"
+          ],
+          "isUnique": false
+        },
+        "campaign_recipients_contact_idx": {
+          "name": "campaign_recipients_contact_idx",
+          "columns": [
+            "contact_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "campaign_recipients_campaign_id_campaigns_id_fk": {
+          "name": "campaign_recipients_campaign_id_campaigns_id_fk",
+          "tableFrom": "campaign_recipients",
+          "tableTo": "campaigns",
+          "columnsFrom": [
+            "campaign_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "campaign_recipients_contact_id_contacts_id_fk": {
+          "name": "campaign_recipients_contact_id_contacts_id_fk",
+          "tableFrom": "campaign_recipients",
+          "tableTo": "contacts",
+          "columnsFrom": [
+            "contact_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "campaign_recipients_status_chk": {
+          "name": "campaign_recipients_status_chk",
+          "value": "\"status\" IN ('Pending', 'Queued', 'Processing', 'Accepted', 'Failed', 'Skipped', 'Cancelled')"
+        },
+        "campaign_recipients_skip_reason_chk": {
+          "name": "campaign_recipients_skip_reason_chk",
+          "value": "\"skip_reason\" IS NULL OR \"skip_reason\" IN ('Suppressed', 'InvalidEmail', 'Manual')"
+        },
+        "campaign_recipients_skip_consistency_chk": {
+          "name": "campaign_recipients_skip_consistency_chk",
+          "value": "(\"status\" = 'Skipped') = (\"skip_reason\" IS NOT NULL)"
+        },
+        "campaign_recipients_attempts_chk": {
+          "name": "campaign_recipients_attempts_chk",
+          "value": "\"attempt_count\" >= 0"
+        },
+        "campaign_recipients_email_chk": {
+          "name": "campaign_recipients_email_chk",
+          "value": "\"email_snapshot\" <> ''"
+        }
+      }
+    },
+    "campaigns": {
+      "name": "campaigns",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "subject": {
+          "name": "subject",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "html_body": {
+          "name": "html_body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "text_body": {
+          "name": "text_body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'Draft'"
+        },
+        "sender_account_id": {
+          "name": "sender_account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "daily_limit": {
+          "name": "daily_limit",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 500
+        },
+        "send_window_start": {
+          "name": "send_window_start",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'09:00'"
+        },
+        "send_window_end": {
+          "name": "send_window_end",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'17:00'"
+        },
+        "timezone": {
+          "name": "timezone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'America/Los_Angeles'"
+        },
+        "next_run_at": {
+          "name": "next_run_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "last_run_at": {
+          "name": "last_run_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "launched_at": {
+          "name": "launched_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "campaigns_status_idx": {
+          "name": "campaigns_status_idx",
+          "columns": [
+            "status"
+          ],
+          "isUnique": false
+        },
+        "campaigns_created_at_idx": {
+          "name": "campaigns_created_at_idx",
+          "columns": [
+            "created_at"
+          ],
+          "isUnique": false
+        },
+        "campaigns_due_idx": {
+          "name": "campaigns_due_idx",
+          "columns": [
+            "status",
+            "next_run_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "campaigns_status_chk": {
+          "name": "campaigns_status_chk",
+          "value": "\"status\" IN ('Draft', 'Queuing', 'Queued', 'Sending', 'Paused', 'Completed', 'CompletedWithErrors', 'Failed', 'Cancelled')"
+        },
+        "campaigns_daily_limit_chk": {
+          "name": "campaigns_daily_limit_chk",
+          "value": "\"daily_limit\" BETWEEN 1 AND 2000"
+        },
+        "campaigns_name_chk": {
+          "name": "campaigns_name_chk",
+          "value": "length(trim(\"name\")) > 0"
+        },
+        "campaigns_window_chk": {
+          "name": "campaigns_window_chk",
+          "value": "(\"send_window_start\" GLOB '[01][0-9]:[0-5][0-9]' OR \"send_window_start\" GLOB '2[0-3]:[0-5][0-9]') AND (\"send_window_end\" GLOB '[01][0-9]:[0-5][0-9]' OR \"send_window_end\" GLOB '2[0-3]:[0-5][0-9]') AND \"send_window_start\" < \"send_window_end\""
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}

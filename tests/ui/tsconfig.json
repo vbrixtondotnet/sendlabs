@@ -1,0 +1,20 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "types": [
+      "node"
+    ],
+    "paths": {
+      "@shared/*": [
+        "../../src/shared/*"
+      ],
+      "@/*": [
+        "../../src/client/*"
+      ]
+    }
+  },
+  "include": [
+    "./**/*.ts",
+    "./**/*.tsx"
+  ]
+}
