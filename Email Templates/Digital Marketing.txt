@@ -1,0 +1,51 @@
+<p>Hi {{firstName}},</p>
+
+<p>I recently visited your website and took some time to learn more about <strong>{{companyName}}</strong> and the digital marketing services your team provides.</p>
+
+<p>It got me wondering: Are you still relying on spreadsheets, manual reporting, and multiple disconnected tools to manage marketing campaigns, client accounts, leads, and day-to-day operations?</p>
+
+<p>Are your team members spending valuable hours on repetitive administrative tasks, compiling campaign performance reports, managing client data, or moving information between different marketing platforms?</p>
+
+<p>These are common challenges among growing digital marketing agencies, and they're exactly where we can help.</p>
+
+<p>At <strong>Sabertooth Software Labs</strong>, we help digital marketing agencies modernize their operations through custom-built software, business process automation, system integrations, and AI-driven solutions.</p>
+
+<p>We develop solutions designed around how your agency actually operates, helping you:</p>
+
+<ul>
+    <li><strong>Automate Marketing Workflows</strong> – Eliminate repetitive tasks, automate routine processes, and reduce manual administrative work.</li>
+    
+    <li><strong>Centralize Client Management</strong> – Manage client accounts, projects, communications, deliverables, and activities through a unified platform.</li>
+    
+    <li><strong>Streamline Campaign Management</strong> – Organize marketing campaigns, track deliverables, monitor progress, and manage multiple client campaigns efficiently.</li>
+    
+    <li><strong>Automate Performance Reporting</strong> – Consolidate marketing data and generate reports without manually collecting information from multiple platforms.</li>
+    
+    <li><strong>Improve Lead Management</strong> – Automate lead capture, follow-ups, client inquiries, and sales pipeline management.</li>
+    
+    <li><strong>Leverage AI</strong> – Introduce AI-powered content workflows, intelligent data analysis, automated insights, and smarter business processes.</li>
+    
+    <li><strong>Integrate Existing Platforms</strong> – Connect your CRM, marketing tools, analytics platforms, and other business applications to eliminate disconnected workflows.</li>
+</ul>
+
+<p><strong>Modernize Your Agency Without Disrupting Your Operations.</strong></p>
+
+<p>We understand that your agency cannot simply pause client campaigns and ongoing projects while transitioning to new technology. That's why we take a gradual, well-planned modernization approach that allows your team to continue serving clients while your internal systems and workflows evolve.</p>
+
+<p><strong>Why Work With Sabertooth Software Labs?</strong></p>
+
+<p><strong>1. You Own Your Source Code. No Vendor Lock-in.</strong></p>
+
+<p>When we build your software, you own the source code and intellectual property as agreed in our engagement. You're not locked into depending on a single software agency to maintain or improve your system. You can continue development with your internal team, hire another developer, transfer the project to another agency, or leverage AI-assisted development tools to maintain and extend your software. Your technology should remain an asset you control.</p>
+
+<p><strong>2. Faster Delivery Without the Million-Dollar Price Tag.</strong></p>
+
+<p>Traditional custom software development projects can take 6–12 months or longer and often require substantial investments. By combining experienced software engineering with modern development tools and AI-assisted workflows, we aim to deliver appropriately scoped solutions in as little as <strong>2–4 months</strong>, depending on project requirements and complexity.</p>
+
+<p>You get modern business technology, faster delivery, and a more practical investment without the traditional enterprise price tag.</p>
+
+<p>We believe your technology should help your agency serve more clients, operate more efficiently, and scale without continuously increasing administrative overhead.</p>
+
+<p><strong>Would you be open to a quick conversation?</strong> We'd love to explore whether there are opportunities to automate your agency's workflows, streamline client management, and build software that supports your business as it grows.</p>
+
+<p>No pressure or commitment. Just a conversation.</p>

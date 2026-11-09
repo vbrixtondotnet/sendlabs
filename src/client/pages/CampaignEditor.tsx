@@ -13,6 +13,7 @@ import { useRole } from "@/hooks/useRole";
 import { useToast } from "@/hooks/useToast";
 import { composeEmailHtml, defaultSignatureHtml, isBlankHtml, MERGE_FIELDS, renderTemplate, UNSUBSCRIBE_TAG, unknownTags } from "@/lib/merge";
 import { RichTextEditor } from "@/components/RichTextEditor";
+import { TemplatePicker } from "@/components/TemplatePicker";
 import { ApiClientError } from "@/services/http";
 import { useCampaign, useCreateCampaign, useUpdateCampaign } from "@/services/campaigns";
 import { useContacts } from "@/services/contacts";
@@ -78,6 +79,8 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
   const me = useMe();
   const [signature, setSignature] = useState(initial?.signature ?? "");
   const signatureSeeded = useRef(initial !== null);
+  /** The body of the template last chosen. While the body is still exactly that, choosing another needs no question. */
+  const lastTemplateBody = useRef<string | null>(null);
   useEffect(() => {
     if (signatureSeeded.current || !me.data) return;
     signatureSeeded.current = true; // once: later refreshes of who you are must not overwrite what is being typed
@@ -332,6 +335,10 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
             />
             {tab === "edit" ? (
               <div className="space-y-4 p-5">
+                <TemplatePicker
+                  isStarting={isBlankHtml(html) || html.trim() === DEFAULT_HTML_BODY.trim() || html === lastTemplateBody.current}
+                  onUse={(body) => { lastTemplateBody.current = body; setHtml(body); }}
+                />
                 <div>
                   <RichTextEditor
                     label="Email body"

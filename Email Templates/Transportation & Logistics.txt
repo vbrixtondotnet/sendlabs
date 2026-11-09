@@ -1,0 +1,53 @@
+<p>Hi {{firstName}},</p>
+
+<p>I recently visited your website and took some time to learn more about <strong>{{companyName}}</strong> and the transportation and logistics services your company provides.</p>
+
+<p>It got me wondering: Are you still relying on spreadsheets, manual data entry, phone calls, or disconnected applications to manage fleet operations, dispatching, shipments, deliveries, and day-to-day logistics activities?</p>
+
+<p>Are some of your critical business processes still running on outdated transportation management systems or legacy applications that make it difficult to monitor vehicles, track shipments, coordinate deliveries, and get real-time visibility into your operations?</p>
+
+<p>These are common challenges among growing transportation and logistics companies, and they're exactly where we can help.</p>
+
+<p>At <strong>Sabertooth Software Labs</strong>, we help transportation and logistics businesses modernize their operations through custom-built transportation management systems, business process automation, system integrations, and AI-driven software solutions.</p>
+
+<p>We develop solutions designed around how your logistics business actually operates, helping you:</p>
+
+<ul>
+    <li><strong>Modernize Fleet Management</strong> – Monitor vehicle assignments, maintenance schedules, operating expenses, fleet availability, and vehicle utilization.</li>
+
+    <li><strong>Streamline Dispatch Operations</strong> – Automate driver assignments, dispatch scheduling, delivery coordination, and job allocation.</li>
+
+    <li><strong>Improve Shipment Tracking</strong> – Centralize shipment information, monitor delivery progress, and provide better visibility into shipment status and fulfillment.</li>
+
+    <li><strong>Optimize Route Planning</strong> – Improve delivery coordination, reduce unnecessary travel, and identify opportunities to optimize transportation costs.</li>
+
+    <li><strong>Automate Logistics Documentation</strong> – Streamline delivery receipts, bills of lading, invoices, proof of delivery, and other operational documents.</li>
+
+    <li><strong>Leverage AI</strong> – Introduce intelligent workflows, predictive maintenance insights, automated document processing, and AI-powered operational reporting.</li>
+
+    <li><strong>Integrate Existing Systems</strong> – Connect your transportation management system, accounting applications, CRM, GPS tracking platforms, and other business tools to eliminate disconnected workflows and duplicate data entry.</li>
+</ul>
+
+<p><strong>Modernize Without Disrupting Your Logistics Operations.</strong></p>
+
+<p>We understand that transportation and logistics businesses cannot simply stop dispatching vehicles, coordinating deliveries, tracking shipments, or serving customers while transitioning to new technology.</p>
+
+<p>That's why we take a gradual, well-planned modernization approach that allows your business to transition from existing processes and legacy systems into modern solutions while keeping your day-to-day operations running.</p>
+
+<p><strong>Why Work With Sabertooth Software Labs?</strong></p>
+
+<p><strong>1. You Own Your Source Code. No Vendor Lock-in.</strong></p>
+
+<p>When we build your software, you own the source code and intellectual property as agreed in our engagement. You're not locked into depending on a single software agency to maintain or improve your system. You can continue development with your internal IT team, hire another developer, transfer the project to another agency, or leverage AI-assisted development tools to maintain and extend your software. Your technology should remain an asset you control.</p>
+
+<p><strong>2. Faster Delivery Without the Million-Dollar Price Tag.</strong></p>
+
+<p>Traditional custom software development projects can take 6–12 months or longer and often require substantial investments. By combining experienced software engineering with modern development tools and AI-assisted workflows, we aim to deliver appropriately scoped solutions in as little as <strong>2–4 months</strong>, depending on project requirements and complexity.</p>
+
+<p>You get modern transportation and logistics technology, faster delivery, and a more practical investment without the traditional enterprise price tag.</p>
+
+<p>We believe your logistics software should adapt to your business operations, not force your company to change the way it works.</p>
+
+<p><strong>Would you be open to a quick conversation?</strong> We'd love to explore how we could help {{companyName}} streamline fleet management, improve dispatch operations, gain better shipment visibility, and eliminate inefficient manual processes.</p>
+
+<p>No pressure or commitment. Just a conversation.</p>

@@ -1,0 +1,53 @@
+<p>Hi {{firstName}},</p>
+
+<p>I recently visited your website and took some time to learn more about <strong>{{companyName}}</strong> and the wholesale and distribution operations your company handles.</p>
+
+<p>It got me wondering: Are you still relying on spreadsheets, manual data entry, or disconnected applications to manage inventory, purchase orders, sales orders, warehouse operations, and daily distribution activities?</p>
+
+<p>Are some of your critical business processes still running on outdated ERP systems or legacy applications that make it difficult to maintain accurate inventory records, monitor stock movements, and get real-time visibility into your business operations?</p>
+
+<p>These are common challenges among growing wholesale and distribution companies, and they're exactly where we can help.</p>
+
+<p>At <strong>Sabertooth Software Labs</strong>, we help wholesale and distribution businesses modernize their operations through custom-built ERP solutions, business process automation, system integrations, and AI-driven software solutions.</p>
+
+<p>We develop solutions designed around how your distribution business actually operates, helping you:</p>
+
+<ul>
+    <li><strong>Modernize Inventory Management</strong> – Track stock levels, product movements, inventory adjustments, and availability across multiple warehouses and locations.</li>
+
+    <li><strong>Streamline Order Processing</strong> – Automate sales orders, purchase orders, order fulfillment, invoicing, and customer transactions.</li>
+
+    <li><strong>Improve Warehouse Operations</strong> – Organize receiving, picking, packing, shipping, and inventory transfers to improve warehouse efficiency.</li>
+
+    <li><strong>Optimize Purchasing and Procurement</strong> – Improve supplier management, purchasing workflows, replenishment, and stock forecasting.</li>
+
+    <li><strong>Gain Better Business Visibility</strong> – Monitor sales performance, inventory valuation, product profitability, operating costs, and business performance through centralized reporting.</li>
+
+    <li><strong>Leverage AI</strong> – Introduce intelligent workflows, automated document processing, demand forecasting, and AI-powered business insights.</li>
+
+    <li><strong>Integrate Existing Systems</strong> – Connect your ERP, accounting applications, CRM, e-commerce platforms, and other business tools to eliminate disconnected workflows and duplicate data entry.</li>
+</ul>
+
+<p><strong>Modernize Without Disrupting Your Distribution Operations.</strong></p>
+
+<p>We understand that your business cannot simply stop processing customer orders, receiving shipments, managing inventory, or fulfilling deliveries while transitioning to new technology.</p>
+
+<p>That's why we take a gradual, well-planned modernization approach that allows your business to transition from existing processes and legacy systems into modern solutions while keeping your day-to-day operations running.</p>
+
+<p><strong>Why Work With Sabertooth Software Labs?</strong></p>
+
+<p><strong>1. You Own Your Source Code. No Vendor Lock-in.</strong></p>
+
+<p>When we build your software, you own the source code and intellectual property as agreed in our engagement. You're not locked into depending on a single software agency to maintain or improve your system. You can continue development with your internal IT team, hire another developer, transfer the project to another agency, or leverage AI-assisted development tools to maintain and extend your software. Your technology should remain an asset you control.</p>
+
+<p><strong>2. Faster Delivery Without the Million-Dollar Price Tag.</strong></p>
+
+<p>Traditional custom software development projects can take 6–12 months or longer and often require substantial investments. By combining experienced software engineering with modern development tools and AI-assisted workflows, we aim to deliver appropriately scoped solutions in as little as <strong>2–4 months</strong>, depending on project requirements and complexity.</p>
+
+<p>You get modern business technology, faster delivery, and a more practical investment without the traditional enterprise price tag.</p>
+
+<p>We believe your distribution management software should adapt to your business processes, not force your company to change the way it operates.</p>
+
+<p><strong>Would you be open to a quick conversation?</strong> We'd love to explore how we could help {{companyName}} streamline inventory management, improve order processing, modernize warehouse operations, and eliminate inefficient manual processes.</p>
+
+<p>No pressure or commitment. Just a conversation.</p>

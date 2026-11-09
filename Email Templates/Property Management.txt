@@ -1,0 +1,53 @@
+<p>Hi {{firstName}},</p>
+
+<p>I recently visited your website and took some time to learn more about <strong>{{companyName}}</strong> and the property management services your company provides.</p>
+
+<p>It got me wondering: Are you still relying on spreadsheets, manual data entry, emails, or disconnected applications to manage properties, tenant records, lease agreements, rent collection, and maintenance requests?</p>
+
+<p>Are some of your critical business processes still running on outdated property management software or legacy systems that make it difficult to monitor property performance, track rental payments, coordinate maintenance activities, and maintain visibility across multiple properties?</p>
+
+<p>These are common challenges among growing property management companies, and they're exactly where we can help.</p>
+
+<p>At <strong>Sabertooth Software Labs</strong>, we help property management companies modernize their operations through custom-built property management systems, business process automation, system integrations, and AI-driven software solutions.</p>
+
+<p>We develop solutions designed around how your property management business actually operates, helping you:</p>
+
+<ul>
+    <li><strong>Modernize Property Management</strong> – Centralize property portfolios, unit information, occupancy records, ownership details, and property performance data.</li>
+
+    <li><strong>Streamline Tenant Management</strong> – Manage tenant profiles, applications, lease agreements, renewals, communications, and tenant history through a unified platform.</li>
+
+    <li><strong>Automate Rent Collection and Billing</strong> – Track rental payments, outstanding balances, recurring charges, deposits, and payment histories.</li>
+
+    <li><strong>Improve Maintenance Management</strong> – Organize maintenance requests, work orders, service schedules, vendor assignments, and repair tracking.</li>
+
+    <li><strong>Centralize Financial Reporting</strong> – Monitor rental income, operating expenses, property-level profitability, and financial performance.</li>
+
+    <li><strong>Leverage AI</strong> – Introduce intelligent document processing, automated tenant communications, predictive maintenance insights, and AI-powered operational reporting.</li>
+
+    <li><strong>Integrate Existing Systems</strong> – Connect your property management platform with accounting applications, payment gateways, CRM systems, and other business tools to eliminate disconnected workflows and duplicate data entry.</li>
+</ul>
+
+<p><strong>Modernize Without Disrupting Your Property Management Operations.</strong></p>
+
+<p>We understand that managing properties cannot simply stop while transitioning to new technology. Tenant concerns, rental payments, lease renewals, maintenance requests, and daily property operations must continue without interruption.</p>
+
+<p>That's why we take a gradual, well-planned modernization approach that allows your business to transition from existing processes and legacy systems into modern solutions while keeping your day-to-day operations running.</p>
+
+<p><strong>Why Work With Sabertooth Software Labs?</strong></p>
+
+<p><strong>1. You Own Your Source Code. No Vendor Lock-in.</strong></p>
+
+<p>When we build your software, you own the source code and intellectual property as agreed in our engagement. You're not locked into depending on a single software agency to maintain or improve your system. You can continue development with your internal IT team, hire another developer, transfer the project to another agency, or leverage AI-assisted development tools to maintain and extend your software. Your technology should remain an asset you control.</p>
+
+<p><strong>2. Faster Delivery Without the Million-Dollar Price Tag.</strong></p>
+
+<p>Traditional custom software development projects can take 6–12 months or longer and often require substantial investments. By combining experienced software engineering with modern development tools and AI-assisted workflows, we aim to deliver appropriately scoped solutions in as little as <strong>2–4 months</strong>, depending on project requirements and complexity.</p>
+
+<p>You get modern property management technology, faster delivery, and a more practical investment without the traditional enterprise price tag.</p>
+
+<p>We believe your property management software should adapt to your business processes, not force your team to change the way it operates.</p>
+
+<p><strong>Would you be open to a quick conversation?</strong> We'd love to explore how we could help {{companyName}} streamline property operations, improve tenant management, automate administrative tasks, and gain better visibility across your property portfolio.</p>
+
+<p>No pressure or commitment. Just a conversation.</p>

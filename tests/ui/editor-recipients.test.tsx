@@ -15,6 +15,7 @@ const world = (extra?: Handler): Handler => (c) =>
     : c.path === "/api/imports" && c.method === "GET" ? { json: page([ready, failed]) }
     : c.path === "/api/sender" && c.method === "GET" ? { json: senderStatus() }
     : c.path === "/api/me" && c.method === "GET" ? { json: meDto() }
+    : c.path === "/api/email-templates" && c.method === "GET" ? { json: { items: [] } }
     : undefined);
 
 const fresh = () => renderAt(<CampaignEditor />, { path: "/campaigns/new", route: "/campaigns/new" });

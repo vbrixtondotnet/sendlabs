@@ -162,6 +162,22 @@ export interface SenderDto {
   connectedAt: string;
 }
 
+/** A template in the list. The body is left out (it is large): fetch one template to get it. */
+export interface EmailTemplateSummaryDto {
+  id: string;
+  name: string;
+  /** True for the ready-made ones that come with the app; false for one an Administrator added. */
+  builtin: boolean;
+  /** Offered in the campaign editor's template dropdown. */
+  selected: boolean;
+  createdAt: string;
+}
+
+export interface EmailTemplateDto extends EmailTemplateSummaryDto {
+  /** The message body, as HTML. */
+  htmlBody: string;
+}
+
 /** An address that will never be emailed again (it unsubscribed). */
 export interface SuppressionDto {
   id: string;

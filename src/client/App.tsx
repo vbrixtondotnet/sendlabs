@@ -7,6 +7,7 @@ import { Campaigns } from "@/pages/Campaigns";
 import { CampaignEditor } from "@/pages/CampaignEditor";
 import { CampaignDetails } from "@/pages/CampaignDetails";
 import { Settings } from "@/pages/Settings";
+import { EmailTemplates } from "@/pages/EmailTemplates";
 import { AcceptInvitation } from "@/pages/AcceptInvitation";
 import { Login } from "@/pages/Login";
 import { Unsubscribe } from "@/pages/Unsubscribe";
@@ -26,6 +27,7 @@ export function App() {
         <Route path="campaigns/new" element={<CampaignEditor />} />
         <Route path="campaigns/:id/edit" element={<CampaignEditor />} />
         <Route path="campaigns/:id" element={<CampaignDetails />} />
+        <Route path="templates" element={<EmailTemplates />} />
         <Route path="settings" element={<Settings />} />
         <Route path="account" element={<MySettings />} />
         <Route path="*" element={<Navigate to="/" replace />} />

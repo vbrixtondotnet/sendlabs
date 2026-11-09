@@ -1,0 +1,53 @@
+<p>Hi {{firstName}},</p>
+
+<p>I recently visited your website and took some time to learn more about <strong>{{companyName}}</strong> and the automotive services your business provides.</p>
+
+<p>It got me wondering: Are you still relying on spreadsheets, paper-based service records, manual data entry, or disconnected applications to manage customer information, vehicle service histories, repair orders, parts inventory, and day-to-day shop operations?</p>
+
+<p>Are some of your critical business processes still running on outdated automotive management software or legacy systems that make it difficult to track repair jobs, monitor parts availability, manage service schedules, and get a clear picture of your business performance?</p>
+
+<p>These are common challenges among growing automotive service businesses, and they're exactly where we can help.</p>
+
+<p>At <strong>Sabertooth Software Labs</strong>, we help automotive service businesses modernize their operations through custom-built automotive management systems, business process automation, system integrations, and AI-driven software solutions.</p>
+
+<p>We develop solutions designed around how your automotive business actually operates, helping you:</p>
+
+<ul>
+    <li><strong>Modernize Service Management</strong> – Streamline service appointments, repair orders, job assignments, service workflows, and vehicle maintenance records.</li>
+
+    <li><strong>Improve Vehicle Service History Tracking</strong> – Maintain centralized vehicle profiles, maintenance records, repair histories, inspection results, and service schedules.</li>
+
+    <li><strong>Automate Parts and Inventory Management</strong> – Track automotive parts, supplies, stock levels, inventory movements, and purchase orders.</li>
+
+    <li><strong>Streamline Billing and Invoicing</strong> – Automate service estimates, repair invoices, labor charges, parts billing, and payment tracking.</li>
+
+    <li><strong>Improve Customer Management</strong> – Centralize customer profiles, vehicle information, service histories, communications, and follow-up reminders.</li>
+
+    <li><strong>Leverage AI</strong> – Introduce intelligent document processing, automated service reminders, operational insights, and AI-powered administrative workflows.</li>
+
+    <li><strong>Integrate Existing Systems</strong> – Connect your automotive management platform with accounting applications, CRM systems, payment gateways, and other business tools to eliminate disconnected workflows and duplicate data entry.</li>
+</ul>
+
+<p><strong>Modernize Without Disrupting Your Automotive Operations.</strong></p>
+
+<p>We understand that automotive service businesses cannot simply stop accepting vehicles, handling repairs, managing customer appointments, or processing transactions while transitioning to new technology.</p>
+
+<p>That's why we take a gradual, well-planned modernization approach that allows your business to transition from existing processes and legacy systems into modern solutions while keeping your day-to-day operations running.</p>
+
+<p><strong>Why Work With Sabertooth Software Labs?</strong></p>
+
+<p><strong>1. You Own Your Source Code. No Vendor Lock-in.</strong></p>
+
+<p>When we build your software, you own the source code and intellectual property as agreed in our engagement. You're not locked into depending on a single software agency to maintain or improve your system. You can continue development with your internal IT team, hire another developer, transfer the project to another agency, or leverage AI-assisted development tools to maintain and extend your software. Your technology should remain an asset you control.</p>
+
+<p><strong>2. Faster Delivery Without the Million-Dollar Price Tag.</strong></p>
+
+<p>Traditional custom software development projects can take 6–12 months or longer and often require substantial investments. By combining experienced software engineering with modern development tools and AI-assisted workflows, we aim to deliver appropriately scoped solutions in as little as <strong>2–4 months</strong>, depending on project requirements and complexity.</p>
+
+<p>You get modern automotive business technology, faster delivery, and a more practical investment without the traditional enterprise price tag.</p>
+
+<p>We believe your automotive management software should adapt to your business processes, not force your team to change the way it operates.</p>
+
+<p><strong>Would you be open to a quick conversation?</strong> We'd love to explore how we could help {{companyName}} streamline service management, improve parts inventory tracking, automate administrative tasks, and modernize existing business operations.</p>
+
+<p>No pressure or commitment. Just a conversation.</p>

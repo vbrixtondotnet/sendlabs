@@ -4,7 +4,7 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import { CampaignEditor } from "../../src/client/pages/CampaignEditor";
 import type { MeDto } from "../../src/shared/api";
 import { rte } from "./rte";
-import { campaign, contact, page, renderAt, senderStatus, stubApi, testRecipientDto, type Handler } from "./harness";
+import { campaign, contact, page, renderAt, senderStatus, stubApi, testRecipientDto, type Handler, templateDto, templateSummary } from "./harness";
 
 /** Who is signed in. The signature of a new campaign is built from this. */
 const meDto = (user: Partial<MeDto["user"]> = {}, tenant: Partial<MeDto["tenant"]> = {}): MeDto => ({
@@ -23,6 +23,7 @@ const contacts: Handler = ({ method, path }) =>
   path === "/api/contacts" && method === "GET" ? { json: page([contact()], 8214) }
     : path === "/api/me" && method === "GET" ? { json: meDto() }
     : path === "/api/test-recipients" && method === "GET" ? { json: { items: [] } }
+    : path === "/api/email-templates" && method === "GET" ? { json: { items: [] } }
     : path === "/api/imports" && method === "GET" ? { json: page([]) }
     : path === "/api/sender" && method === "GET" ? { json: senderStatus() }
     : undefined;
@@ -935,5 +936,173 @@ describe("Rich text editors in the Message section", () => {
     save();
     await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
     expect(calls.find((c) => c.method === "POST")!.body.htmlBody).toBe("<table><tr><td>Hand written</td></tr></table>");
+  });
+});
+
+describe("Start from a template (campaign editor)", () => {
+  const ALL = [
+    templateSummary({ id: "t1", name: "Construction", selected: true }),
+    templateSummary({ id: "t2", name: "Digital Marketing", selected: true }),
+    templateSummary({ id: "t3", name: "Healthcare Administration", selected: false }),
+  ];
+  const CONSTRUCTION = "<p>Hi {{firstName}}, construction pitch for {{companyName}}.</p>";
+  const MARKETING = "<p>Marketing pitch</p>";
+  const BODIES: Record<string, string> = { t1: CONSTRUCTION, t2: MARKETING, t3: "<p>Healthcare</p>" };
+  const withTemplates = (items = ALL, fail?: number): Handler => (c) => {
+    if (c.path === "/api/email-templates" && c.method === "GET") return fail ? { status: fail, json: { error: { code: "INTERNAL_ERROR", message: "boom", correlationId: "x" } } } : { json: { items } };
+    const m = /^\/api\/email-templates\/([^/]+)$/.exec(c.path);
+    if (m && c.method === "GET") return BODIES[m[1]!] ? { json: templateDto({ id: m[1]!, name: ALL.find((t) => t.id === m[1])!.name, htmlBody: BODIES[m[1]!]! }) } : { status: 404, json: { error: { code: "NOT_FOUND", message: "Template not found", correlationId: "x" } } };
+    return contacts(c);
+  };
+  const picker = () => screen.getByRole("combobox", { name: "Start from a template" }) as HTMLSelectElement;
+  const choose = (id: string) => fireEvent.change(picker(), { target: { value: id } });
+  const ready = async () => { await waitFor(() => expect(sigField.area().textContent).toContain("Rico Prinsipe")); await screen.findByRole("combobox", { name: "Start from a template" }); };
+  const bodyHtml = () => bodyField.value();
+  const save = () => fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+
+  it("is a small dropdown above the merge-field buttons and the Email body, listing only the templates that were picked", async () => {
+    stubApi(withTemplates());
+    newCampaign();
+    await ready();
+    expect([...picker().options].map((o) => o.textContent)).toEqual(["Choose a template…", "Construction", "Digital Marketing"]); // not Healthcare: it is not picked
+    expect(picker().className).toContain("max-w-xs");
+    const FOLLOWING = Node.DOCUMENT_POSITION_FOLLOWING;
+    expect(picker().compareDocumentPosition(screen.getByText("Insert:")) & FOLLOWING).toBeTruthy();
+    expect(picker().compareDocumentPosition(screen.getByText("Email body", { selector: "div" })) & FOLLOWING).toBeTruthy();
+  });
+
+  it("puts the chosen template's message in the Email body straight away while the body is only the starting text", async () => {
+    stubApi(withTemplates());
+    newCampaign();
+    await ready();
+    choose("t1");
+    await waitFor(() => expect(bodyHtml()).toBe(CONSTRUCTION));
+    expect(screen.queryByRole("dialog")).toBeNull(); // nothing of the user's to lose, so no question
+    expect(picker().value).toBe(""); // ready to choose again
+  });
+
+  it("shows the template as formatted text in the editor, with its merge fields highlighted", async () => {
+    stubApi(withTemplates());
+    newCampaign();
+    await ready();
+    choose("t1");
+    await waitFor(() => expect(bodyField.area().textContent).toContain("construction pitch"));
+    expect([...bodyField.area().querySelectorAll(".merge-tag")].map((e) => e.textContent)).toEqual(["{{firstName}}", "{{companyName}}"]);
+  });
+
+  it("changes only the body: the subject, signature and schedule stay as they were", async () => {
+    stubApi(withTemplates());
+    newCampaign();
+    await ready();
+    fill("Campaign name", "Keep me");
+    fill("Subject", "My subject");
+    const signatureBefore = sigField.value();
+    choose("t1");
+    await waitFor(() => expect(bodyHtml()).toBe(CONSTRUCTION));
+    expect((screen.getByLabelText("Campaign name") as HTMLInputElement).value).toBe("Keep me");
+    expect((screen.getByLabelText("Subject") as HTMLInputElement).value).toBe("My subject");
+    expect(sigField.value()).toBe(signatureBefore);
+  });
+
+  it("goes into the saved draft, and into the preview", async () => {
+    const calls = stubApi((c) => (c.method === "POST" && c.path === "/api/campaigns" ? { status: 201, json: campaign({ id: "n" }) } : withTemplates()(c)));
+    newCampaign();
+    await ready();
+    choose("t1");
+    await waitFor(() => expect(bodyHtml()).toBe(CONSTRUCTION));
+    fireEvent.click(screen.getByRole("tab", { name: "preview" }));
+    const doc = ((await screen.findByTitle("Rendered email preview")) as HTMLIFrameElement).getAttribute("srcdoc")!;
+    expect(doc).toContain("construction pitch");
+    fireEvent.click(screen.getByRole("tab", { name: "edit" }));
+    fill("Campaign name", "N");
+    fill("Subject", "S");
+    save();
+    await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
+    expect(calls.find((c) => c.method === "POST")!.body.htmlBody).toBe(CONSTRUCTION);
+  });
+
+  it("asks before replacing a message the user has written, and keeps it if they say so", async () => {
+    stubApi(withTemplates());
+    newCampaign();
+    await ready();
+    bodyField.set("<p>My own words</p>");
+    choose("t1");
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Replace your message?")).toBeTruthy();
+    expect(within(dialog).getByText(/Your subject, signature and the other settings are not changed/)).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Keep my message" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(bodyHtml()).toBe("<p>My own words</p>");
+  });
+
+  it("replaces it when they agree", async () => {
+    stubApi(withTemplates());
+    newCampaign();
+    await ready();
+    bodyField.set("<p>My own words</p>");
+    choose("t2");
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Use the template" }));
+    await waitFor(() => expect(bodyHtml()).toBe(MARKETING));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("does not ask again to switch between templates while the body is still exactly the last one chosen, but does once it is edited", async () => {
+    stubApi(withTemplates());
+    newCampaign();
+    await ready();
+    choose("t1");
+    await waitFor(() => expect(bodyHtml()).toBe(CONSTRUCTION));
+    choose("t2");
+    await waitFor(() => expect(bodyHtml()).toBe(MARKETING));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    bodyField.set("<p>Marketing pitch, edited by me</p>");
+    choose("t1");
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+  });
+
+  it("asks when the body is anything else, such as a draft being edited", async () => {
+    stubApi((c) => (c.path === "/api/campaigns/k1" && c.method === "GET" ? { json: campaign({ id: "k1", htmlBody: "<p>The saved message</p>" }) } : withTemplates()(c)));
+    editCampaign();
+    await screen.findByDisplayValue("Access-to-SQL");
+    await screen.findByRole("combobox", { name: "Start from a template" });
+    choose("t1");
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+    expect(bodyHtml()).toBe("<p>The saved message</p>");
+  });
+
+  it("does not ask when the body has been emptied", async () => {
+    stubApi(withTemplates());
+    newCampaign();
+    await ready();
+    bodyField.set("");
+    choose("t1");
+    await waitFor(() => expect(bodyHtml()).toBe(CONSTRUCTION));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("says My Templates is empty, and links to the Email Templates page, when nothing has been added", async () => {
+    stubApi(withTemplates([templateSummary({ id: "t3", selected: false })]));
+    newCampaign();
+    await screen.findByText(/My Templates is empty/);
+    expect(screen.queryByRole("combobox", { name: "Start from a template" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Add some on Email Templates" }).getAttribute("href")).toBe("/templates");
+  });
+
+  it("is simply not shown if the templates could not be loaded: the editor still works", async () => {
+    stubApi(withTemplates(ALL, 500));
+    newCampaign();
+    await waitFor(() => expect(sigField.area().textContent).toContain("Rico Prinsipe"));
+    expect(screen.queryByText("Start from a template")).toBeNull();
+    expect(bodyField.area()).toBeTruthy();
+  });
+
+  it("tells the user if the chosen template could not be loaded, and leaves the message alone", async () => {
+    stubApi(withTemplates([templateSummary({ id: "gone", name: "Gone", selected: true })]));
+    newCampaign();
+    await ready();
+    const before = bodyHtml();
+    choose("gone");
+    expect(await screen.findByText("Template not found")).toBeTruthy();
+    expect(bodyHtml()).toBe(before);
   });
 });

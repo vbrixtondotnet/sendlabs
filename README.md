@@ -203,6 +203,18 @@ Every email's unsubscribe link, and every `List-Unsubscribe` header, carries a *
 - **Settings > Email Service > Suppression list** now shows the real list.
 - **Still to do:** the bulk sender must check the suppression list when it selects recipients and again just before each send (D-07), and must mint a live (non-test) token per recipient with `createUnsubscribeToken` and `unsubscribeLinks`. Until launch is built nothing sends to real recipients, so nothing can yet be sent to a suppressed address.
 
+#### Email Templates (built)
+
+**Email Templates** is a menu item in the left navigation, straight after Campaigns (`/templates`, visible to every role). It is the organization's library of ready-made messages a campaign can start from.
+
+- **The built-in templates:** nine, one for each file in the **`Email Templates/`** folder: Automotive Services, Construction, Digital Marketing, Food & Beverage Manufacturing, Healthcare Administration, Professional Services, Property Management, Transportation & Logistics, Wholesale & Distribution. The file name is the template name and the file content is the message body (HTML, using `{{firstName}}` and `{{companyName}}`). The Worker cannot read files at run time, so `npm run build:templates` compiles them into `src/shared/builtin-templates.ts`. **To change or add a built-in, edit or add a `.txt` file there and run that command**; a test fails if the folder and the generated file disagree.
+- **Each organization has its own copy.** The first time an organization opens the list, the built-ins are copied into its `email_templates` table (once; safe if two requests arrive together). Existing organizations get them the same way, so no data migration is needed.
+- **My Templates:** each row has an **Add to My Templates** button, after **Preview** (it turns into **Remove from My Templates**, and the row shows an **In My Templates** badge). **My Templates starts empty.** The templates in it are what the campaign editor offers. It belongs to the organization (everyone sees the same ones). Administrators and Campaign Managers can add and remove; Viewers can look and preview only and see no such button.
+- **Adding:** an **Administrator** presses **Add template**, gives a name and writes the message in the same rich-text editor as a campaign body (with the merge-field buttons). A new template is **not in My Templates** until it is added there. Names must be unique within the organization, ignoring letter case (a built-in's name counts); a message with a `{{field}}` that does not exist is refused; there is a limit of 100 templates per organization. Editing and deleting templates are not built.
+- **Preview:** the Preview button shows the message filled in with a sample contact (Alex, Example Co), as a recipient would see it. It is only the message: the signature, the standard unsubscribe footer and the postal address are added when a campaign is sent.
+- **In the campaign editor:** under **Message > Edit**, above the merge-field buttons and the Email body, a small **Start from a template** dropdown lists My Templates. Choosing one puts its message in the Email body (only the body: subject, signature and schedule are untouched). While the body is empty, the untouched starting text, or exactly the last template chosen, it is replaced straight away; if the user has written something it asks first ("Replace your message?"). With My Templates empty it says so and links to the Email Templates page. If the list cannot load, the dropdown is simply not shown.
+- **API:** `GET /api/email-templates` (everyone; no bodies), `GET /api/email-templates/:id` (everyone; with the body), `POST /api/email-templates` (Administrator; `{ name, htmlBody }`), `PUT /api/email-templates/:id/selected` (Administrator or Campaign Manager; `{ selected }`). All organization-scoped: another organization's template is a 404.
+
 #### Rich-text editors for the body and the signature (built)
 
 Under **Message > Edit**, the email body and the email signature are written in rich-text editors (TipTap, on ProseMirror: `src/client/components/RichTextEditor.tsx`) instead of plain boxes. The Edit and Preview tabs are unchanged, and Preview shows the formatting as it will be sent.
@@ -261,7 +273,7 @@ The look comes from the logo, `src/client/assets/logo.png` (kept as supplied). I
 
 #### Tests
 
-`npm test` runs 935 tests: state machines, validation schemas, IDs, password hashing, the CSV parser, the API including tenant isolation, CSV imports up to 8,000 rows and the whole Gmail connection and invitation flow against a stand-in for Google (all on in-memory D1), the migrations, and the UI pages (rendered in a simulated browser with the network stubbed, checking they call the API correctly and handle errors, empty states and read-only roles). The integration tests run the real Hono app and repositories against an in-memory D1 database (Miniflare) built from the committed migrations, so they never touch your local dev data. `npm run typecheck` covers the front end, the server, the server-side tests and the UI tests (the last two use separate configs, because browser and Cloudflare Worker types define clashing globals).
+`npm test` runs 1008 tests: state machines, validation schemas, IDs, password hashing, the CSV parser, the API including tenant isolation, CSV imports up to 8,000 rows and the whole Gmail connection and invitation flow against a stand-in for Google (all on in-memory D1), the migrations, and the UI pages (rendered in a simulated browser with the network stubbed, checking they call the API correctly and handle errors, empty states and read-only roles). The integration tests run the real Hono app and repositories against an in-memory D1 database (Miniflare) built from the committed migrations, so they never touch your local dev data. `npm run typecheck` covers the front end, the server, the server-side tests and the UI tests (the last two use separate configs, because browser and Cloudflare Worker types define clashing globals).
 
 | Table | Purpose |
 |---|---|
@@ -325,6 +337,7 @@ The seed script imports `public/sample-contacts.csv` through the real import end
 | Settings > Email Service: Connect Gmail, reconnect, disconnect | **Live**, once the Google credentials are supplied. Until then it says it is not set up. Not yet tried against real Google |
 | Campaign editor sender | **Live**: shows the tenant's connected address and blocks launching without one |
 | Settings: sending limits, data retention | Preview only. The mock records were removed: everything starts empty and nothing is saved |
+| Email Templates page, and the campaign editor's template dropdown | **Live**. See "Email Templates" above |
 | Settings: unsubscribe options, suppression list, the public unsubscribe page and endpoint | **Live**. See "Unsubscribing" above |
 | Settings > Users & access | **Live, read-only**: lists the tenant's real users and the three access levels. **Add user** and the role selectors are visible but do nothing yet (see below) |
 | Sign-in, tenant sign-up, password change | Not built. Locally the API acts as the seeded Administrator |

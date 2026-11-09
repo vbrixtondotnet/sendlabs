@@ -247,7 +247,7 @@ describe("coming back from Google", () => {
 
 describe("campaigns are sent from the connected account", () => {
   const contactsAnd = (sender: Handler): Handler => (c) =>
-    sender(c) ?? (c.path === "/api/me" && c.method === "GET" ? { json: meDto() } : c.path === "/api/contacts" && c.method === "GET" ? { json: page([contact()], 5) } : c.path === "/api/imports" && c.method === "GET" ? { json: page([]) } : undefined);
+    sender(c) ?? (c.path === "/api/email-templates" && c.method === "GET" ? { json: { items: [] } } : c.path === "/api/me" && c.method === "GET" ? { json: meDto() } : c.path === "/api/contacts" && c.method === "GET" ? { json: page([contact()], 5) } : c.path === "/api/imports" && c.method === "GET" ? { json: page([]) } : undefined);
   const editor = () => renderAt(<CampaignEditor />, { path: "/campaigns/new", route: "/campaigns/new" });
   const fillBasics = () => {
     fireEvent.change(screen.getByLabelText("Campaign name"), { target: { value: "N" } });

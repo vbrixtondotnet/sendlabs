@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { FIELDS } from "./csv";
 import { isValidEmail, normalizeEmail } from "./email";
+import { isBlankHtml } from "./merge";
 import { PASSWORD_MAX_LENGTH } from "./password-rules";
 import { ACCESS_LEVELS, CAMPAIGN_STATUSES, CONSENT_STATUSES, IMPORT_ROW_OUTCOMES, RECIPIENT_STATUSES, type AccessId } from "./types";
 
@@ -146,6 +147,24 @@ export const campaignPatchSchema = z
   .partial()
   .refine((v) => Object.keys(v).length > 0, "Provide at least one field to change");
 export type CampaignPatch = z.infer<typeof campaignPatchSchema>;
+
+/** Longest email template name, in characters. */
+export const TEMPLATE_NAME_MAX = 100;
+/** An organization's library is kept to a size a person can scan and a dropdown can hold. */
+export const MAX_EMAIL_TEMPLATES = 100;
+
+/** An Administrator adding a template: a name and the message body (HTML, written in the rich-text editor). */
+export const emailTemplateCreateSchema = z.strictObject({
+  name: z.string().trim().min(1, "Name is required").max(TEMPLATE_NAME_MAX, `Use at most ${TEMPLATE_NAME_MAX} characters`),
+  htmlBody: z
+    .string()
+    .max(200_000, "Use at most 200,000 characters")
+    .refine((v) => !isBlankHtml(v), "The message is required"),
+});
+export type EmailTemplateCreate = z.infer<typeof emailTemplateCreateSchema>;
+
+/** Picking a template (or putting it back): whether the campaign editor offers it. */
+export const templateSelectionSchema = z.strictObject({ selected: z.boolean() });
 
 /** The suppression list, a page at a time. */
 export const suppressionListQuery = pageQuery;

@@ -4,7 +4,7 @@ import { cleanup, render } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, vi } from "vitest";
-import type { CampaignDto, CampaignSummaryDto, ContactDto, ImportDto, InvitationDto, Page, RecipientDto, MeDto, SenderDto, SenderStatusDto, TestRecipientDto, UserDto } from "../../src/shared/api";
+import type { CampaignDto, CampaignSummaryDto, ContactDto, ImportDto, InvitationDto, Page, RecipientDto, EmailTemplateDto, EmailTemplateSummaryDto, MeDto, SenderDto, SenderStatusDto, TestRecipientDto, UserDto } from "../../src/shared/api";
 import type { Role } from "../../src/shared/types";
 import { RoleProvider } from "../../src/client/hooks/useRole";
 import { ToastProvider } from "../../src/client/hooks/useToast";
@@ -130,6 +130,14 @@ export const meDto = (user: Partial<MeDto["user"]> = {}, tenant: Partial<MeDto["
   tenant: { id: "t", name: "Acme", slug: "acme", postalAddress: "Acme Inc.\n1 Road, Springfield", website: "", requireUnsubscribeLink: true, oneClickUnsubscribe: true, ...tenant },
   session: true,
   });
+
+export const templateSummary = (over: Partial<EmailTemplateSummaryDto> = {}): EmailTemplateSummaryDto => ({
+  id: "tpl1", name: "Construction", builtin: true, selected: false, createdAt: ts, ...over,
+});
+
+export const templateDto = (over: Partial<EmailTemplateDto> = {}): EmailTemplateDto => ({
+  ...templateSummary(), htmlBody: "<p>Hi {{firstName}}, about <strong>{{companyName}}</strong>.</p>", ...over,
+});
 
 export const testRecipientDto = (over: Partial<TestRecipientDto> = {}): TestRecipientDto => ({
   id: "t1", email: "qa@acme.test", addedBy: "admin@sabertoothsoftwarelabs.net", createdAt: ts, ...over,

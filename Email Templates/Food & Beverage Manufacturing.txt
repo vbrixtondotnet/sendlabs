@@ -1,0 +1,55 @@
+<p>Hi {{firstName}},</p>
+
+<p>I recently visited your website and took some time to learn more about <strong>{{companyName}}</strong> and the food and beverage products your company manufactures.</p>
+
+<p>It got me wondering: Are you still relying on spreadsheets, paper-based records, manual data entry, or disconnected applications to manage production schedules, raw materials, ingredient inventory, batch records, and day-to-day manufacturing operations?</p>
+
+<p>Are some of your critical business processes still running on outdated ERP systems or legacy applications that make it difficult to monitor production costs, track ingredients, manage expiration dates, maintain product traceability, and get real-time visibility into your operations?</p>
+
+<p>These are common challenges among growing food and beverage manufacturers, and they're exactly where we can help.</p>
+
+<p>At <strong>Sabertooth Software Labs</strong>, we help food and beverage manufacturers modernize their operations through custom-built manufacturing ERP solutions, business process automation, system integrations, and AI-driven software solutions.</p>
+
+<p>We develop solutions designed around how your manufacturing business actually operates, helping you:</p>
+
+<ul>
+    <li><strong>Modernize Production Management</strong> – Streamline production planning, manufacturing schedules, work orders, recipes, formulations, and production tracking.</li>
+
+    <li><strong>Improve Raw Material and Inventory Management</strong> – Monitor ingredients, packaging materials, finished goods, stock movements, and inventory levels across multiple storage locations.</li>
+
+    <li><strong>Implement Batch and Lot Traceability</strong> – Track raw materials, production batches, ingredient usage, and finished products to improve product traceability and accountability.</li>
+
+    <li><strong>Improve Quality Control</strong> – Organize quality inspections, production checks, compliance records, and product quality documentation throughout the manufacturing process.</li>
+
+    <li><strong>Manage Expiration Dates and Shelf Life</strong> – Monitor product expiration dates, ingredient shelf life, stock rotation, and inventory movements to help minimize waste.</li>
+
+    <li><strong>Improve Production Cost Visibility</strong> – Track ingredient costs, labor, overhead, and actual production expenses against estimates and budgets.</li>
+
+    <li><strong>Leverage AI</strong> – Introduce intelligent workflows, automated document processing, production insights, demand forecasting, and AI-powered operational reporting.</li>
+
+    <li><strong>Integrate Existing Systems</strong> – Connect your manufacturing ERP, accounting applications, purchasing systems, warehouse platforms, and other business tools to eliminate disconnected workflows and duplicate data entry.</li>
+</ul>
+
+<p><strong>Modernize Without Disrupting Your Manufacturing Operations.</strong></p>
+
+<p>We understand that food and beverage manufacturing operations cannot simply stop while transitioning to new technology. Production schedules, ingredient deliveries, inventory movements, quality inspections, and customer orders must continue without interruption.</p>
+
+<p>That's why we take a gradual, well-planned modernization approach that allows your business to transition from existing processes and legacy systems into modern solutions while keeping your day-to-day operations running.</p>
+
+<p><strong>Why Work With Sabertooth Software Labs?</strong></p>
+
+<p><strong>1. You Own Your Source Code. No Vendor Lock-in.</strong></p>
+
+<p>When we build your software, you own the source code and intellectual property as agreed in our engagement. You're not locked into depending on a single software agency to maintain or improve your system. You can continue development with your internal IT team, hire another developer, transfer the project to another agency, or leverage AI-assisted development tools to maintain and extend your software. Your technology should remain an asset you control.</p>
+
+<p><strong>2. Faster Delivery Without the Million-Dollar Price Tag.</strong></p>
+
+<p>Traditional custom software development projects can take 6–12 months or longer and often require substantial investments. By combining experienced software engineering with modern development tools and AI-assisted workflows, we aim to deliver appropriately scoped solutions in as little as <strong>2–4 months</strong>, depending on project requirements and complexity.</p>
+
+<p>You get modern manufacturing technology, faster delivery, and a more practical investment without the traditional enterprise price tag.</p>
+
+<p>We believe your manufacturing software should adapt to your production processes and business requirements, not force your company to change the way it operates.</p>
+
+<p><strong>Would you be open to a quick conversation?</strong> We'd love to explore how we could help {{companyName}} streamline production management, improve ingredient and inventory tracking, strengthen batch traceability, and modernize existing manufacturing operations.</p>
+
+<p>No pressure or commitment. Just a conversation.</p>

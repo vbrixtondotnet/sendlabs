@@ -13,6 +13,7 @@ import { authRoutes } from "./routes/auth";
 import { invitationPublicRoutes } from "./routes/invitations";
 import { meRoutes } from "./routes/me";
 import { tenantRoutes } from "./routes/tenant";
+import { emailTemplateRoutes } from "./routes/email-templates";
 import { suppressionRoutes } from "./routes/suppressions";
 import { unsubscribeRoutes } from "./routes/unsubscribe";
 import { senderPublicRoutes, senderRoutes } from "./routes/sender";
@@ -88,6 +89,7 @@ export function createApp(options: { google?: GoogleOAuth } = {}) {
   api.route("/sender", senderRoutes);
   api.route("/test-recipients", testRecipientRoutes);
   api.route("/suppressions", suppressionRoutes);
+  api.route("/email-templates", emailTemplateRoutes);
   api.route("/contacts", contactRoutes);
   api.route("/campaigns", campaignRoutes);
   api.route("/imports", importRoutes);
