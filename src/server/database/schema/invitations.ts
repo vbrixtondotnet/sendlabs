@@ -26,6 +26,8 @@ export const invitations = sqliteTable(
     normalizedEmail: text("normalized_email").notNull(),
     firstName: text("first_name").notNull(),
     lastName: text("last_name").notNull(),
+    /** Job title the Administrator gave. Optional (empty = not set). Becomes the user's position when they accept. */
+    position: text("position").notNull().default(""),
     /** The access level the person will get when they accept. */
     accessId: text("access_id")
       .notNull()

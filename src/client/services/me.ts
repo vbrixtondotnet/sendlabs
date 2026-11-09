@@ -18,11 +18,11 @@ export function initialsOf(name: string, email: string): string {
   return letters.toUpperCase();
 }
 
-/** Edit your own first and last name. The header and every page showing your name refresh from the result. */
+/** Edit your own first name, last name and position. The header and every page showing your name refresh from the result. */
 export function useUpdateProfile() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { firstName: string; lastName: string }) => api<{ firstName: string; lastName: string; displayName: string }>("PATCH", "/api/me", input),
+    mutationFn: (input: { firstName: string; lastName: string; position?: string }) => api<{ firstName: string; lastName: string; position: string; displayName: string }>("PATCH", "/api/me", input),
     onSuccess: (saved) =>
       qc.setQueryData<MeDto>(["me"], (me) => (me ? { ...me, user: { ...me.user, ...saved } } : me)),
   });
@@ -41,7 +41,7 @@ export function useChangePassword() {
 export function useUpdateTenant() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { name?: string; postalAddress?: string }) => api<MeDto["tenant"]>("PATCH", "/api/tenant", input),
+    mutationFn: (input: { name?: string; postalAddress?: string; website?: string; requireUnsubscribeLink?: boolean; oneClickUnsubscribe?: boolean }) => api<MeDto["tenant"]>("PATCH", "/api/tenant", input),
     onSuccess: (saved) => qc.setQueryData<MeDto>(["me"], (me) => (me ? { ...me, tenant: { ...me.tenant, ...saved } } : me)),
   });
 }

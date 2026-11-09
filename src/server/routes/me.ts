@@ -12,14 +12,14 @@ export const meRoutes = new Hono<AppEnv>();
 meRoutes.get("/", (c) => {
   const a = c.get("actor");
   const me: MeDto = {
-    user: { id: a.userId, email: a.email, firstName: a.firstName, lastName: a.lastName, displayName: a.displayName, access: a.access, mustChangePassword: a.mustChangePassword },
-    tenant: { id: a.tenantId, name: a.tenantName, slug: a.tenantSlug, postalAddress: a.tenantPostalAddress },
+    user: { id: a.userId, email: a.email, firstName: a.firstName, lastName: a.lastName, position: a.position, displayName: a.displayName, access: a.access, mustChangePassword: a.mustChangePassword },
+    tenant: { id: a.tenantId, name: a.tenantName, slug: a.tenantSlug, postalAddress: a.tenantPostalAddress, website: a.tenantWebsite, requireUnsubscribeLink: a.tenantRequireUnsubscribeLink, oneClickUnsubscribe: a.tenantOneClickUnsubscribe },
     session: a.viaSession,
   };
   return c.json(me);
 });
 
-/** Edit your own first and last name. Always your own account: there is no id to pass. */
+/** Edit your own first name, last name and position. Always your own account: there is no id to pass. */
 meRoutes.patch("/", async (c) => {
   const body = await parseJson(c, profileUpdateSchema);
   return c.json(await updateProfile(c.get("db"), c.get("actor"), body));

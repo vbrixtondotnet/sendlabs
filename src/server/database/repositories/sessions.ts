@@ -16,6 +16,7 @@ export function sessionsRepo(db: Database) {
           email: users.email,
           firstName: users.firstName,
           lastName: users.lastName,
+          position: users.position,
           displayName: users.displayName,
           userStatus: users.status,
           mustChangePassword: users.mustChangePassword,
@@ -23,6 +24,9 @@ export function sessionsRepo(db: Database) {
           tenantName: tenants.name,
           tenantSlug: tenants.slug,
           tenantPostalAddress: tenants.postalAddress,
+          tenantWebsite: tenants.website,
+          tenantRequireUnsubscribeLink: tenants.requireUnsubscribeLink,
+          tenantOneClickUnsubscribe: tenants.oneClickUnsubscribe,
           tenantStatus: tenants.status,
           access: access.name,
         })

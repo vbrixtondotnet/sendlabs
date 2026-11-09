@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { AppEnv } from "../app";
 import { campaignsRepo } from "../database/repositories/campaigns";
 import { parseJson, parseQuery } from "../lib/http";
-import { requireAccess } from "../middleware/auth";
+import { requireAccess, type Actor } from "../middleware/auth";
 import { googleConfig } from "../services/google-oauth";
 import { sendTestEmail } from "../services/test-send";
 import {
@@ -48,8 +48,18 @@ campaignRoutes.post("/:id/duplicate", async (c) =>
  * Mails the campaign to the test-send allowlist (Settings), never to its real recipients, and does not change its
  * status. The request carries no addresses: a test can only go where an Administrator allowed it to.
  */
+/** What the sending code needs to know about the caller's organization. */
+const tenantOf = (a: Actor) => ({
+  tenantId: a.tenantId,
+  tenantName: a.tenantName,
+  senderName: a.displayName,
+  postalAddress: a.tenantPostalAddress,
+  requireUnsubscribeLink: a.tenantRequireUnsubscribeLink,
+  oneClickUnsubscribe: a.tenantOneClickUnsubscribe,
+});
+
 campaignRoutes.post("/:id/test-send", requireAccess("Administrator", "Campaign Manager"), async (c) =>
-  c.json(await sendTestEmail({ db: c.get("db"), google: c.get("google"), cfg: googleConfig(c.env) }, { tenantId: c.get("actor").tenantId, tenantName: c.get("actor").tenantName }, c.req.param("id"))),
+  c.json(await sendTestEmail({ db: c.get("db"), google: c.get("google"), cfg: googleConfig(c.env) }, tenantOf(c.get("actor")), c.req.param("id"))),
 );
 
 campaignRoutes.post("/:id/archive", async (c) => c.json(await campaignsRepo(c.get("db"), c.get("actor").tenantId).setArchived(c.req.param("id"), true)));

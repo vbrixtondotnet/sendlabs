@@ -67,6 +67,7 @@ export function usersRepo(db: Database, tenantId: string) {
             email: users.email,
             firstName: users.firstName,
             lastName: users.lastName,
+            position: users.position,
             displayName: users.displayName,
             accessId: users.accessId,
             accessName: access.name,

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { check, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { TENANT_STATUSES } from "../../../shared/types";
 import { createdAt, idColumn, inList, updatedAt } from "./helpers";
 
@@ -17,6 +17,12 @@ export const tenants = sqliteTable(
     slug: text("slug").notNull(),
     /** The organization's postal address, printed in the footer of its emails (a legal requirement for marketing email). Free text, may be several lines; empty until set. */
     postalAddress: text("postal_address").notNull().default(""),
+    /** The organization's website (a domain or URL, as entered), shown in the email signature. Empty until set. */
+    website: text("website").notNull().default(""),
+    /** Compliance: every campaign must contain an unsubscribe link (`{{unsubscribeUrl}}`). On by default. */
+    requireUnsubscribeLink: integer("require_unsubscribe_link", { mode: "boolean" }).notNull().default(true),
+    /** Compliance: add the one-click `List-Unsubscribe` headers to every email. On by default. */
+    oneClickUnsubscribe: integer("one_click_unsubscribe", { mode: "boolean" }).notNull().default(true),
     status: text("status", { enum: TENANT_STATUSES }).notNull().default("Active"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

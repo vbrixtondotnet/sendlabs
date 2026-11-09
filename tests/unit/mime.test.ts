@@ -124,3 +124,32 @@ describe("header helpers", () => {
     expect(Buffer.from(b.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8")).toBe(raw);
   });
 });
+
+describe("List-Unsubscribe headers", () => {
+  const base = { from: "sales@acme.test", to: "a@b.test", subject: "S", text: "T" };
+  const head = (raw: string) => raw.split("\r\n\r\n")[0]!;
+
+  it("adds the address, and the one-click marker when asked", () => {
+    const h = head(buildMime({ ...base, listUnsubscribe: { url: "https://acme.test/u/abc", oneClick: true } }));
+    expect(h).toContain("List-Unsubscribe: <https://acme.test/u/abc>");
+    expect(h).toContain("List-Unsubscribe-Post: List-Unsubscribe=One-Click");
+  });
+  it("can add just the address, without the one-click marker", () => {
+    const h = head(buildMime({ ...base, listUnsubscribe: { url: "http://acme.test/u/abc?x=1&y=2", oneClick: false } }));
+    expect(h).toContain("List-Unsubscribe: <http://acme.test/u/abc?x=1&y=2>");
+    expect(h).not.toContain("List-Unsubscribe-Post");
+  });
+  it("adds neither header when not asked", () => {
+    expect(head(buildMime(base))).not.toContain("List-Unsubscribe");
+  });
+  it("works for a message with an HTML part too, with the headers in the header block", () => {
+    const raw = buildMime({ ...base, html: "<p>x</p>", listUnsubscribe: { url: "https://acme.test/u", oneClick: true } });
+    expect(head(raw)).toContain("List-Unsubscribe-Post");
+    expect(raw.split("\r\n\r\n").slice(1).join("")).not.toContain("List-Unsubscribe");
+  });
+  it("refuses an address that is not a plain http(s) one, so nothing can be injected through it", () => {
+    for (const url of ["", "javascript:alert(1)", "mailto:a@b.test", "ftp://acme.test", "https://acme.test/u\r\nBcc: evil@x.test", "https://acme.test/a b", "https://acme.test/>, <https://evil.test", "https://acme.test/u,https://evil.test", "https://", "//acme.test/u", "https://acme.test/\u0000"]) {
+      expect(() => buildMime({ ...base, listUnsubscribe: { url, oneClick: true } }), JSON.stringify(url)).toThrow();
+    }
+  });
+});

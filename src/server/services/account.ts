@@ -1,4 +1,5 @@
 import { and, eq } from "drizzle-orm";
+import type { MeDto } from "../../shared/api";
 import { passwordProblem } from "../../shared/password-rules";
 import { POSTAL_ADDRESS_MAX, type PasswordChange, type ProfileUpdate, type TenantUpdate } from "../../shared/schemas";
 import type { Database } from "../database/client";
@@ -13,23 +14,25 @@ import { cleanName } from "./invitations";
 type Self = Pick<Actor, "userId" | "tenantId" | "sessionId">;
 
 /**
- * Changes the signed-in user's own name. Only first and last name: email, role and tenant are not editable here.
+ * Changes the signed-in user's own name and position. Nothing else: email, role and tenant are not editable here.
  * The name shown around the app ("display name") is kept as "first last".
  */
-export async function updateProfile(db: Database, who: Self, input: ProfileUpdate): Promise<{ firstName: string; lastName: string; displayName: string }> {
+export async function updateProfile(db: Database, who: Self, input: ProfileUpdate): Promise<{ firstName: string; lastName: string; position: string; displayName: string }> {
   const firstName = cleanName(input.firstName);
   const lastName = cleanName(input.lastName);
   if (!firstName || !lastName) {
     throw badRequest("Validation failed", [{ path: !firstName ? "firstName" : "lastName", message: `${!firstName ? "First" : "Last"} name is required` }], "VALIDATION_ERROR");
   }
   const displayName = `${firstName} ${lastName}`;
+  // Left out = unchanged; sent empty = cleared. Tidied like a name: one line, single spaces.
+  const position = input.position === undefined ? undefined : cleanName(input.position);
   const rows = await db
     .update(users)
-    .set({ firstName, lastName, displayName })
+    .set({ firstName, lastName, displayName, ...(position === undefined ? {} : { position }) })
     .where(and(eq(users.id, who.userId), eq(users.tenantId, who.tenantId), eq(users.isDeleted, false)))
-    .returning({ id: users.id });
+    .returning({ id: users.id, position: users.position });
   if (rows.length !== 1) throw new ApiError(404, "NOT_FOUND", "User not found");
-  return { firstName, lastName, displayName };
+  return { firstName, lastName, position: rows[0]!.position, displayName };
 }
 
 /**
@@ -93,8 +96,8 @@ export function cleanAddress(raw: string): string {
  * request. The slug is deliberately left alone, so anything that refers to the organization by it keeps working. Two
  * organizations cannot share a name (ignoring letter case). The postal address may be cleared.
  */
-export async function updateTenant(db: Database, tenantId: string, input: TenantUpdate): Promise<{ id: string; name: string; slug: string; postalAddress: string }> {
-  const changes: { name?: string; postalAddress?: string } = {};
+export async function updateTenant(db: Database, tenantId: string, input: TenantUpdate): Promise<MeDto["tenant"]> {
+  const changes: { name?: string; postalAddress?: string; website?: string; requireUnsubscribeLink?: boolean; oneClickUnsubscribe?: boolean } = {};
   if (input.name !== undefined) {
     const name = cleanName(input.name);
     if (!name) throw badRequest("Validation failed", [{ path: "name", message: "Name is required" }], "VALIDATION_ERROR");
@@ -107,8 +110,11 @@ export async function updateTenant(db: Database, tenantId: string, input: Tenant
     }
     changes.postalAddress = postalAddress;
   }
+  if (input.requireUnsubscribeLink !== undefined) changes.requireUnsubscribeLink = input.requireUnsubscribeLink;
+  if (input.oneClickUnsubscribe !== undefined) changes.oneClickUnsubscribe = input.oneClickUnsubscribe;
+  if (input.website !== undefined) changes.website = cleanName(input.website); // already checked by the schema; tidied like any one-line value
   try {
-    const [row] = await db.update(tenants).set(changes).where(eq(tenants.id, tenantId)).returning({ id: tenants.id, name: tenants.name, slug: tenants.slug, postalAddress: tenants.postalAddress });
+    const [row] = await db.update(tenants).set(changes).where(eq(tenants.id, tenantId)).returning({ id: tenants.id, name: tenants.name, slug: tenants.slug, postalAddress: tenants.postalAddress, website: tenants.website, requireUnsubscribeLink: tenants.requireUnsubscribeLink, oneClickUnsubscribe: tenants.oneClickUnsubscribe });
     if (!row) throw new ApiError(404, "NOT_FOUND", "Organization not found");
     console.log(JSON.stringify({ level: "info", event: "tenant_updated", tenantId, fields: Object.keys(changes) }));
     return row;

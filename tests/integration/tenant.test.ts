@@ -166,3 +166,130 @@ describe("the postal address", () => {
     expect(JSON.stringify((await h.as(GLOBEX).api("GET", "/api/me")).json)).not.toContain("Private to us");
   });
 });
+
+describe("the website", () => {
+  const set = (website: unknown, who: { api: Harness["api"] } = h) => who.api("PATCH", "/api/tenant", { website });
+  const websiteOf = async (tenantId: string) => (await h.rows<{ website: string }>("SELECT website FROM tenants WHERE id = ?", tenantId))[0]!.website;
+
+  it("starts empty, and /api/me reports it", async () => {
+    const t = await h.addTenant("Web Fresh Ltd", "boss@webfresh.test");
+    expect(await websiteOf(t.tenantId)).toBe("");
+    expect((await h.as("boss@webfresh.test").api("GET", "/api/me")).json.tenant.website).toBe("");
+  });
+
+  it("an Administrator saves it, and everyone in the organization sees it in /api/me", async () => {
+    const r = await set("sabertoothsoftwarelabs.net");
+    expect(r.status).toBe(200);
+    expect(r.json).toMatchObject({ id: h.tenantId, website: "sabertoothsoftwarelabs.net" });
+    expect(await websiteOf(h.tenantId)).toBe("sabertoothsoftwarelabs.net");
+    expect((await h.api("GET", "/api/me")).json.tenant.website).toBe("sabertoothsoftwarelabs.net");
+    expect((await (await member("viewer")).api("GET", "/api/me")).json.tenant.website).toBe("sabertoothsoftwarelabs.net");
+  });
+
+  it("is trimmed, and a full address is kept as typed", async () => {
+    expect((await set("  example.com  ")).json.website).toBe("example.com");
+    expect((await set("https://www.example.com/about")).json.website).toBe("https://www.example.com/about");
+  });
+
+  it("can be cleared again", async () => {
+    await set("example.com");
+    expect((await set("")).json.website).toBe("");
+    expect(await websiteOf(h.tenantId)).toBe("");
+    expect((await set("   ")).json.website).toBe("");
+  });
+
+  it("can be sent with the name and address, or alone, and changing one leaves the others", async () => {
+    await rename("Site Co");
+    await set("keep.test");
+    await h.api("PATCH", "/api/tenant", { postalAddress: "1 Road" });
+    expect((await nameOf(h.tenantId)).name).toBe("Site Co");
+    expect(await websiteOf(h.tenantId)).toBe("keep.test");
+    const all = await h.api("PATCH", "/api/tenant", { name: "Site Co 2", website: "two.test", postalAddress: "2 Road" });
+    expect(all.json).toMatchObject({ name: "Site Co 2", website: "two.test", postalAddress: "2 Road" });
+    await rename("Site Co 3");
+    expect(await websiteOf(h.tenantId)).toBe("two.test"); // renaming does not wipe it
+  });
+
+  it("is refused for a bad value, and nothing else is saved with it (all or nothing)", async () => {
+    await set("good.test");
+    for (const website of ["not a website", "javascript:alert(1)", "ftp://x.test", "<b>x.test</b>", "nodots", `${"x".repeat(200)}.com`, 5, null]) {
+      expect((await set(website)).status, JSON.stringify(website).slice(0, 40)).toBe(400);
+    }
+    const both = await h.api("PATCH", "/api/tenant", { name: "Should Not Stick", website: "bad one" });
+    expect(both.status).toBe(400);
+    expect(await websiteOf(h.tenantId)).toBe("good.test");
+    expect((await nameOf(h.tenantId)).name).not.toBe("Should Not Stick");
+  });
+
+  it("only Administrators can change it, and only their own organization's", async () => {
+    await set("mine.test");
+    expect((await set("hijack.test", await member("campaign-manager"))).status).toBe(403);
+    expect((await set("hijack.test", await member("viewer"))).status).toBe(403);
+    expect(await websiteOf(h.tenantId)).toBe("mine.test");
+    await set("globex.test", h.as(GLOBEX));
+    expect(await websiteOf(h.tenantId)).toBe("mine.test");
+  });
+
+  it("does not leak into other organizations' /api/me", async () => {
+    await set("private-to-us.test");
+    expect(JSON.stringify((await h.as(GLOBEX).api("GET", "/api/me")).json)).not.toContain("private-to-us.test");
+  });
+});
+
+describe("the unsubscribe settings", () => {
+  const set = (body: Record<string, unknown>, who: { api: Harness["api"] } = h) => who.api("PATCH", "/api/tenant", body);
+  const rowOf = async (tenantId: string) => (await h.rows<{ require_unsubscribe_link: number; one_click_unsubscribe: number }>("SELECT require_unsubscribe_link, one_click_unsubscribe FROM tenants WHERE id = ?", tenantId))[0]!;
+
+  it("are both ON for a new organization, and /api/me says so", async () => {
+    const t = await h.addTenant("Compliance Fresh Ltd", "boss@compfresh.test");
+    expect(await rowOf(t.tenantId)).toEqual({ require_unsubscribe_link: 1, one_click_unsubscribe: 1 });
+    expect((await h.as("boss@compfresh.test").api("GET", "/api/me")).json.tenant).toMatchObject({ requireUnsubscribeLink: true, oneClickUnsubscribe: true });
+  });
+
+  it("an Administrator can turn each off and on, and everyone in the organization sees it in /api/me", async () => {
+    const r = await set({ requireUnsubscribeLink: false });
+    expect(r.status).toBe(200);
+    expect(r.json).toMatchObject({ id: h.tenantId, requireUnsubscribeLink: false, oneClickUnsubscribe: true });
+    expect((await rowOf(h.tenantId)).require_unsubscribe_link).toBe(0);
+    expect((await (await member("viewer")).api("GET", "/api/me")).json.tenant).toMatchObject({ requireUnsubscribeLink: false, oneClickUnsubscribe: true });
+    expect((await set({ oneClickUnsubscribe: false })).json).toMatchObject({ requireUnsubscribeLink: false, oneClickUnsubscribe: false });
+    expect((await set({ requireUnsubscribeLink: true, oneClickUnsubscribe: true })).json).toMatchObject({ requireUnsubscribeLink: true, oneClickUnsubscribe: true });
+    expect(await rowOf(h.tenantId)).toEqual({ require_unsubscribe_link: 1, one_click_unsubscribe: 1 });
+  });
+
+  it("changing one leaves the other, and the other company details, alone", async () => {
+    await set({ name: "Toggle Co", requireUnsubscribeLink: true, oneClickUnsubscribe: true });
+    await set({ oneClickUnsubscribe: false });
+    expect(await rowOf(h.tenantId)).toEqual({ require_unsubscribe_link: 1, one_click_unsubscribe: 0 });
+    expect((await nameOf(h.tenantId)).name).toBe("Toggle Co");
+    await rename("Toggle Co 2");
+    expect(await rowOf(h.tenantId)).toEqual({ require_unsubscribe_link: 1, one_click_unsubscribe: 0 }); // renaming does not reset them
+    await set({ oneClickUnsubscribe: true });
+  });
+
+  it("must be true or false, nothing else", async () => {
+    await set({ requireUnsubscribeLink: true, oneClickUnsubscribe: true });
+    for (const body of [{ requireUnsubscribeLink: "yes" }, { requireUnsubscribeLink: 0 }, { requireUnsubscribeLink: null }, { oneClickUnsubscribe: "false" }, { oneClickUnsubscribe: 1 }]) {
+      expect((await set(body)).status, JSON.stringify(body)).toBe(400);
+    }
+    expect(await rowOf(h.tenantId)).toEqual({ require_unsubscribe_link: 1, one_click_unsubscribe: 1 });
+  });
+
+  it("is all or nothing with the other fields", async () => {
+    await set({ requireUnsubscribeLink: true });
+    const takenName = (await h.rows<{ name: string }>("SELECT t.name FROM tenants t JOIN users u ON u.tenant_id = t.id WHERE u.normalized_email = ?", GLOBEX))[0]!.name;
+    expect((await set({ name: takenName, requireUnsubscribeLink: false })).status).toBe(409);
+    expect((await rowOf(h.tenantId)).require_unsubscribe_link).toBe(1);
+  });
+
+  it("only Administrators can change them, and only their own organization's", async () => {
+    await set({ requireUnsubscribeLink: true });
+    expect((await set({ requireUnsubscribeLink: false }, await member("campaign-manager"))).status).toBe(403);
+    expect((await set({ requireUnsubscribeLink: false }, await member("viewer"))).status).toBe(403);
+    expect((await rowOf(h.tenantId)).require_unsubscribe_link).toBe(1);
+    await set({ requireUnsubscribeLink: false }, h.as(GLOBEX));
+    expect((await rowOf(h.tenantId)).require_unsubscribe_link).toBe(1);
+    const globex = (await h.rows<{ tenant_id: string }>("SELECT tenant_id FROM users WHERE normalized_email = ?", GLOBEX))[0]!.tenant_id;
+    expect((await rowOf(globex)).require_unsubscribe_link).toBe(0);
+  });
+});

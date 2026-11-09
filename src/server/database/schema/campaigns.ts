@@ -33,6 +33,8 @@ export const campaigns = sqliteTable(
     htmlBody: text("html_body").notNull(),
     /** Null means "derive plain text from the HTML when sending". */
     textBody: text("text_body"),
+    /** The email signature (sign-off): plain text, several lines. Always added right after the body when sending. Empty = none. */
+    signature: text("signature").notNull().default(""),
 
     status: text("status", { enum: CAMPAIGN_STATUSES }).notNull().default("Draft"),
 

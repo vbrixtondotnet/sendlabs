@@ -73,7 +73,7 @@ describe("inviting", () => {
     const r = await h.api("POST", "/api/users/invitations", body({ email: "Pat.Smith@Example.test", firstName: "Pat", lastName: "Smith", accessId: "viewer" }));
     expect(r.status).toBe(201);
     expect(r.json).toMatchObject({ email: "Pat.Smith@Example.test", firstName: "Pat", lastName: "Smith", access: "Viewer", accessId: "viewer", status: "Pending", invitedBy: h.adminEmail });
-    expect(Object.keys(r.json).sort()).toEqual(["access", "accessId", "createdAt", "email", "expiresAt", "firstName", "id", "invitedBy", "lastName", "status"]);
+    expect(Object.keys(r.json).sort()).toEqual(["access", "accessId", "createdAt", "email", "expiresAt", "firstName", "id", "invitedBy", "lastName", "position", "status"]);
 
     expect(google.mailbox).toHaveLength(1);
     expect(google.mailbox[0]!.from).toBe(SENDER);
@@ -208,6 +208,99 @@ describe("when the email cannot be sent", () => {
     expect((await invite()).json.error.code).toBe("SENDER_RECONNECT"); // refused up front
     await connectGmail(h, SENDER); // reconnecting restores it
     expect((await invite()).status).toBe(201);
+  });
+});
+
+describe("the position on an invitation", () => {
+  const accept = (token: string, password = PASSWORD) => h.api("POST", `/api/invitations/${token}/accept`, { password });
+  const userByEmail = async (email: string) => (await h.rows<{ id: string; position: string }>("SELECT id, position FROM users WHERE normalized_email = ?", email.toLowerCase()))[0]!;
+  const openInvitation = async (email: string) => (await h.api("GET", "/api/users/invitations")).json.items.find((i: { email: string }) => i.email === email);
+
+  it("is optional: leaving it out stores an empty position", async () => {
+    const email = uniqueEmail("nopos");
+    const r = await invite({ email });
+    expect(r.status).toBe(201);
+    expect(r.json.position).toBe("");
+    expect((await openInvitation(email)).position).toBe("");
+    await accept(tokenFromMail());
+    expect((await userByEmail(email)).position).toBe("");
+  });
+
+  it("is saved with the invitation, and shown in the pending list", async () => {
+    const email = uniqueEmail("pos");
+    const r = await invite({ email, position: "Sales Director" });
+    expect(r.status).toBe(201);
+    expect(r.json.position).toBe("Sales Director");
+    expect((await openInvitation(email)).position).toBe("Sales Director");
+    expect((await h.rows<{ position: string }>("SELECT position FROM invitations WHERE normalized_email = ?", email.toLowerCase()))[0]!.position).toBe("Sales Director");
+  });
+
+  it("becomes the user's position when they accept, in /api/me and the users list", async () => {
+    const email = uniqueEmail("accepts");
+    await invite({ email, position: "Head of Sales" });
+    const ok = await accept(tokenFromMail());
+    expect(ok.status).toBe(200);
+    expect((await userByEmail(email)).position).toBe("Head of Sales");
+    expect((await h.api("GET", "/api/me", undefined, asSession(cookieOf(ok)))).json.user.position).toBe("Head of Sales");
+    expect((await h.api("GET", "/api/users")).json.items.find((u: { email: string }) => u.email === email).position).toBe("Head of Sales");
+  });
+
+  it("is tidied like a name, and may not be longer than 100 characters or anything but text", async () => {
+    const email = uniqueEmail("tidy");
+    expect((await invite({ email, position: "  Head\r\n  of\tSales\u0000 " })).json.position).toBe("Head of Sales");
+    expect((await invite({ email: uniqueEmail("max"), position: "x".repeat(100) })).status).toBe(201);
+    for (const position of ["x".repeat(101), 5, null, ["CTO"]]) {
+      expect((await invite({ email: uniqueEmail("bad"), position })).status, JSON.stringify(position).slice(0, 30)).toBe(400);
+    }
+  });
+
+  it("a resend keeps it", async () => {
+    const email = uniqueEmail("resendpos");
+    const first = await invite({ email, position: "CTO" });
+    await expireCooldown(email);
+    const again = await h.api("POST", `/api/users/invitations/${first.json.id}/resend`);
+    expect(again.status).toBe(201);
+    expect(again.json.position).toBe("CTO");
+    await accept(tokenFromMail());
+    expect((await userByEmail(email)).position).toBe("CTO");
+  });
+
+  it("a person invited again after being removed gets the position from the new invitation", async () => {
+    const email = uniqueEmail("back");
+    await invite({ email, position: "Old title" });
+    await accept(tokenFromMail());
+    const before = await userByEmail(email);
+    expect(before.position).toBe("Old title");
+    await h.api("DELETE", `/api/users/${before.id}`);
+    await expireCooldown(email);
+    await invite({ email, position: "New title" });
+    await accept(tokenFromMail(), "An0ther!Passw0rd");
+    const after = await userByEmail(email);
+    expect(after).toEqual({ id: before.id, position: "New title" }); // same account, new title
+  });
+
+  it("a person invited again without one is left with none (the invitation decides)", async () => {
+    const email = uniqueEmail("cleared");
+    await invite({ email, position: "Old title" });
+    await accept(tokenFromMail());
+    const before = await userByEmail(email);
+    await h.api("DELETE", `/api/users/${before.id}`);
+    await expireCooldown(email);
+    await invite({ email });
+    await accept(tokenFromMail(), "An0ther!Passw0rd");
+    expect((await userByEmail(email)).position).toBe("");
+  });
+
+  it("is not part of what the public invitation page reveals", async () => {
+    await invite({ email: uniqueEmail("private"), position: "Secret role" });
+    const preview = await h.api("GET", `/api/invitations/${tokenFromMail()}`);
+    expect(JSON.stringify(preview.json)).not.toContain("Secret role");
+  });
+
+  it("is only for Administrators to set: nobody else can invite at all", async () => {
+    const email = uniqueEmail("viewer");
+    await h.sql("INSERT INTO users (id,tenant_id,display_name,email,normalized_email,password_hash,access_id,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)", "vpos", h.tenantId, "V", email, email, "x", "viewer", "Active", 1, 1);
+    expect((await invite({ position: "Boss" }, h.as(email))).status).toBe(403);
   });
 });
 

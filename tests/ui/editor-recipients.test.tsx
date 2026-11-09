@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { CampaignEditor } from "../../src/client/pages/CampaignEditor";
-import { campaign, contact, importDto, page, renderAt, senderStatus, stubApi, type Handler } from "./harness";
+import { campaign, contact, importDto, meDto, page, renderAt, senderStatus, stubApi, type Handler } from "./harness";
 
 const template = readFileSync("public/sample-contacts.csv", "utf8");
 const ready = importDto({ id: "imp-ready", filename: "q4-leads.csv", validRows: 7968, createdAt: "2026-11-01T10:00:00.000Z" });
@@ -14,6 +14,7 @@ const world = (extra?: Handler): Handler => (c) =>
   (c.path === "/api/contacts" && c.method === "GET" ? { json: page([contact()], 8214) }
     : c.path === "/api/imports" && c.method === "GET" ? { json: page([ready, failed]) }
     : c.path === "/api/sender" && c.method === "GET" ? { json: senderStatus() }
+    : c.path === "/api/me" && c.method === "GET" ? { json: meDto() }
     : undefined);
 
 const fresh = () => renderAt(<CampaignEditor />, { path: "/campaigns/new", route: "/campaigns/new" });

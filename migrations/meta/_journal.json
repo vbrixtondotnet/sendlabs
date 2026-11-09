@@ -64,6 +64,48 @@
       "when": 1794175307440,
       "tag": "0008_test_recipients",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1794196197181,
+      "tag": "0009_user_position",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1794196479467,
+      "tag": "0010_invitation_position",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1794197228331,
+      "tag": "0011_tenant_website_campaign_signature",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1794198261944,
+      "tag": "0012_tenant_compliance_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1794199499644,
+      "tag": "0013_campaign_footer",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1794200412143,
+      "tag": "0014_unsubscribe_suppressions_drop_footer",
+      "breakpoints": true
     }
   ]
 }

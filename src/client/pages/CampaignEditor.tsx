@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { CampaignDto } from "@shared/api";
 import type { ContactFields } from "@shared/types";
@@ -11,10 +11,11 @@ import { ColumnMapper, CsvDropzone, CsvFileBar, ValidationSummary } from "@/comp
 import { useCsvFile } from "@/hooks/useCsvFile";
 import { useRole } from "@/hooks/useRole";
 import { useToast } from "@/hooks/useToast";
-import { MERGE_FIELDS, renderTemplate, UNSUBSCRIBE_TAG, unknownTags } from "@/lib/merge";
+import { composeEmailHtml, defaultSignature, MERGE_FIELDS, renderTemplate, UNSUBSCRIBE_TAG, unknownTags } from "@/lib/merge";
 import { ApiClientError } from "@/services/http";
 import { useCampaign, useCreateCampaign, useUpdateCampaign } from "@/services/campaigns";
 import { useContacts } from "@/services/contacts";
+import { useMe } from "@/services/me";
 import { useSender } from "@/services/sender";
 import { useSendTest, useTestRecipients } from "@/services/testRecipients";
 import { useCreateImport, useImports } from "@/services/imports";
@@ -71,7 +72,17 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [subject, setSubject] = useState(initial?.subject ?? "");
   const [html, setHtml] = useState(initial?.htmlBody ?? DEFAULT_HTML_BODY);
-  const [text, setText] = useState(initial?.textBody ?? "");
+  // A new campaign starts with a signature built from you and your company; an existing one keeps its own. It is filled
+  // in once, when who you are has loaded, unless you have already typed in it.
+  const me = useMe();
+  const [signature, setSignature] = useState(initial?.signature ?? "");
+  const signatureSeeded = useRef(initial !== null);
+  useEffect(() => {
+    if (signatureSeeded.current || !me.data) return;
+    signatureSeeded.current = true; // once: later refreshes of who you are must not overwrite what is being typed
+    setSignature(defaultSignature({ name: me.data.user.displayName, position: me.data.user.position }, me.data.tenant));
+  }, [me.data]);
+  const editSignature = (value: string) => { signatureSeeded.current = true; setSignature(value); };
   const [source, setSource] = useState<Source>(initial?.recipientImportId ? "import" : "contacts");
   const [importId, setImportId] = useState(initial?.recipientImportId ?? "");
   const [daily, setDaily] = useState(initial?.dailyLimit ?? 500);
@@ -108,7 +119,7 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
   const days = Math.ceil(audienceTotal / (daily || 1));
 
   /* ---- validation (the server re-checks everything) ---- */
-  const unknown = unknownTags(subject + html + text);
+  const unknown = unknownTags(subject + html + signature);
   const problems: string[] = [];
   // Campaigns are sent from the tenant's own connected Gmail account. Without one, nothing can be sent.
   if (senderStatus.isPending) problems.push("Checking your Gmail sender");
@@ -117,7 +128,10 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
   if (!name.trim()) problems.push("Campaign name is required");
   if (!subject.trim()) problems.push("Subject is required");
   if (!html.trim()) problems.push("HTML body is required");
-  if (!html.includes(UNSUBSCRIBE_TAG)) problems.push(`Body must include an ${UNSUBSCRIBE_TAG} link`);
+  // The company's postal address is printed in every email's footer, so it has to exist before launching.
+  if (me.data && !me.data.tenant.postalAddress.trim()) {
+    problems.push(isAdmin ? "Add your company's postal address in Settings > Company Details before launching" : "Ask an Administrator to add the company's postal address (Settings > Company Details) before launching");
+  }
   if (unknown.length) problems.push(`Unknown merge field${unknown.length > 1 ? "s" : ""}: ${unknown.join(", ")}`);
   if (!Number.isInteger(daily) || daily < 1 || daily > 2000) problems.push("Daily limit must be a whole number from 1 to 2,000");
   if (!windowIsValid(from, to)) problems.push("The send window must end after it starts");
@@ -139,7 +153,7 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
   /** Creates the draft, or updates it. Returns the saved campaign, or null if the server rejected it. */
   async function save(): Promise<CampaignDto | null> {
     const fields = {
-      name, subject, htmlBody: html, textBody: text.trim() === "" ? null : text,
+      name, subject, htmlBody: html, textBody: null, signature,
       dailyLimit: daily, sendWindowStart: from, sendWindowEnd: to, timezone: tz,
       // null = every contact. The choice is saved with the draft and resolved into recipients at launch.
       recipientImportId: source === "import" && importId ? importId : null,
@@ -197,7 +211,7 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
   }
 
   const fieldError = (path: string) => fieldErrors.find((f) => f.path === path)?.message;
-  const previewDoc = `<!doctype html><html><body style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#222;padding:16px">${renderTemplate(html, sample, true)}</body></html>`;
+  const previewDoc = `<!doctype html><html><body style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#222;padding:16px">${composeEmailHtml({ body: html, signature, companyName: me.data?.tenant.name ?? "", postalAddress: me.data?.tenant.postalAddress ?? "", unsubscribeFooter: me.data?.tenant.requireUnsubscribeLink ?? true }, sample)}</body></html>`;
 
   return (
     <>
@@ -244,7 +258,7 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
                 <TextInput id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Access-to-SQL Migration Outreach" />
                 {fieldError("name") && <p className="mt-1 text-xs text-rose-600">{fieldError("name")}</p>}
               </Field>
-              <Field label="Subject" htmlFor="subject" hint="Merge fields are allowed, e.g. {{firstName}}">
+              <Field label="Subject" htmlFor="subject" hint="Merge fields are allowed, e.g. {{firstName}} or {{companyName}}. Unknown fields are ignored.">
                 <TextInput id="subject" value={subject} onChange={(e) => setSubject(e.target.value)} />
                 {fieldError("subject") && <p className="mt-1 text-xs text-rose-600">{fieldError("subject")}</p>}
               </Field>
@@ -332,11 +346,14 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
                     <button key={m} onClick={() => insert(m)} className="rounded-md bg-slate-100 px-2 py-1 font-mono text-xs hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700">{m}</button>
                   ))}
                 </div>
-                <Field label="HTML body" htmlFor="html">
+                <Field label="HTML body" htmlFor="html" hint="Just the message. The signature, the standard unsubscribe footer and your postal address are added after it automatically.">
                   <TextArea id="html" ref={bodyRef} rows={14} className="font-mono text-xs" value={html} onChange={(e) => setHtml(e.target.value)} />
                   {fieldError("htmlBody") && <p className="mt-1 text-xs text-rose-600">{fieldError("htmlBody")}</p>}
                 </Field>
-                <Field label="Plain-text body (optional)" htmlFor="text" hint="Left blank, a plain-text version is generated from the HTML."><TextArea id="text" rows={4} value={text} onChange={(e) => setText(e.target.value)} /></Field>
+                <Field label="Email signature" htmlFor="signature" hint="Your sign-off. It is added right after the body, before the unsubscribe footer. A plain-text version of the email is made for you.">
+                  <TextArea id="signature" rows={5} maxLength={2000} value={signature} onChange={(e) => editSignature(e.target.value)} />
+                  {fieldError("signature") && <p className="mt-1 text-xs text-rose-600">{fieldError("signature")}</p>}
+                </Field>
               </div>
             ) : (
               <div className="space-y-3 p-5">
@@ -348,14 +365,14 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
                 </div>
                 <div className="rounded-lg border border-slate-200 text-sm dark:border-slate-800">
                   <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 border-b border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-800/50">
-                    <dt className="text-slate-500">From</dt><dd>{senderEmail ?? <span className="text-slate-400">(no sender connected)</span>}</dd>
+                    <dt className="text-slate-500">From</dt><dd>{senderEmail ? (me.data?.user.displayName.trim() ? `${me.data.user.displayName.trim()} <${senderEmail}>` : senderEmail) : <span className="text-slate-400">(no sender connected)</span>}</dd>
                     <dt className="text-slate-500">To</dt><dd>{sample.email ?? ""}</dd>
                     <dt className="text-slate-500">Subject</dt><dd className="font-medium">{renderTemplate(subject || "(no subject)", sample, false)}</dd>
                   </dl>
                   <iframe title="Rendered email preview" sandbox="" srcDoc={previewDoc} className="h-80 w-full rounded-b-lg bg-white" />
                 </div>
                 <p className="text-xs text-slate-500">
-                  Values are HTML-escaped. Blank values fall back to: {MERGE_FIELDS.filter((m) => m.fallback).map((m) => `${m.tag} → "${m.fallback}"`).join(", ")}.
+                  The email is the body, then the signature, then the standard unsubscribe footer (not editable); your company's postal address is added after that automatically. Values are HTML-escaped. Blank values fall back to: {MERGE_FIELDS.filter((m) => m.fallback).map((m) => `${m.tag} → "${m.fallback}"`).join(", ")}.
                 </p>
               </div>
             )}

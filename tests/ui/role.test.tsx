@@ -8,8 +8,8 @@ import type { Role } from "../../src/shared/types";
 import { stubApi } from "./harness";
 
 const me = (access: Role): MeDto => ({
-  user: { id: "u1", email: "a@b.test", firstName: "A", lastName: "B", displayName: "A B", access, mustChangePassword: false },
-  tenant: { id: "t", name: "T", slug: "t", postalAddress: "" },
+  user: { id: "u1", email: "a@b.test", firstName: "A", lastName: "B", position: "", displayName: "A B", access, mustChangePassword: false },
+  tenant: { id: "t", name: "T", slug: "t", postalAddress: "", website: "", requireUnsubscribeLink: true, oneClickUnsubscribe: true },
   session: true,
 });
 

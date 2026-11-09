@@ -60,6 +60,10 @@ export const RECIPIENT_STATUSES = [
 ] as const;
 export type RecipientStatus = (typeof RECIPIENT_STATUSES)[number];
 
+/** Why an address is on the suppression list (never emailed). Only unsubscribing exists so far. */
+export const SUPPRESSION_REASONS = ["Unsubscribed"] as const;
+export type SuppressionReason = (typeof SUPPRESSION_REASONS)[number];
+
 export const CONSENT_STATUSES = ["Granted", "Unknown", "Withdrawn"] as const;
 export type ConsentStatus = (typeof CONSENT_STATUSES)[number];
 

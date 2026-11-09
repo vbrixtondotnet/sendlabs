@@ -17,9 +17,13 @@ export interface Actor {
   tenantName: string;
   tenantSlug: string;
   tenantPostalAddress: string;
+  tenantWebsite: string;
+  tenantRequireUnsubscribeLink: boolean;
+  tenantOneClickUnsubscribe: boolean;
   email: string;
   firstName: string;
   lastName: string;
+  position: string;
   displayName: string;
   access: Role;
   mustChangePassword: boolean;
@@ -84,6 +88,7 @@ export const requireActor: MiddlewareHandler<AppEnv> = async (c, next) => {
         email: users.email,
         firstName: users.firstName,
         lastName: users.lastName,
+        position: users.position,
         displayName: users.displayName,
         userStatus: users.status,
         mustChangePassword: users.mustChangePassword,
@@ -91,6 +96,9 @@ export const requireActor: MiddlewareHandler<AppEnv> = async (c, next) => {
         tenantName: tenants.name,
         tenantSlug: tenants.slug,
         tenantPostalAddress: tenants.postalAddress,
+        tenantWebsite: tenants.website,
+        tenantRequireUnsubscribeLink: tenants.requireUnsubscribeLink,
+        tenantOneClickUnsubscribe: tenants.oneClickUnsubscribe,
         tenantStatus: tenants.status,
         access: access.name,
       })
@@ -121,9 +129,13 @@ export const requireActor: MiddlewareHandler<AppEnv> = async (c, next) => {
     tenantName: row.tenantName,
     tenantSlug: row.tenantSlug,
     tenantPostalAddress: row.tenantPostalAddress,
+    tenantWebsite: row.tenantWebsite,
+    tenantRequireUnsubscribeLink: row.tenantRequireUnsubscribeLink,
+    tenantOneClickUnsubscribe: row.tenantOneClickUnsubscribe,
     email: row.email,
     firstName: row.firstName,
     lastName: row.lastName,
+    position: row.position,
     displayName: row.displayName,
     access: row.access as Role,
     mustChangePassword: row.mustChangePassword,

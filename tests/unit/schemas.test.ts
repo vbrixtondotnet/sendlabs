@@ -7,6 +7,9 @@ import {
   contactListQuery,
   contactPatchSchema,
   isValidTimeZone,
+  SIGNATURE_MAX,
+  tenantUpdateSchema,
+  websiteField,
 } from "../../src/shared/schemas";
 import { isValidEmail, normalizeEmail } from "../../src/shared/email";
 
@@ -118,5 +121,68 @@ describe("campaign schemas", () => {
     expect(campaignListQuery.parse({})).toMatchObject({ archived: "exclude", page: 1, pageSize: 25 });
     expect(ok(campaignListQuery, { status: "Delivered" })).toBe(false);
     expect(ok(campaignListQuery, { archived: "maybe" })).toBe(false);
+  });
+});
+
+describe("website", () => {
+  it("accepts domains and http(s) addresses, and empty (to clear it)", () => {
+    for (const good of ["example.com", "sabertoothsoftwarelabs.net", "www.example.co.uk", "https://example.com", "http://example.com/about?x=1", "example.com:8080/a", "EXAMPLE.com", "sub.domain.example.org/", "  example.com  ", ""]) {
+      expect(ok(websiteField, good), JSON.stringify(good)).toBe(true);
+    }
+  });
+  it("rejects spaces, other schemes, markup, and things that are not a domain", () => {
+    for (const bad of ["example", "not a website", "ftp://example.com", "javascript:alert(1)", "javascript:a.b", "mailto:a@b.com", "<script>x.y</script>", "exa mple.com", "example..com", ".com", "-a.com/x y", "http://", "http://example", "example.com/<b>", "a@b.com", "x".repeat(201) + ".com"]) {
+      expect(ok(websiteField, bad), bad).toBe(false);
+    }
+  });
+  it("is accepted on its own in a company update, and an update with nothing in it is still refused", () => {
+    expect(ok(tenantUpdateSchema, { website: "example.com" })).toBe(true);
+    expect(ok(tenantUpdateSchema, { website: "" })).toBe(true);
+    expect(ok(tenantUpdateSchema, {})).toBe(false);
+    expect(ok(tenantUpdateSchema, { website: "example.com", slug: "hacked" })).toBe(false);
+  });
+});
+
+describe("campaign signature", () => {
+  const base = { name: "N", subject: "S", htmlBody: "<p>x</p>" };
+  it("defaults to none, and accepts text up to the limit", () => {
+    expect(campaignCreateSchema.parse(base).signature).toBe("");
+    expect(ok(campaignCreateSchema, { ...base, signature: "Best regards,\nRico" })).toBe(true);
+    expect(ok(campaignCreateSchema, { ...base, signature: "x".repeat(SIGNATURE_MAX) })).toBe(true);
+  });
+  it("refuses more than the limit and anything but text", () => {
+    expect(ok(campaignCreateSchema, { ...base, signature: "x".repeat(SIGNATURE_MAX + 1) })).toBe(false);
+    for (const signature of [5, null, ["a"], {}]) expect(ok(campaignCreateSchema, { ...base, signature }), JSON.stringify(signature)).toBe(false);
+  });
+  it("can be changed on its own in an update", () => {
+    expect(ok(campaignPatchSchema, { signature: "New" })).toBe(true);
+    expect(ok(campaignPatchSchema, { signature: "" })).toBe(true);
+  });
+});
+
+describe("unsubscribe settings in a company update", () => {
+  it("accept true and false, each on its own or together", () => {
+    for (const v of [{ requireUnsubscribeLink: true }, { requireUnsubscribeLink: false }, { oneClickUnsubscribe: false }, { requireUnsubscribeLink: false, oneClickUnsubscribe: true }]) {
+      expect(ok(tenantUpdateSchema, v), JSON.stringify(v)).toBe(true);
+    }
+  });
+  it("refuse anything that is not a boolean", () => {
+    for (const v of ["true", 1, 0, null, "yes", []]) {
+      expect(ok(tenantUpdateSchema, { requireUnsubscribeLink: v }), JSON.stringify(v)).toBe(false);
+      expect(ok(tenantUpdateSchema, { oneClickUnsubscribe: v }), JSON.stringify(v)).toBe(false);
+    }
+  });
+  it("count as something to change, so an update of only these is not 'nothing to change'", () => {
+    expect(ok(tenantUpdateSchema, {})).toBe(false);
+    expect(ok(tenantUpdateSchema, { requireUnsubscribeLink: false })).toBe(true);
+  });
+});
+
+describe("campaign footer (removed)", () => {
+  const base = { name: "N", subject: "S", htmlBody: "<p>x</p>" };
+  it("is no longer a field: the footer is fixed, so a client cannot send one", () => {
+    expect(ok(campaignCreateSchema, { ...base, footer: "<p>mine</p>" })).toBe(false);
+    expect(ok(campaignPatchSchema, { footer: "<p>mine</p>" })).toBe(false);
+    expect(ok(campaignCreateSchema, base)).toBe(true);
   });
 });

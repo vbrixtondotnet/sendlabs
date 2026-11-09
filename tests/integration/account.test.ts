@@ -36,6 +36,73 @@ describe("GET /api/me", () => {
   });
 });
 
+describe("the position (job title)", () => {
+  const patch = (session: string, body: unknown) => h.anonymous.api("PATCH", "/api/me", body, asSession(session));
+  const NAMES = { firstName: "Pat", lastName: "Lee" };
+  const positionOf = async (id: string) => (await h.rows<{ position: string }>("SELECT position FROM users WHERE id = ?", id))[0]!.position;
+  const listedPosition = async (email: string) => (await h.api("GET", "/api/users")).json.items.find((u: { email: string }) => u.email === email).position;
+
+  it("starts empty, and /api/me and the users list report it", async () => {
+    const p = await person();
+    expect(await positionOf(p.id)).toBe("");
+    expect((await me(p.first)).json.user.position).toBe("");
+    expect(await listedPosition(p.email)).toBe("");
+  });
+
+  it("is saved with the profile, returned, and then shown everywhere the user is", async () => {
+    const p = await person();
+    const r = await patch(p.first, { ...NAMES, position: "Sales Director" });
+    expect(r.status).toBe(200);
+    expect(r.json.position).toBe("Sales Director");
+    expect(await positionOf(p.id)).toBe("Sales Director");
+    expect((await me(p.second)).json.user.position).toBe("Sales Director");
+    expect(await listedPosition(p.email)).toBe("Sales Director");
+  });
+
+  it("is left alone when the request does not mention it, and cleared when sent empty", async () => {
+    const p = await person();
+    await patch(p.first, { ...NAMES, position: "CTO" });
+    expect((await patch(p.first, { firstName: "Pat", lastName: "Leigh" })).json.position).toBe("CTO");
+    expect(await positionOf(p.id)).toBe("CTO");
+    expect((await patch(p.first, { ...NAMES, position: "" })).json.position).toBe("");
+    expect(await positionOf(p.id)).toBe("");
+    await patch(p.first, { ...NAMES, position: "CTO" });
+    expect((await patch(p.first, { ...NAMES, position: "   " })).json.position).toBe(""); // blank = cleared
+  });
+
+  it("is tidied: trimmed, one line, single spaces, no control characters", async () => {
+    const p = await person();
+    const r = await patch(p.first, { ...NAMES, position: "  Head\r\n  of\tSales\u0000 " });
+    expect(r.json.position).toBe("Head of Sales");
+  });
+
+  it("accepts up to 100 characters, and refuses more, or anything that is not text", async () => {
+    const p = await person();
+    expect((await patch(p.first, { ...NAMES, position: "x".repeat(100) })).status).toBe(200);
+    for (const position of ["x".repeat(101), 5, null, ["CTO"], { a: 1 }]) {
+      const r = await patch(p.first, { ...NAMES, position });
+      expect(r.status, JSON.stringify(position).slice(0, 30)).toBe(400);
+    }
+    expect(await positionOf(p.id)).toBe("x".repeat(100));
+  });
+
+  it("a failed save changes nothing, position included", async () => {
+    const p = await person();
+    await patch(p.first, { ...NAMES, position: "Original" });
+    expect((await patch(p.first, { firstName: "", lastName: "X", position: "Hijacked" })).status).toBe(400);
+    expect(await positionOf(p.id)).toBe("Original");
+  });
+
+  it("is only ever the signed-in user's own, and never crosses organizations", async () => {
+    const a = await person({ first: "Alice", last: "A" });
+    const b = await person({ first: "Bob", last: "B" });
+    await patch(a.first, { firstName: "Alice", lastName: "A", position: "Alice's job" });
+    expect(await positionOf(b.id)).toBe("");
+    await h.addTenant("Position Test Org", "boss@position-test.test");
+    expect(JSON.stringify((await h.as("boss@position-test.test").api("GET", "/api/users")).json)).not.toContain("Alice's job");
+  });
+});
+
 describe("updating your profile", () => {
   const patch = (session: string, body: unknown) => h.anonymous.api("PATCH", "/api/me", body, asSession(session));
 
@@ -43,7 +110,7 @@ describe("updating your profile", () => {
     const p = await person();
     const r = await patch(p.first, { firstName: "Grace", lastName: "Hopper" });
     expect(r.status).toBe(200);
-    expect(r.json).toEqual({ firstName: "Grace", lastName: "Hopper", displayName: "Grace Hopper" });
+    expect(r.json).toEqual({ firstName: "Grace", lastName: "Hopper", position: "", displayName: "Grace Hopper" });
     expect((await me(p.second)).json.user).toMatchObject({ firstName: "Grace", lastName: "Hopper", displayName: "Grace Hopper" });
     expect((await h.rows<{ first_name: string; display_name: string }>("SELECT first_name, display_name FROM users WHERE id = ?", p.id))[0]).toEqual({ first_name: "Grace", display_name: "Grace Hopper" });
   });

@@ -13,6 +13,7 @@ import type {
   SenderStatus,
   UserStatus,
   SkipReason,
+  SuppressionReason,
 } from "./types";
 
 export interface Page<T> {
@@ -39,6 +40,8 @@ export interface CampaignDto {
   subject: string;
   htmlBody: string;
   textBody: string | null;
+  /** The email signature (sign-off), plain text. Empty = none. */
+  signature: string;
   status: CampaignStatus;
   senderAccountId: string | null;
   /** null = every contact, otherwise the people in that import. */
@@ -60,7 +63,7 @@ export interface CampaignDto {
 }
 
 /** Campaign list rows omit the bodies, which can be large. */
-export type CampaignSummaryDto = Omit<CampaignDto, "htmlBody" | "textBody">;
+export type CampaignSummaryDto = Omit<CampaignDto, "htmlBody" | "textBody" | "signature">;
 
 export interface RecipientDto {
   id: string;
@@ -121,10 +124,10 @@ export interface ImportRowDto {
 
 /** The signed-in user and the tenant they belong to. */
 export interface MeDto {
-  user: { id: string; email: string; firstName: string; lastName: string; displayName: string; access: Role; mustChangePassword: boolean };
+  user: { id: string; email: string; firstName: string; lastName: string; position: string; displayName: string; access: Role; mustChangePassword: boolean };
   /** True when signed in through a real session (e.g. after accepting an invitation), false for the local development placeholder user. */
   session: boolean;
-  tenant: { id: string; name: string; slug: string; postalAddress: string };
+  tenant: { id: string; name: string; slug: string; postalAddress: string; website: string; requireUnsubscribeLink: boolean; oneClickUnsubscribe: boolean };
 }
 
 /** A user of the caller's tenant. Deliberately has no password or hash field. */
@@ -133,6 +136,8 @@ export interface UserDto {
   email: string;
   firstName: string;
   lastName: string;
+  /** Job title. Empty when not set. */
+  position: string;
   displayName: string;
   access: Role;
   accessId: AccessId;
@@ -155,6 +160,31 @@ export interface SenderDto {
   /** Email of the user who connected it. */
   connectedBy: string;
   connectedAt: string;
+}
+
+/** An address that will never be emailed again (it unsubscribed). */
+export interface SuppressionDto {
+  id: string;
+  email: string;
+  reason: SuppressionReason;
+  createdAt: string;
+}
+
+/** What the public unsubscribe page shows for a valid link. The address is masked: the link is not a login. */
+export interface UnsubscribeInfoDto {
+  companyName: string;
+  /** Like `a***@example.com`. */
+  email: string;
+  alreadyUnsubscribed: boolean;
+  /** The link came from a test email: opening and confirming it changes nothing. */
+  test: boolean;
+}
+
+export interface UnsubscribeResultDto {
+  /** False for a test link, which unsubscribes nobody. */
+  unsubscribed: boolean;
+  test: boolean;
+  companyName: string;
 }
 
 /** One address on the test-send allowlist. */
@@ -184,6 +214,8 @@ export interface InvitationDto {
   email: string;
   firstName: string;
   lastName: string;
+  /** Job title the invitation was sent with. Empty when none. */
+  position: string;
   access: Role;
   accessId: AccessId;
   /** Pending, or Expired once past its date. Accepted and revoked invitations are not listed. */

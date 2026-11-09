@@ -147,6 +147,7 @@ export async function createInvitation(deps: InviteDeps, inviter: Inviter, input
     normalizedEmail,
     firstName: cleanName(input.firstName),
     lastName: cleanName(input.lastName),
+    position: cleanName(input.position ?? ""),
     accessId: input.accessId,
     invitedBy: inviter.userId,
     tokenHash: await sha256Base64Url(token),
@@ -169,7 +170,7 @@ export async function createInvitation(deps: InviteDeps, inviter: Inviter, input
 export async function resendInvitation(deps: InviteDeps, inviter: Inviter, invitationId: string): Promise<InvitationDto> {
   const old = await invitationsRepo(deps.db, inviter.tenantId).get(invitationId);
   if (!old || old.status !== "Pending") throw new ApiError(404, "NOT_FOUND", "Invitation not found");
-  return createInvitation(deps, inviter, { email: old.email, firstName: old.firstName, lastName: old.lastName, accessId: old.accessId as InvitationCreate["accessId"] });
+  return createInvitation(deps, inviter, { email: old.email, firstName: old.firstName, lastName: old.lastName, position: old.position, accessId: old.accessId as InvitationCreate["accessId"] });
 }
 
 export async function revokeInvitation(db: Database, tenantId: string, invitationId: string): Promise<void> {
@@ -232,6 +233,7 @@ export async function acceptInvitation(db: Database, token: string, password: st
               `UPDATE users SET is_deleted = 0, deleted_at = NULL, status = 'Active', password_hash = ?2, must_change_password = 0,
                       first_name = (SELECT i.first_name FROM invitations i WHERE i.token_hash = ?4),
                       last_name = (SELECT i.last_name FROM invitations i WHERE i.token_hash = ?4),
+                      position = (SELECT i.position FROM invitations i WHERE i.token_hash = ?4),
                       display_name = (SELECT trim(i.first_name || ' ' || i.last_name) FROM invitations i WHERE i.token_hash = ?4),
                       access_id = (SELECT i.access_id FROM invitations i WHERE i.token_hash = ?4),
                       last_login_at = ?3, updated_at = ?3
@@ -241,9 +243,9 @@ export async function acceptInvitation(db: Database, token: string, password: st
             .bind(userId, passwordHash, now, tokenHash)
         : d1
             .prepare(
-              `INSERT INTO users (id, tenant_id, email, normalized_email, first_name, last_name, display_name, password_hash,
+              `INSERT INTO users (id, tenant_id, email, normalized_email, first_name, last_name, position, display_name, password_hash,
                                   must_change_password, access_id, status, last_login_at, created_at, updated_at)
-               SELECT ?1, i.tenant_id, i.email, i.normalized_email, i.first_name, i.last_name, trim(i.first_name || ' ' || i.last_name), ?2,
+               SELECT ?1, i.tenant_id, i.email, i.normalized_email, i.first_name, i.last_name, i.position, trim(i.first_name || ' ' || i.last_name), ?2,
                       0, i.access_id, 'Active', ?3, ?3, ?3
                FROM invitations i JOIN tenants t ON t.id = i.tenant_id
                WHERE ${validInvitation}`,

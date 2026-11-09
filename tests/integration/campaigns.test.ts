@@ -35,6 +35,7 @@ describe("campaign CRUD", () => {
       sendWindowEnd: "17:00",
       timezone: "America/Los_Angeles",
       textBody: null,
+      signature: "",
       nextRunAt: null,
       archivedAt: null,
     });
@@ -116,6 +117,46 @@ describe("campaign CRUD", () => {
     const r = await h.api("DELETE", `/api/campaigns/${id}`);
     expect(r.status).toBe(409);
     expect((await h.api("GET", `/api/campaigns/${id}`)).status).toBe(200);
+  });
+
+  it("stores the signature, returns it with the bodies, and lets it be changed and cleared on a draft", async () => {
+    const made = await create({ signature: "Best regards,\nRico Prinsipe" });
+    expect(made.status).toBe(201);
+    expect(made.json.signature).toBe("Best regards,\nRico Prinsipe");
+    expect((await h.api("GET", `/api/campaigns/${made.json.id}`)).json.signature).toBe("Best regards,\nRico Prinsipe");
+    expect((await h.api("PATCH", `/api/campaigns/${made.json.id}`, { signature: "Cheers" })).json.signature).toBe("Cheers");
+    expect((await h.api("PATCH", `/api/campaigns/${made.json.id}`, { signature: "" })).json.signature).toBe("");
+  });
+
+  it("keeps the signature out of the list, like the bodies, and refuses an over-long or non-text one", async () => {
+    await create({ signature: "Hidden from the list" });
+    const list = (await h.api("GET", "/api/campaigns?pageSize=100")).json;
+    expect(JSON.stringify(list)).not.toContain("Hidden from the list");
+    expect(list.items.every((i: Record<string, unknown>) => !("signature" in i))).toBe(true);
+    expect((await create({ signature: "x".repeat(2001) })).status).toBe(400);
+    expect((await create({ signature: 5 })).status).toBe(400);
+    expect((await create({ signature: "x".repeat(2000) })).status).toBe(201);
+  });
+
+  it("locks the signature with the rest of the content once the campaign has left Draft", async () => {
+    const id = await launched("Sending");
+    const r = await h.api("PATCH", `/api/campaigns/${id}`, { signature: "Too late" });
+    expect(r.status).toBe(409);
+    expect(r.json.error.code).toBe("CAMPAIGN_LOCKED");
+  });
+
+  it("has no footer field: the footer is fixed, so it is never stored, returned or accepted", async () => {
+    const made = await create();
+    expect("footer" in made.json).toBe(false);
+    expect("footer" in (await h.api("GET", `/api/campaigns/${made.json.id}`)).json).toBe(false);
+    expect((await create({ footer: "<p>mine</p>" })).status).toBe(400);
+    expect((await h.api("PATCH", `/api/campaigns/${made.json.id}`, { footer: "<p>mine</p>" })).status).toBe(400);
+    expect(await h.rows("SELECT name FROM pragma_table_info('campaigns') WHERE name = 'footer'")).toHaveLength(0);
+  });
+
+  it("a duplicate carries the signature over", async () => {
+    const made = (await create({ signature: "Warm regards,\nTeam" })).json;
+    expect((await h.api("POST", `/api/campaigns/${made.id}/duplicate`)).json.signature).toBe("Warm regards,\nTeam");
   });
 
   it("duplicates into a fresh Draft without recipients or schedule state", async () => {

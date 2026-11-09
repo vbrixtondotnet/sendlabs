@@ -26,7 +26,7 @@ import { importsRepo } from "./imports";
 import { usersRepo } from "./users";
 
 /** Everything except the (potentially large) bodies. */
-const { htmlBody: _html, textBody: _text, ...summaryColumns } = getTableColumns(campaigns);
+const { htmlBody: _html, textBody: _text, signature: _signature, ...summaryColumns } = getTableColumns(campaigns);
 
 /** The person creating something. `id` is stored, `email` is shown. */
 export interface Creator {
@@ -152,6 +152,7 @@ export function campaignsRepo(db: Database, tenantId: string) {
           subject: src.subject,
           htmlBody: src.htmlBody,
           textBody: src.textBody,
+          signature: src.signature,
           senderAccountId: src.senderAccountId,
           recipientImportId: src.recipientImportId,
           dailyLimit: src.dailyLimit,

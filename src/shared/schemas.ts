@@ -103,11 +103,15 @@ export type ContactListQuery = z.infer<typeof contactListQuery>;
 const timeOfDay = z.string().regex(HHMM, "Use 24-hour HH:MM, e.g. 09:00");
 const timezone = z.string().max(64).refine(isValidTimeZone, "Unknown IANA timezone");
 
+/** Longest email signature accepted, in characters. */
+export const SIGNATURE_MAX = 2000;
+
 const campaignFields = {
   name: text(200).min(1, "Name is required"),
   subject: text(300).min(1, "Subject is required"),
   htmlBody: z.string().min(1, "HTML body is required").max(200_000),
   textBody: z.string().max(200_000).nullable(),
+  signature: z.string().max(SIGNATURE_MAX, `Use at most ${SIGNATURE_MAX} characters`),
   dailyLimit: z.number().int().min(1).max(2000),
   sendWindowStart: timeOfDay,
   sendWindowEnd: timeOfDay,
@@ -123,6 +127,7 @@ export const campaignCreateSchema = z
   .strictObject({
     ...campaignFields,
     textBody: campaignFields.textBody.default(null),
+    signature: campaignFields.signature.default(""),
     dailyLimit: campaignFields.dailyLimit.default(500),
     sendWindowStart: timeOfDay.default("09:00"),
     sendWindowEnd: timeOfDay.default("17:00"),
@@ -141,6 +146,10 @@ export const campaignPatchSchema = z
   .partial()
   .refine((v) => Object.keys(v).length > 0, "Provide at least one field to change");
 export type CampaignPatch = z.infer<typeof campaignPatchSchema>;
+
+/** The suppression list, a page at a time. */
+export const suppressionListQuery = pageQuery;
+export type SuppressionListQuery = z.infer<typeof suppressionListQuery>;
 
 export const campaignListQuery = pageQuery.extend({
   status: optionalQuery(z.enum(CAMPAIGN_STATUSES)),
@@ -174,6 +183,9 @@ export type ImportRowsQuery = z.infer<typeof importRowsQuery>;
 
 /* ------------------------------ invitations ------------------------------ */
 
+/** Longest position (job title) accepted, in characters. */
+export const POSITION_MAX = 100;
+
 const ACCESS_IDS = ACCESS_LEVELS.map((a) => a.id) as unknown as [AccessId, ...AccessId[]];
 const personName = (label: string) => z.string().trim().min(1, `${label} is required`).max(100);
 
@@ -182,6 +194,8 @@ export const invitationCreateSchema = z.strictObject({
   email,
   firstName: personName("First name"),
   lastName: personName("Last name"),
+  /** Optional job title; becomes the user's position when they accept. */
+  position: z.string().max(POSITION_MAX, `Use at most ${POSITION_MAX} characters`).optional(),
   accessId: z.enum(ACCESS_IDS),
 });
 export type InvitationCreate = z.infer<typeof invitationCreateSchema>;
@@ -195,12 +209,26 @@ export const MAX_TEST_RECIPIENTS = 20;
 /** The invited person's chosen password. Length rules live in password-rules.ts and are applied by the service. */
 export const acceptInvitationSchema = z.strictObject({ password: z.string().min(1, "Choose a password").max(PASSWORD_MAX_LENGTH) });
 
-/** The signed-in user editing their own name. Email, role and tenant are not editable here, so they are not accepted. */
+
+/**
+ * The signed-in user editing their own details: name and position. Email, role and tenant are not editable here, so they
+ * are not accepted. `position` may be left out (unchanged) or sent empty (cleared).
+ */
 export const profileUpdateSchema = z.strictObject({
   firstName: personName("First name"),
   lastName: personName("Last name"),
+  position: z.string().max(POSITION_MAX, `Use at most ${POSITION_MAX} characters`).optional(),
 });
 export type ProfileUpdate = z.infer<typeof profileUpdateSchema>;
+
+/** Longest website accepted, in characters. */
+export const WEBSITE_MAX = 200;
+/** Empty (to clear it), or a domain or http(s) address such as `example.com` or `https://www.example.com/about`. No spaces, no other schemes. */
+export const websiteField = z
+  .string()
+  .trim()
+  .max(WEBSITE_MAX, `Use at most ${WEBSITE_MAX} characters`)
+  .refine((v) => v === "" || /^(?:https?:\/\/)?(?=[^/]*\.)[a-z0-9-]+(?:\.[a-z0-9-]+)+(?::\d+)?(?:\/[^\s<>"']*)?$/i.test(v), "Enter a website such as example.com");
 
 /** Longest postal address accepted, in characters. */
 export const POSTAL_ADDRESS_MAX = 500;
@@ -213,8 +241,11 @@ export const tenantUpdateSchema = z
   .strictObject({
     name: z.string().trim().min(1, "Name is required").max(100, "Use at most 100 characters").optional(),
     postalAddress: z.string().max(POSTAL_ADDRESS_MAX, `Use at most ${POSTAL_ADDRESS_MAX} characters`).optional(),
+    website: websiteField.optional(),
+    requireUnsubscribeLink: z.boolean().optional(),
+    oneClickUnsubscribe: z.boolean().optional(),
   })
-  .refine((v) => v.name !== undefined || v.postalAddress !== undefined, { message: "Nothing to change" });
+  .refine((v) => Object.values(v).some((x) => x !== undefined), { message: "Nothing to change" });
 export type TenantUpdate = z.infer<typeof tenantUpdateSchema>;
 
 /** Changing your own password. Length rules live in password-rules.ts and are applied by the service. */

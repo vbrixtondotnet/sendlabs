@@ -31,9 +31,13 @@ export function Layout() {
     return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
   }
 
+  // Settings belong to Administrators: everyone else does not even see the menu item (the page and the API refuse them too).
+  const isAdmin = me.data?.user.access === "Administrator";
+  const items = NAV.filter((n) => n.to !== "/settings" || isAdmin);
+
   const nav = (
     <nav aria-label="Main" className="flex flex-col gap-1 px-3">
-      {NAV.map((n) => (
+      {items.map((n) => (
         <NavLink
           key={n.to}
           to={n.to}
@@ -60,7 +64,7 @@ export function Layout() {
       <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-slate-200 bg-white py-5 dark:border-slate-800 dark:bg-slate-900 lg:flex">
         <Brand />
         <div className="mt-6 flex-1">{nav}</div>
-        <p className="px-6 text-xs text-slate-400">Settings are a preview</p>
+        {isAdmin && <p className="px-6 text-xs text-slate-400">Settings are a preview</p>}
       </aside>
 
       {/* Mobile drawer */}

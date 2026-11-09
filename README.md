@@ -84,7 +84,7 @@ Everything below is scoped to the caller's tenant. All list endpoints take `page
 
 #### Connecting Gmail
 
-Each tenant connects **its own Google account** to send from. The Administrator opens **Settings > Sender** and presses **Connect Gmail**:
+Each tenant connects **its own Google account** to send from. The Administrator opens **Settings > Email Service** and presses **Connect Gmail**:
 
 1. The browser asks the server to start (`POST /api/sender/gmail/connect`), and is sent to Google's consent screen.
 2. The person approves. Google redirects the browser back to `<APP_BASE_URL>/api/sender/gmail/callback` with a one-time code.
@@ -122,7 +122,7 @@ Sendrix asks for exactly three permissions: `openid`, `email` (to learn which ad
 
 Decided: sign-in is **app-managed** (email and password). People sign in on the login page; accepting an invitation also signs them in.
 
-1. **Settings > Users & access > Add user.** An Administrator enters first name, last name, email address and a role (Administrator, Campaign Manager or Viewer).
+1. **Settings > Users & access > Add user.** An Administrator enters first name, last name, email address, a role (Administrator, Campaign Manager or Viewer) and, optionally, a **position** (job title, up to 100 characters). The position is kept with the invitation, survives a resend, and becomes the new user's position when they accept (a removed user invited again takes the new invitation's position). It is not shown on the public invitation page.
 2. **Sendrix emails the invitation** through the tenant's connected Gmail account (decision D-28), so Gmail must be connected first. The email is plain text plus an HTML version: "{Tenant Name} has invited you to Sendrix", with an **Accept invitation** button and the plain link.
 3. **The person opens `/invite/<token>`** (a public page outside the app layout), sees who invited them, and chooses a password (8 to 256 characters, typed twice).
 4. **Accepting activates them** as a user of that tenant with the invited role, signs them in, and sends them to the dashboard.
@@ -141,13 +141,84 @@ How it is kept safe:
 
 **Removing a user** (Settings > Users & access > Remove, Administrators only) is a **soft delete**: `users.is_deleted` is set (with `deleted_at`) and nothing is erased, so what the person created keeps its owner and the email stays reserved. Removed users are not listed, all their sessions end at once, and they cannot sign in. You cannot remove yourself, and the last active Administrator cannot be removed (the rule is inside the UPDATE, so two Administrators removing each other at once cannot both succeed). A removed person can be **invited again**: accepting clears `is_deleted` on the same account (new password, name and role from the new invitation) instead of creating a second one. An address removed from a different tenant still cannot be invited here.
 
-**Signing in** (`/login`): email and password, a Show/Hide toggle, and an optional `?next=` to return to the page you were heading for (only in-app paths are honored). Anyone not signed in who opens the app is sent to the login page. **Logout** in the header's user menu ends the session. Every wrong answer (unknown address, wrong password, a removed user) is the same `401 INVALID_CREDENTIALS` after the same amount of work, so it cannot be used to find out who has an account. **Your own settings:** the round initials button in the header opens a menu with **Settings** and **Logout**. Settings (`/account`, titled "My settings") has three tabs:
+**Signing in** (`/login`): email and password, a Show/Hide toggle, and an optional `?next=` to return to the page you were heading for (only in-app paths are honored). Anyone not signed in who opens the app is sent to the login page. **Logout** in the header's user menu ends the session. Every wrong answer (unknown address, wrong password, a removed user) is the same `401 INVALID_CREDENTIALS` after the same amount of work, so it cannot be used to find out who has an account. **Your own settings:** the round initials button in the header opens a menu with **Settings** and **Logout**. Settings (`/account`, titled "My settings") has two tabs:
 
-- **Company Details** (first): the organization's **Name** and **Postal address** (a multi-line text, stored in `tenants.postal_address`, included in the footer of every email). Editable by Administrators only (`PATCH /api/tenant`: send either or both, saved all-or-nothing; the name must be unique ignoring letter case; the address may be cleared; the slug never changes). Everyone else sees the saved values read-only.
-- **User Details**: first and last name (email and role are shown read-only; the name shown around the app follows).
+- **User Details**: first name, last name and **position** (job title: optional, up to 100 characters, can be cleared). Email and role are shown read-only; the name shown around the app follows. The position is also listed in Settings > Users & access.
 - **Account Details**: change your password. It needs the current password, applies the same length rules, and refuses reusing the current one. Wrong current passwords are throttled (5 in 15 minutes, separately from sign-in). A successful change ends your **other** sessions, keeps this one, and clears `must_change_password`.
 
-These are `PATCH /api/tenant`, `PATCH /api/me` and `POST /api/me/password`; they only ever act on the signed-in user or their own organization. (The Compliance tab under Settings in the sidebar still shows its own, unconnected "Sender postal address" preview field.)
+These are `PATCH /api/me` and `POST /api/me/password`; they only ever act on the signed-in user. (Company details are under **Settings** in the sidebar, for Administrators: see below.)
+
+**Settings (sidebar, `/settings`) is for Administrators only.** Everyone else does not see the menu item, and opening `/settings` sends them back to the start page. It has three tabs, in this order: **Company Details**, **Users & access**, **Email Service**. It opens on Company Details (or on Email Service when Google sends the browser back from Connect Gmail).
+
+**Company Details** (a Settings tab): the organization's **Name**, **Website** and **Postal address** (a multi-line text; it is added to the footer of every email, see "Compliance in sending" below, and replaces the separate "sender postal address" the old Compliance tab had). `PATCH /api/tenant` (Administrators only): send any or all of `name`, `website`, `postalAddress`, saved all-or-nothing. The name must be unique ignoring letter case; the website is a domain or http(s) address such as `example.com` (no spaces, no other schemes, up to 200 characters, stored as typed, trimmed) and may be cleared; the address may be cleared; the slug never changes. Stored in `tenants.postal_address` and `tenants.website`, and returned in `/api/me`.
+
+**Email Service** (a Settings tab) holds everything about how email goes out, in one place, as equal-width sections in two columns (Gmail sender | test-send allowlist, then unsubscribe and compliance | sending limits, then suppression list | data retention; one column on a phone): the **Gmail sender** and the **test-send allowlist**, **Unsubscribe and compliance** (the two options below), the **sending limits**, the **suppression list** and **data retention**. This replaces the old Sender, Sending limits, Compliance and Data retention tabs. Sending limits, the suppression list and data retention are still previews that do not save yet (the page says so).
+
+#### Compliance in sending (built)
+
+Each organization has two options, **both ticked for every organization by default** (new ones and existing ones: `tenants.require_unsubscribe_link` and `tenants.one_click_unsubscribe`, default 1). An Administrator changes them under Settings > Email Service > Unsubscribe and compliance (`PATCH /api/tenant`, `requireUnsubscribeLink` and `oneClickUnsubscribe`, true or false; both are also in `/api/me`). The email-building code applies them, and the editor's preview uses the same code:
+
+- **Require an unsubscribe link in every campaign:** when ON, every email automatically ends with the **standard unsubscribe footer** (below), so no campaign can go out without a working unsubscribe link and nothing has to be checked or refused. The footer cannot be edited or removed. Turn the option off and the footer is not added (the organization then takes responsibility for its own link).
+- **Add one-click List-Unsubscribe headers:** every email carries `List-Unsubscribe: <address>` and `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058), so mail apps can show their own Unsubscribe button. The address is the recipient's own one-click endpoint (`POST /api/unsubscribe/:token`, see "Unsubscribing" below). `buildMime` refuses anything that is not a plain http(s) address. Turn the option off and neither header is added.
+- **Postal address in every footer:** the company's postal address from Company Details is added as the last thing in every email (HTML and plain text), after the body, the signature and the standard footer. It replaces the placeholder address the starting body used to carry. With no address nothing is added, and the editor will not let a campaign launch until the company has one (an Administrator is told where to add it; others are told to ask one).
+
+Test sends already go through all three, so they are what a real send will be. The bulk sender, when built, must build each message with `composeEmailHtml`, a signed token per recipient and `buildMime` the same way (see "Unsubscribing").
+
+#### The structure of an email, and the standard footer (built)
+
+A campaign's **Message** section has two parts you write, and an email is always built in this order:
+
+1. **HTML body**: just the message (the starting body is only the greeting and the pitch).
+2. **Email signature**: plain text, added automatically right after the body (see below).
+3. **The standard footer**: added automatically after the signature. It is the same for every email, **not editable**, and not a campaign field at all (an earlier editable Footer field was removed, and `campaigns.footer` dropped):
+
+   ```html
+   <hr/>
+   <p style="font-size:12px;color:#666;">
+   You're receiving this email because we believe our services may be relevant to your business.<br/>
+   <a href="{{unsubscribeUrl}}">Unsubscribe</a><br/>
+   {company name}
+   </p>
+   ```
+
+   The last line is the **sending company's** name (Company Details), written in by the system: it is not the `{{companyName}}` merge field, which in a body means the recipient's company. `{{unsubscribeUrl}}` becomes that recipient's own link. The footer is added only while "Require an unsubscribe link in every campaign" is on (the default).
+4. The company's **postal address** (Company Details), a small grey line after all of that, as a legal requirement (see "Compliance in sending").
+
+Merge fields work in the body and the signature. The editor's preview and test sends use the same `composeEmailHtml`, so the preview is what is sent (the preview's unsubscribe link is a placeholder).
+
+#### Unsubscribing (built)
+
+Every email's unsubscribe link, and every `List-Unsubscribe` header, carries a **signed token** for that one recipient (`src/server/lib/unsubscribe.ts`): the tenant, the address and the campaign, signed with HMAC-SHA256 keyed from `TOKEN_ENCRYPTION_KEY` (with its own purpose label). It cannot be forged or altered, there is nothing to look up or guess, and it never expires (a link in an old email must keep working). If the server has no valid key, nothing is signed and the endpoints answer `503`.
+
+| Address | What it does |
+|---|---|
+| `GET {APP_BASE_URL}/unsubscribe/:token` | **The page** the link in the email body opens (a public React page outside the app layout). It asks first ("Unsubscribe from {company}?", with the address masked as `a***@example.com`) and only unsubscribes when the person presses the button, so a mail scanner that opens every link unsubscribes nobody |
+| `GET /api/unsubscribe/:token` | What the page shows: company, masked address, whether already unsubscribed. **Changes nothing** |
+| `POST /api/unsubscribe/:token` | **Unsubscribes.** This is also the address in the `List-Unsubscribe` header: mail apps POST `List-Unsubscribe=One-Click` here, so the body is ignored. Public, no session, and exempt from the same-site check (mail providers POST from their own servers; the signed token is what authorizes it) |
+| `GET /api/suppressions` | The suppression list, newest first, paged (Administrators only, read-only) |
+
+- **What unsubscribing does:** one atomic batch puts the address on the tenant's **suppression list** (`suppressions` table, one row per address per tenant, never emailed again) and marks the contact, if there is one, `Withdrawn` with source "Unsubscribe link". It is **idempotent** and **per organization**: the same address stays reachable by other organizations. It still works for a suspended organization: people can always opt out.
+- **Every bad link gets the same answer:** unknown, tampered, wrong key, junk, too long, a deleted company: `404 UNSUBSCRIBE_INVALID` ("This unsubscribe link is not valid"), so nothing can be learned by guessing.
+- **Test emails:** each recipient of a test gets their own link too, but it is a **test token**: it opens the real page, which says "This is a test email" and offers nothing to press; the endpoint changes nothing, so the allowlist address is never suppressed.
+- **Settings > Email Service > Suppression list** now shows the real list.
+- **Still to do:** the bulk sender must check the suppression list when it selects recipients and again just before each send (D-07), and must mint a live (non-test) token per recipient with `createUnsubscribeToken` and `unsubscribeLinks`. Until launch is built nothing sends to real recipients, so nothing can yet be sent to a suppressed address.
+
+#### Email signature (built)
+
+A campaign has an **Email signature** (the sign-off) instead of a plain-text body field. It is plain text, up to 2,000 characters, stored on the campaign (`campaigns.signature`, edited with the draft).
+
+- **Starting text:** a new campaign's signature is filled in from the signed-in user and their company, and can be edited freely:
+
+  ```
+  Best regards,
+  {full name of the logged-in user}
+  {position of the logged-in user} | {company name}
+  {company website}
+  ```
+
+  With no position the line is just the company name; with no website that line is left out. An existing draft keeps its own signature (even an empty one).
+- **Where it goes:** always right after the body (see "The structure of an email" above). With no signature nothing is added. The text is escaped, line breaks are kept, and merge fields in it are filled in like the body's. An old `{{signature}}` tag left in a body is simply removed, so it can no longer move the signature.
+- **Preview and test sends** use exactly the same rule, so the preview shows the signature. The plain-text part of an email is always made from the final HTML, so both parts say the same; the old `text_body` column is still there but is no longer used.
 
 **Stay signed in:** a session lasts 30 days from its last use. The cookie is persistent (it survives closing the browser) and every time the app is used the 30 days start again, with the cookie re-issued; the database is written at most once an hour per session. Someone who does not use the app for 30 days is signed out. There is no absolute cap on how long an actively used session can last. **Throttling:** 5 failures for one address within 15 minutes lock that address for 15 minutes (even the right password is refused, with `429 TOO_MANY_ATTEMPTS` and `Retry-After`); 30 failures from one network address lock that address. Unknown addresses are counted too, a good sign-in clears the count, and the counters live in the `login_attempts` table (no passwords). A disabled user or suspended organization is told so only after giving the right password.
 
@@ -155,11 +226,11 @@ Still not built: a forced password change for accounts flagged `must_change_pass
 
 #### Test sends (built)
 
-Every test email from a campaign goes to the **test-send allowlist** (Settings > Sender), and nowhere else.
+Every test email from a campaign goes to the **test-send allowlist** (Settings > Email Service), and nowhere else.
 
 - **The list:** per organization, up to 20 addresses, one row each in `test_recipients` (case-insensitive, no duplicates). Administrators add and remove addresses; everyone signed in can see it, so the editor can show who a test will reach.
 - **The button:** *Send test email* in the campaign editor saves the draft first (so the test is exactly what is on screen), then asks the server to test-send it. The request carries **no addresses**: the server reads the list itself, so a test cannot be aimed anywhere else, whatever a client sends. With an empty list the button is off and says why.
-- **The message:** one email per address, through the organization's connected Gmail account, with `[TEST] ` in front of the subject. The **sender name** recipients see is the organization's name (Settings > My settings > Company Details), with the connected Gmail address behind it. Real campaign sending, when built, must use the same name. Merge fields are filled in with sample data (Alex Sample, Example Co), exactly as the editor's preview does. The plain-text part is the campaign's text body, or one made from the HTML.
+- **The message:** one email per address, through the organization's connected Gmail account, with `[TEST] ` in front of the subject. The **sender name** recipients see is the **full name of the logged-in user who sends it** (their display name, first and last; a user with no name falls back to the company's name), with the connected Gmail address behind it, so `Rico Prinsipe <sales@acme.com>`. The editor's preview shows the same From line. Real campaign sending, when built, must use the same name. Merge fields are filled in with sample data (Alex Sample, Example Co), exactly as the editor's preview does. The plain-text part is the campaign's text body, or one made from the HTML.
 - **What it does not do:** it never touches the campaign's real recipients or its status, and works on any campaign. Administrators and Campaign Managers may test; Viewers may not.
 - **Not yet:** test sends are not counted against the daily quota (D-23 asks for that once real sending exists), and there is no per-address delivery report: if Gmail fails part-way, the error says how many went out.
 
@@ -178,7 +249,7 @@ The look comes from the logo, `src/client/assets/logo.png` (kept as supplied). I
 
 #### Tests
 
-`npm test` runs 587 tests: state machines, validation schemas, IDs, password hashing, the CSV parser, the API including tenant isolation, CSV imports up to 8,000 rows and the whole Gmail connection and invitation flow against a stand-in for Google (all on in-memory D1), the migrations, and the UI pages (rendered in a simulated browser with the network stubbed, checking they call the API correctly and handle errors, empty states and read-only roles). The integration tests run the real Hono app and repositories against an in-memory D1 database (Miniflare) built from the committed migrations, so they never touch your local dev data. `npm run typecheck` covers the front end, the server, the server-side tests and the UI tests (the last two use separate configs, because browser and Cloudflare Worker types define clashing globals).
+`npm test` runs 847 tests: state machines, validation schemas, IDs, password hashing, the CSV parser, the API including tenant isolation, CSV imports up to 8,000 rows and the whole Gmail connection and invitation flow against a stand-in for Google (all on in-memory D1), the migrations, and the UI pages (rendered in a simulated browser with the network stubbed, checking they call the API correctly and handle errors, empty states and read-only roles). The integration tests run the real Hono app and repositories against an in-memory D1 database (Miniflare) built from the committed migrations, so they never touch your local dev data. `npm run typecheck` covers the front end, the server, the server-side tests and the UI tests (the last two use separate configs, because browser and Cloudflare Worker types define clashing globals).
 
 | Table | Purpose |
 |---|---|
@@ -236,12 +307,13 @@ The seed script imports `public/sample-contacts.csv` through the real import end
 | Overview | **Live**, derived from the campaigns list (there is no dashboard endpoint yet) |
 | Imports (CSV): upload, map, review, confirm, history, rejected-rows download | **Live**. The browser previews, the server imports and answers with the real counts |
 | Campaign recipients (all contacts, a saved import, or upload a CSV there) | **Live and saved with the draft**. A CSV chosen in the editor is validated and mapped there, then imported with the **Import N contacts and use them** button. The recipient list itself is built at launch, which is not built yet |
-| Settings > Sender > Test-send allowlist, and the editor's **Send test email** | **Live**. See "Test sends" below |
+| Settings > Email Service > Test-send allowlist, and the editor's **Send test email** | **Live**. See "Test sends" below |
 | Launch, retry failed | Not built. The launch dialog saves a draft and says so |
 | Header: tenant name and signed-in user | **Live** (`/api/me`) |
-| Settings > Sender: Connect Gmail, reconnect, disconnect | **Live**, once the Google credentials are supplied. Until then it says it is not set up. Not yet tried against real Google |
+| Settings > Email Service: Connect Gmail, reconnect, disconnect | **Live**, once the Google credentials are supplied. Until then it says it is not set up. Not yet tried against real Google |
 | Campaign editor sender | **Live**: shows the tenant's connected address and blocks launching without one |
-| Settings: limits, compliance, suppression, retention | Preview only. The mock records were removed: everything starts empty and nothing is saved |
+| Settings: sending limits, data retention | Preview only. The mock records were removed: everything starts empty and nothing is saved |
+| Settings: unsubscribe options, suppression list, the public unsubscribe page and endpoint | **Live**. See "Unsubscribing" above |
 | Settings > Users & access | **Live, read-only**: lists the tenant's real users and the three access levels. **Add user** and the role selectors are visible but do nothing yet (see below) |
 | Sign-in, tenant sign-up, password change | Not built. Locally the API acts as the seeded Administrator |
 | Role enforcement | Not built. The UI shows or hides controls by your real access level (there is no longer a "Preview as" switch). The API enforces roles only on the user and invitation routes so far |

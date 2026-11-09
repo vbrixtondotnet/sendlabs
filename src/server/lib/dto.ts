@@ -34,7 +34,7 @@ export function toContactDto(r: ContactRow): ContactDto {
 }
 
 /** List queries skip the (potentially large) bodies, so the summary mapper does not need them. */
-export type CampaignSummaryRow = Omit<CampaignRow, "htmlBody" | "textBody">;
+export type CampaignSummaryRow = Omit<CampaignRow, "htmlBody" | "textBody" | "signature">;
 
 /** `createdByEmail`: the creator is stored as a user id, but the API shows who they are. */
 export function toCampaignSummaryDto(r: CampaignSummaryRow, totals: RecipientTotals, createdByEmail: string): CampaignSummaryDto {
@@ -65,6 +65,7 @@ export const toCampaignDto = (r: CampaignRow, totals: RecipientTotals, createdBy
   ...toCampaignSummaryDto(r, totals, createdByEmail),
   htmlBody: r.htmlBody,
   textBody: r.textBody,
+  signature: r.signature,
 });
 
 export function toRecipientDto(r: CampaignRecipientRow): RecipientDto {
@@ -120,6 +121,7 @@ export interface UserListRow {
   email: string;
   firstName: string;
   lastName: string;
+  position: string;
   displayName: string;
   accessId: UserDto["accessId"];
   accessName: UserDto["access"];
@@ -134,6 +136,7 @@ export const toUserDto = (r: UserListRow): UserDto => ({
   email: r.email,
   firstName: r.firstName,
   lastName: r.lastName,
+  position: r.position,
   displayName: r.displayName,
   access: r.accessName,
   accessId: r.accessId,

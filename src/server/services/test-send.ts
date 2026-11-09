@@ -1,5 +1,6 @@
 import type { TestSendResultDto } from "../../shared/api";
-import { renderTemplate, SAMPLE_CONTACT } from "../../shared/merge";
+import { normalizeEmail } from "../../shared/email";
+import { composeEmailHtml, renderTemplate, SAMPLE_CONTACT } from "../../shared/merge";
 import type { Database } from "../database/client";
 import { campaignsRepo } from "../database/repositories/campaigns";
 import { senderRepo } from "../database/repositories/sender";
@@ -7,6 +8,7 @@ import { testRecipientsRepo } from "../database/repositories/test-recipients";
 import { decryptSecret } from "../lib/crypto";
 import { ApiError } from "../lib/errors";
 import { buildMime, toBase64Url } from "../lib/mime";
+import { createUnsubscribeToken, unsubscribeLinks } from "../lib/unsubscribe";
 import { GmailSendError, GoogleError, type GoogleConfig, type GoogleOAuth } from "./google-oauth";
 
 export interface TestSendDeps {
@@ -39,9 +41,26 @@ export function textFromHtml(html: string): string {
 /**
  * Mails the campaign to EVERY address on the tenant's test-send allowlist, and to nobody else: the recipients come
  * from the allowlist only, never from the request. It goes through the tenant's connected Gmail account, and never
- * touches the campaign's real recipients or its status. The sender name recipients see is the organization's name.
+ * touches the campaign's real recipients or its status. The sender name recipients see is the full name of the user who sends it.
  */
-export async function sendTestEmail(deps: TestSendDeps, tenant: { tenantId: string; tenantName: string }, campaignId: string): Promise<TestSendResultDto> {
+/**
+ * The name recipients see as the sender: the full name of the user who sends. A user with no name falls back to the
+ * company's, so the From line is never just a bare address.
+ */
+export const senderNameOf = (t: { senderName: string; tenantName: string }): string => t.senderName.trim() || t.tenantName;
+
+/** What a test send needs to know about the organization: who it is, and its compliance settings. */
+export interface TestSendTenant {
+  tenantId: string;
+  tenantName: string;
+  /** The full name of the signed-in user who sends the test: the name recipients see on the email. */
+  senderName: string;
+  postalAddress: string;
+  requireUnsubscribeLink: boolean;
+  oneClickUnsubscribe: boolean;
+}
+
+export async function sendTestEmail(deps: TestSendDeps, tenant: TestSendTenant, campaignId: string): Promise<TestSendResultDto> {
   const { db, google, cfg } = deps;
   const { tenantId } = tenant;
   const campaign = await campaignsRepo(db, tenantId).get(campaignId); // 404 for a campaign of another tenant
@@ -70,13 +89,26 @@ export async function sendTestEmail(deps: TestSendDeps, tenant: { tenantId: stri
 
   // Filled in with a made-up contact, exactly as the editor's preview does, so the tags can be seen working.
   const subject = `${TEST_SUBJECT_PREFIX}${renderTemplate(campaign.subject, SAMPLE_CONTACT, false)}`;
-  const html = renderTemplate(campaign.htmlBody, SAMPLE_CONTACT, true);
-  const text = campaign.textBody?.trim() ? renderTemplate(campaign.textBody, SAMPLE_CONTACT, false) : textFromHtml(html);
   const sent: string[] = [];
   try {
     const accessToken = await google.refreshAccessToken(cfg, refreshToken);
     for (const address of to) {
-      await google.sendMessage(accessToken, toBase64Url(buildMime({ from: sender.email, fromName: tenant.tenantName, to: address, subject, text, html })));
+      // Every recipient gets their own unsubscribe link, and so one message each. In a test it is a "test" link: it opens
+      // the real page but unsubscribes nobody (the address is on the allowlist, not a contact).
+      const token = await createUnsubscribeToken(cfg.encryptionKey, { tenantId, email: normalizeEmail(address), campaignId: campaign.id, test: true });
+      const links = unsubscribeLinks(cfg.appBaseUrl, token);
+      // Body, signature, the standard footer, then the postal address, filled in. The plain-text part is always made from
+      // the HTML, so both say the same.
+      const html = composeEmailHtml(
+        { body: campaign.htmlBody, signature: campaign.signature, companyName: tenant.tenantName, postalAddress: tenant.postalAddress, unsubscribeFooter: tenant.requireUnsubscribeLink },
+        SAMPLE_CONTACT,
+        links.page,
+      );
+      const text = textFromHtml(html);
+      await google.sendMessage(
+        accessToken,
+        toBase64Url(buildMime({ from: sender.email, fromName: senderNameOf(tenant), to: address, subject, text, html, ...(tenant.oneClickUnsubscribe ? { listUnsubscribe: { url: links.oneClick, oneClick: true } } : {}) })),
+      );
       sent.push(address);
     }
   } catch (e) {

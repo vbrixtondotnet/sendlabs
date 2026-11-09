@@ -9,6 +9,7 @@ import { CampaignDetails } from "@/pages/CampaignDetails";
 import { Settings } from "@/pages/Settings";
 import { AcceptInvitation } from "@/pages/AcceptInvitation";
 import { Login } from "@/pages/Login";
+import { Unsubscribe } from "@/pages/Unsubscribe";
 import { MySettings } from "@/pages/MySettings";
 
 export function App() {
@@ -16,6 +17,7 @@ export function App() {
     <Routes>
       <Route path="login" element={<Login />} />
       <Route path="invite/:token" element={<AcceptInvitation />} />
+      <Route path="unsubscribe/:token" element={<Unsubscribe />} />
       <Route element={<Layout />}>
         <Route index element={<Overview />} />
         <Route path="imports" element={<Imports />} />

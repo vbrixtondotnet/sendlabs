@@ -12,12 +12,41 @@ import { goTo } from "../../src/client/lib/navigate";
 beforeEach(() => vi.mocked(goTo).mockClear());
 
 const me = (over: Partial<MeDto["user"]> = {}, tenantName = "Sabertooth Software Labs"): MeDto => ({
-  user: { id: "u1", email: "admin@sabertoothsoftwarelabs.net", firstName: "", lastName: "", displayName: "Administrator", access: "Administrator", mustChangePassword: false, ...over },
-  tenant: { id: "t1", name: tenantName, slug: "sabertooth-software-labs", postalAddress: "" },
+  user: { id: "u1", email: "admin@sabertoothsoftwarelabs.net", firstName: "", lastName: "", position: "", displayName: "Administrator", access: "Administrator", mustChangePassword: false, ...over },
+  tenant: { id: "t1", name: tenantName, slug: "sabertooth-software-labs", postalAddress: "", website: "", requireUnsubscribeLink: true, oneClickUnsubscribe: true },
   session: false,
 });
 
 const open = () => renderAt(<Layout />);
+
+describe("the Settings menu is for Administrators only", () => {
+  const links = () => screen.getAllByRole("link").map((l) => l.textContent);
+
+  it("shows Settings to an Administrator, with the other items", async () => {
+    stubApi(({ path }) => (path === "/api/me" ? { json: me({ access: "Administrator" }) } : undefined));
+    open();
+    await screen.findByText("Sabertooth Software Labs");
+    expect(links()).toEqual(expect.arrayContaining(["Overview", "Imports", "Contacts", "Campaigns", "Settings"]));
+    expect(screen.getByRole("link", { name: "Settings" }).getAttribute("href")).toBe("/settings");
+    expect(screen.getByText("Settings are a preview")).toBeTruthy();
+  });
+
+  it.each(["Campaign Manager", "Viewer"] as const)("hides Settings from a %s, who still gets everything else", async (access) => {
+    stubApi(({ path }) => (path === "/api/me" ? { json: me({ access }) } : undefined));
+    open();
+    await screen.findByText("Sabertooth Software Labs");
+    expect(links()).toEqual(expect.arrayContaining(["Overview", "Imports", "Contacts", "Campaigns"]));
+    expect(links()).not.toContain("Settings");
+    expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
+    expect(screen.queryByText("Settings are a preview")).toBeNull();
+  });
+
+  it("does not offer Settings while it is still unknown who is signed in", () => {
+    vi.stubGlobal("fetch", () => new Promise(() => undefined)); // never answers: who is signed in stays unknown
+    open();
+    expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
+  });
+});
 
 describe("the header shows the real tenant and user", () => {
   it("shows the tenant's name and the signed-in user, and nothing hardcoded", async () => {

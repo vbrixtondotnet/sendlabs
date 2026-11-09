@@ -25,6 +25,8 @@ export const users = sqliteTable(
     normalizedEmail: text("normalized_email").notNull(),
     firstName: text("first_name").notNull().default(""),
     lastName: text("last_name").notNull().default(""),
+    /** Job title or role in the organization, e.g. "Sales Director". Free text, optional (empty = not set). Edited by the user. */
+    position: text("position").notNull().default(""),
     /** What the UI shows. Kept as "first last" for people created by invitation. */
     displayName: text("display_name").notNull().default(""),
 

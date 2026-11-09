@@ -24,6 +24,8 @@ export interface InviteInput {
   email: string;
   firstName: string;
   lastName: string;
+  /** Optional job title. */
+  position?: string;
   accessId: AccessId;
 }
 

@@ -18,6 +18,12 @@ export interface OutgoingEmail {
   subject: string;
   text: string;
   html?: string;
+  /**
+   * Adds the `List-Unsubscribe` header (so mail apps can show their own "Unsubscribe" button) and, with `oneClick`, the
+   * `List-Unsubscribe-Post: List-Unsubscribe=One-Click` header that lets them unsubscribe without opening a page (RFC 8058).
+   * `url` must be a plain http(s) address: anything else is refused, so it cannot add headers or other addresses.
+   */
+  listUnsubscribe?: { url: string; oneClick: boolean };
 }
 
 const CRLF = "\r\n";
@@ -89,6 +95,12 @@ export function buildMime(msg: OutgoingEmail): string {
     `Message-ID: <${crypto.randomUUID()}@${domain}>`,
     "MIME-Version: 1.0",
   ];
+  if (msg.listUnsubscribe) {
+    const url = msg.listUnsubscribe.url.trim();
+    if (!/^https?:\/\/[^\s<>",;\\\u0000-\u001f\u007f]+$/i.test(url)) throw new Error("Invalid List-Unsubscribe address");
+    headers.push(`List-Unsubscribe: <${url}>`);
+    if (msg.listUnsubscribe.oneClick) headers.push("List-Unsubscribe-Post: List-Unsubscribe=One-Click");
+  }
 
   const part = (type: string, body: string) =>
     [`--${boundary}`, `Content-Type: ${type}; charset="UTF-8"`, "Content-Transfer-Encoding: base64", "", base64Body(body)].join(CRLF);

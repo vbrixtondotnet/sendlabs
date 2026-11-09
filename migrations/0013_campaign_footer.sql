@@ -1,0 +1,1 @@
+ALTER TABLE `campaigns` ADD `footer` text DEFAULT '' NOT NULL;

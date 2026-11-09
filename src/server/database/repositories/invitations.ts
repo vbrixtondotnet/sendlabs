@@ -12,6 +12,7 @@ export interface NewInvitation {
   normalizedEmail: string;
   firstName: string;
   lastName: string;
+  position: string;
   accessId: AccessId;
   invitedBy: string;
   tokenHash: string;
@@ -28,6 +29,7 @@ export function invitationsRepo(db: Database, tenantId: string) {
     email: invitations.email,
     firstName: invitations.firstName,
     lastName: invitations.lastName,
+    position: invitations.position,
     accessId: invitations.accessId,
     accessName: access.name,
     invitedBy: invitations.invitedBy,
@@ -35,13 +37,14 @@ export function invitationsRepo(db: Database, tenantId: string) {
     expiresAt: invitations.expiresAt,
   };
 
-  type Row = { id: string; email: string; firstName: string; lastName: string; accessId: string; accessName: string; invitedBy: string; createdAt: number; expiresAt: number };
+  type Row = { id: string; email: string; firstName: string; lastName: string; position: string; accessId: string; accessName: string; invitedBy: string; createdAt: number; expiresAt: number };
 
   const toDto = (r: Row, emails: Map<string, string>): InvitationDto => ({
     id: r.id,
     email: r.email,
     firstName: r.firstName,
     lastName: r.lastName,
+    position: r.position,
     access: r.accessName as Role,
     accessId: r.accessId as AccessId,
     // The row stays "Pending" in the database until something replaces it; to the person it is Expired once its date passes.

@@ -3,7 +3,7 @@ import { cleanup, render } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, vi } from "vitest";
-import type { CampaignDto, CampaignSummaryDto, ContactDto, ImportDto, InvitationDto, Page, RecipientDto, SenderDto, SenderStatusDto, TestRecipientDto, UserDto } from "../../src/shared/api";
+import type { CampaignDto, CampaignSummaryDto, ContactDto, ImportDto, InvitationDto, Page, RecipientDto, MeDto, SenderDto, SenderStatusDto, TestRecipientDto, UserDto } from "../../src/shared/api";
 import type { Role } from "../../src/shared/types";
 import { RoleProvider } from "../../src/client/hooks/useRole";
 import { ToastProvider } from "../../src/client/hooks/useToast";
@@ -84,13 +84,13 @@ const zero = { Pending: 0, Queued: 0, Processing: 0, Accepted: 0, Failed: 0, Ski
 
 export const campaign = (over: Partial<CampaignDto> = {}): CampaignDto => ({
   id: "k1", name: "Access-to-SQL", subject: "Hi {{firstName}}", htmlBody: "<p>Hello {{firstName}} <a href=\"{{unsubscribeUrl}}\">unsubscribe</a></p>",
-  textBody: null, status: "Draft", senderAccountId: null, recipientImportId: null, createdBy: "dev@local", dailyLimit: 500, sendWindowStart: "09:00",
+  textBody: null, signature: "", status: "Draft", senderAccountId: null, recipientImportId: null, createdBy: "dev@local", dailyLimit: 500, sendWindowStart: "09:00",
   sendWindowEnd: "17:00", timezone: "America/Los_Angeles", nextRunAt: null, lastRunAt: null, launchedAt: null, completedAt: null,
   archivedAt: null, createdAt: ts, updatedAt: ts, totals: { ...zero }, ...over,
 });
 
 export const summary = (over: Partial<CampaignDto> = {}): CampaignSummaryDto => {
-  const { htmlBody: _h, textBody: _t, ...rest } = campaign(over);
+  const { htmlBody: _h, textBody: _t, signature: _s, ...rest } = campaign(over);
   return rest;
 };
 
@@ -109,12 +109,12 @@ export const importDto = (over: Partial<ImportDto> = {}): ImportDto => ({
 });
 
 export const userDto = (over: Partial<UserDto> = {}): UserDto => ({
-  id: "u1", email: "admin@sabertoothsoftwarelabs.net", firstName: "", lastName: "", displayName: "Administrator", access: "Administrator", accessId: "administrator",
+  id: "u1", email: "admin@sabertoothsoftwarelabs.net", firstName: "", lastName: "", position: "", displayName: "Administrator", access: "Administrator", accessId: "administrator",
   status: "Active", mustChangePassword: false, lastLoginAt: null, createdAt: ts, ...over,
 });
 
 export const invitationDto = (over: Partial<InvitationDto> = {}): InvitationDto => ({
-  id: "inv1", email: "pat@example.test", firstName: "Pat", lastName: "Lee", access: "Viewer", accessId: "viewer", status: "Pending",
+  id: "inv1", email: "pat@example.test", firstName: "Pat", lastName: "Lee", position: "", access: "Viewer", accessId: "viewer", status: "Pending",
   invitedBy: "admin@sabertoothsoftwarelabs.net", createdAt: ts, expiresAt: "2026-11-13T14:30:00.000Z", ...over,
 });
 
@@ -122,6 +122,13 @@ export const senderDto =(over: Partial<SenderDto> = {}): SenderDto => ({
   id: "s1", provider: "gmail", email: "sales@acme.test", status: "Connected", permissions: ["Send email"],
   connectedBy: "admin@sabertoothsoftwarelabs.net", connectedAt: ts, ...over,
 });
+
+/** What GET /api/me returns: an Administrator of a company with the default compliance settings (both on). */
+export const meDto = (user: Partial<MeDto["user"]> = {}, tenant: Partial<MeDto["tenant"]> = {}): MeDto => ({
+  user: { id: "u1", email: "admin@sabertoothsoftwarelabs.net", firstName: "Ada", lastName: "Lovelace", position: "", displayName: "Ada Lovelace", access: "Administrator", mustChangePassword: false, ...user },
+  tenant: { id: "t", name: "Acme", slug: "acme", postalAddress: "Acme Inc.\n1 Road, Springfield", website: "", requireUnsubscribeLink: true, oneClickUnsubscribe: true, ...tenant },
+  session: true,
+  });
 
 export const testRecipientDto = (over: Partial<TestRecipientDto> = {}): TestRecipientDto => ({
   id: "t1", email: "qa@acme.test", addedBy: "admin@sabertoothsoftwarelabs.net", createdAt: ts, ...over,

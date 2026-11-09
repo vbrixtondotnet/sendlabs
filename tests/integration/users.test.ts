@@ -30,7 +30,7 @@ describe("GET /api/users", () => {
       status: "Active", mustChangePassword: false, lastLoginAt: null,
     });
     expect(new Date(admin.createdAt).toISOString()).toBe(admin.createdAt);
-    expect(Object.keys(admin).sort()).toEqual(["access", "accessId", "createdAt", "displayName", "email", "firstName", "id", "lastLoginAt", "lastName", "mustChangePassword", "status"]);
+    expect(Object.keys(admin).sort()).toEqual(["access", "accessId", "createdAt", "displayName", "email", "firstName", "id", "lastLoginAt", "lastName", "mustChangePassword", "position", "status"]);
   });
 
   it("never contains any password data", async () => {

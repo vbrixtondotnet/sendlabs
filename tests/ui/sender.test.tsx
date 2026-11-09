@@ -6,7 +6,7 @@ import { CampaignEditor } from "../../src/client/pages/CampaignEditor";
 import { Settings } from "../../src/client/pages/Settings";
 import { SENDER_CONNECT_ERRORS } from "../../src/shared/types";
 import type { SenderDto } from "../../src/shared/api";
-import { contact, page, renderAt, senderDto, senderStatus, stubApi, type Handler } from "./harness";
+import { contact, meDto, page, renderAt, senderDto, senderStatus, stubApi, type Handler } from "./harness";
 
 // Observe where the browser is sent without actually leaving the page.
 vi.mock("../../src/client/lib/navigate", () => ({ goTo: vi.fn() }));
@@ -21,6 +21,9 @@ function server(initial: SenderDto | null, opts: { configured?: boolean; connect
   const handler: Handler = ({ method, path }) => {
     if (method === "GET" && path === "/api/sender") return { json: senderStatus(current, opts.configured ?? true) };
     if (method === "GET" && path === "/api/users") return { json: page([]) };
+    if (method === "GET" && path === "/api/me") return { json: meDto() };
+    if (method === "GET" && path === "/api/suppressions") return { json: page([]) };
+    if (method === "GET" && path === "/api/test-recipients") return { json: { items: [] } };
     if (method === "POST" && path === "/api/sender/gmail/connect") return opts.connectReply ?? { json: { url: GOOGLE_URL } };
     if (method === "DELETE" && path === "/api/sender") { current = null; return { status: 204 }; }
     return undefined;
@@ -29,10 +32,16 @@ function server(initial: SenderDto | null, opts: { configured?: boolean; connect
 }
 
 const Probe = () => <span data-testid="search">{useLocation().search}</span>;
-const open = (path = "/settings") => renderAt(<><Settings /><Probe /></>, { path, route: "/settings" });
+/** Opens Settings on the Email Service tab, where the Gmail sender lives (the Google callback lands there by itself). */
+const open = (path = "/settings") => {
+  const view = renderAt(<><Settings /><Probe /></>, { path, route: "/settings" });
+  const tab = screen.getByRole("tab", { name: "Email Service" });
+  if (tab.getAttribute("aria-selected") !== "true") fireEvent.click(tab);
+  return view;
+};
 const connectButton = () => screen.getByRole("button", { name: /Connect Gmail|Redirecting to Google/ }) as HTMLButtonElement;
 
-describe("Sender tab when no Gmail account is connected", () => {
+describe("Email Service tab when no Gmail account is connected", () => {
   it("shows a Connect Gmail button with a sub-label that says why it is needed", async () => {
     stubApi(server(null));
     open();
@@ -115,7 +124,7 @@ describe("Sender tab when no Gmail account is connected", () => {
   });
 });
 
-describe("Sender tab when Gmail is connected", () => {
+describe("Email Service tab when Gmail is connected", () => {
   it("shows the connected account and what it may do, and offers Reconnect and Disconnect instead of Connect", async () => {
     stubApi(server(senderDto()));
     open();
@@ -238,7 +247,7 @@ describe("coming back from Google", () => {
 
 describe("campaigns are sent from the connected account", () => {
   const contactsAnd = (sender: Handler): Handler => (c) =>
-    sender(c) ?? (c.path === "/api/contacts" && c.method === "GET" ? { json: page([contact()], 5) } : c.path === "/api/imports" && c.method === "GET" ? { json: page([]) } : undefined);
+    sender(c) ?? (c.path === "/api/me" && c.method === "GET" ? { json: meDto() } : c.path === "/api/contacts" && c.method === "GET" ? { json: page([contact()], 5) } : c.path === "/api/imports" && c.method === "GET" ? { json: page([]) } : undefined);
   const editor = () => renderAt(<CampaignEditor />, { path: "/campaigns/new", route: "/campaigns/new" });
   const fillBasics = () => {
     fireEvent.change(screen.getByLabelText("Campaign name"), { target: { value: "N" } });
@@ -264,7 +273,7 @@ describe("campaigns are sent from the connected account", () => {
     await waitFor(() => expect(launch().disabled).toBe(false));
     expect(screen.queryByText(/Connect a Gmail sender/)).toBeNull();
     fireEvent.click(screen.getByRole("tab", { name: "preview" }));
-    expect(screen.getByText("sales@acme.test")).toBeTruthy();
+    expect(screen.getByText("Ada Lovelace <sales@acme.test>")).toBeTruthy(); // in the name of the person sending, as the emails are
     expect(document.body.textContent).not.toContain("itimpact"); // the made-up mailbox is gone
   });
 

@@ -13,6 +13,8 @@ import { authRoutes } from "./routes/auth";
 import { invitationPublicRoutes } from "./routes/invitations";
 import { meRoutes } from "./routes/me";
 import { tenantRoutes } from "./routes/tenant";
+import { suppressionRoutes } from "./routes/suppressions";
+import { unsubscribeRoutes } from "./routes/unsubscribe";
 import { senderPublicRoutes, senderRoutes } from "./routes/sender";
 import { GoogleOAuth } from "./services/google-oauth";
 import { testRecipientRoutes } from "./routes/test-recipients";
@@ -48,7 +50,10 @@ export function createApp(options: { google?: GoogleOAuth } = {}) {
   app.use("/api/*", async (c, next) => {
     const unsafe = !["GET", "HEAD", "OPTIONS"].includes(c.req.method);
     const origin = c.req.header("origin");
-    if (unsafe && origin && c.env.APP_BASE_URL) {
+    // The unsubscribe endpoint is the exception: mail providers POST to it from their own servers (one-click unsubscribe),
+    // and the signed token in its address is what authorizes it, not where the request came from.
+    const exempt = c.req.path.startsWith("/api/unsubscribe/");
+    if (unsafe && origin && !exempt && c.env.APP_BASE_URL) {
       let expected: string | null = null;
       try {
         expected = new URL(c.env.APP_BASE_URL).origin;
@@ -73,6 +78,7 @@ export function createApp(options: { google?: GoogleOAuth } = {}) {
   app.route("/api/sender", senderPublicRoutes);
   app.route("/api/invitations", invitationPublicRoutes);
   app.route("/api/auth", authRoutes);
+  app.route("/api/unsubscribe", unsubscribeRoutes);
 
   const api = new Hono<AppEnv>();
   api.use("*", requireActor);
@@ -81,6 +87,7 @@ export function createApp(options: { google?: GoogleOAuth } = {}) {
   api.route("/users", userRoutes);
   api.route("/sender", senderRoutes);
   api.route("/test-recipients", testRecipientRoutes);
+  api.route("/suppressions", suppressionRoutes);
   api.route("/contacts", contactRoutes);
   api.route("/campaigns", campaignRoutes);
   api.route("/imports", importRoutes);
