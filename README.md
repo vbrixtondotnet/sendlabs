@@ -1,4 +1,4 @@
-# Sendrix
+# Sendrix (formerly SendLabs)
 
 > **Status:** Early build. **Multi-tenant** (one database, many tenants, each with its own users). The UI is connected to a real local API for **Contacts, Campaigns and CSV imports**. Each tenant can **connect its own Gmail account** (needs Google credentials, see **Connecting Gmail**). Sign-in, tenant sign-up, launch, test send, sending and suppression are not built yet. This README is the implementation plan derived from `email_campaign_platform_project_brief_v2.pdf` (prepared 6 Nov 2026). Section 12 records the decisions made so far (multi-user, Cloudflare Access, service-account Gmail auth, global contacts, one-time import with a 500/day drip send) and the items that are still open.
 
