@@ -52,16 +52,30 @@ export function unknownTags(template: string): string[] {
   return [...new Set(found.filter((t) => !known.has(t)))];
 }
 
-/** The signature as HTML: escaped, line breaks kept. Empty when there is no signature. */
-export function signatureHtml(signature: string): string {
-  const text = signature.replace(/\r\n?/g, "\n").trim();
-  return text ? `<p>${escapeHtml(text).replace(/\n/g, "<br/>")}</p>` : "";
+/** Plain text as HTML: escaped, line breaks kept, in one paragraph. Empty for nothing. Used to turn plain-text defaults into editor content. */
+export function textToHtml(text: string): string {
+  const clean = text.replace(/\r\n?/g, "\n").trim();
+  return clean ? `<p>${escapeHtml(clean).replace(/\n/g, "<br/>")}</p>` : "";
 }
 
 /**
- * Puts the signature right after the body. It is always added, so the body is just the message. (An old `{{signature}}`
- * tag left in a body is dropped rather than shown; the signature goes where it always does.) With no signature nothing
- * is added. Merge fields inside the signature are filled in afterwards by `renderTemplate`.
+ * Whether rich-text content says nothing: no text and no picture or rule. An empty editor holds `<p></p>`, so "empty"
+ * has to be judged by what is left once the markup and the spaces are gone.
+ */
+export function isBlankHtml(html: string): boolean {
+  if (/<(img|hr)\b/i.test(html)) return false;
+  return html.replace(/<[^>]*>/g, "").replace(/&nbsp;|&#160;|\s/gi, "") === "";
+}
+
+/** The signature as HTML to send. It is written in a rich-text editor, so it already is HTML. Empty when it says nothing. */
+export function signatureHtml(signature: string): string {
+  return isBlankHtml(signature) ? "" : signature.trim();
+}
+
+/**
+ * Puts the signature (HTML) right after the body. It is always added, so the body is just the message. (An old
+ * `{{signature}}` tag left in a body is dropped rather than shown; the signature goes where it always does.) With no
+ * signature nothing is added. Merge fields inside the signature are filled in afterwards by `renderTemplate`.
  */
 export function applySignature(bodyHtml: string, signature: string): string {
   const body = bodyHtml.split(SIGNATURE_TAG).join("");
@@ -70,7 +84,7 @@ export function applySignature(bodyHtml: string, signature: string): string {
 }
 
 /**
- * The signature a new campaign starts with, from the signed-in user and their organization:
+ * The signature a new campaign starts with, as plain text lines, from the signed-in user and their organization:
  *
  *   Best regards,
  *   {full name}
@@ -135,4 +149,9 @@ export function composeEmailHtml(parts: EmailParts, contact: Partial<ContactFiel
   const html = renderTemplate(message, contact, true, unsubscribeUrl);
   const address = postalFooterHtml(parts.postalAddress);
   return address ? `${html}\n${address}` : html;
+}
+
+/** The same starting signature as HTML, which is what the signature editor holds. */
+export function defaultSignatureHtml(who: { name: string; position: string }, tenant: { name: string; website: string }): string {
+  return textToHtml(defaultSignature(who, tenant));
 }

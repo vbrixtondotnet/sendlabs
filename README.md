@@ -168,8 +168,8 @@ Test sends already go through all three, so they are what a real send will be. T
 
 A campaign's **Message** section has two parts you write, and an email is always built in this order:
 
-1. **HTML body**: just the message (the starting body is only the greeting and the pitch).
-2. **Email signature**: plain text, added automatically right after the body (see below).
+1. **Email body**: just the message (the starting body is only the greeting and the pitch). Written in a rich-text editor (see below).
+2. **Email signature**: written in a rich-text editor too, and added automatically right after the body (see below).
 3. **The standard footer**: added automatically after the signature. It is the same for every email, **not editable**, and not a campaign field at all (an earlier editable Footer field was removed, and `campaigns.footer` dropped):
 
    ```html
@@ -203,9 +203,21 @@ Every email's unsubscribe link, and every `List-Unsubscribe` header, carries a *
 - **Settings > Email Service > Suppression list** now shows the real list.
 - **Still to do:** the bulk sender must check the suppression list when it selects recipients and again just before each send (D-07), and must mint a live (non-test) token per recipient with `createUnsubscribeToken` and `unsubscribeLinks`. Until launch is built nothing sends to real recipients, so nothing can yet be sent to a suppressed address.
 
+#### Rich-text editors for the body and the signature (built)
+
+Under **Message > Edit**, the email body and the email signature are written in rich-text editors (TipTap, on ProseMirror: `src/client/components/RichTextEditor.tsx`) instead of plain boxes. The Edit and Preview tabs are unchanged, and Preview shows the formatting as it will be sent.
+
+- **Toolbar (body):** text style (paragraph, heading 1 to 3), bold, italic, underline, strikethrough, link, bulleted and numbered lists, quote, horizontal line, left/center/right alignment, clear formatting, undo and redo. The **signature** has a shorter one (no headings, lists, quote or line). The body also has the merge-field buttons (`{{firstName}}` and the rest) in a row **above** the field, each light yellow like a warning; they insert the tag where the cursor is. Merge fields in the text of either editor are **highlighted** the same light yellow once they are there (a red highlight marks one that is not recognised, a typo that will not be filled in). The highlight is only how the text looks on screen: nothing is added to the saved or sent HTML.
+- **Links:** select text, press **Link**, type an address and Apply (or Enter). `https://`, `http://`, `mailto:` and `tel:` are accepted, and so is a merge field such as `{{unsubscribeUrl}}` (so the unsubscribe link can be made). `javascript:` and other schemes are refused with a message.
+- **Stored as HTML** in `campaigns.html_body` and `campaigns.signature`. An empty editor is stored as an empty string, not `<p></p>`, and a trailing empty paragraph is not stored. A body or signature that is only spaces counts as empty ("Email body is required").
+- **HTML button:** switches that field to its raw HTML for hand-written markup. What is typed there is kept **exactly as typed**.
+- **What the editor can and cannot hold:** it keeps what email can show (the toolbar's formatting). Anything else in HTML it is given (tables, styles, scripts, event handlers, images) is not part of its model: it is not shown, and it is dropped the first time that field is **edited in the editor**. **Opening and saving a campaign without editing a field leaves its HTML exactly as it was**, so older campaigns with custom markup are not altered by merely opening them; use the HTML button to keep or edit such markup. The editor also never loads scripts or event handlers into the page.
+- **Plain-text part:** made from the final HTML, with link addresses kept and list items as dashes.
+- **Tests:** the editor itself (formatting, links, undo, source view, merge buttons, unsafe markup), both fields in the campaign form, and the data migration are covered. Tests drive a field through its HTML view (`tests/ui/rte.ts`), and `tests/ui/dom-polyfills.ts` stubs the layout methods jsdom lacks.
+
 #### Email signature (built)
 
-A campaign has an **Email signature** (the sign-off) instead of a plain-text body field. It is plain text, up to 2,000 characters, stored on the campaign (`campaigns.signature`, edited with the draft).
+A campaign has an **Email signature** (the sign-off) instead of a plain-text body field. It is **HTML** written in the rich-text editor, up to 5,000 characters, stored on the campaign (`campaigns.signature`, edited with the draft). Signatures saved before the rich-text editor were plain text; migration 0015 turned each into the same text as an HTML paragraph (escaped, line breaks kept), so they look exactly as they did.
 
 - **Starting text:** a new campaign's signature is filled in from the signed-in user and their company, and can be edited freely:
 
@@ -216,8 +228,8 @@ A campaign has an **Email signature** (the sign-off) instead of a plain-text bod
   {company website}
   ```
 
-  With no position the line is just the company name; with no website that line is left out. An existing draft keeps its own signature (even an empty one).
-- **Where it goes:** always right after the body (see "The structure of an email" above). With no signature nothing is added. The text is escaped, line breaks are kept, and merge fields in it are filled in like the body's. An old `{{signature}}` tag left in a body is simply removed, so it can no longer move the signature.
+  With no position the line is just the company name; with no website that line is left out. It starts as one paragraph with those lines, and can then be formatted like any text. An existing draft keeps its own signature (even an empty one).
+- **Where it goes:** always right after the body (see "The structure of an email" above). With no signature (or an empty editor) nothing is added. It is sent as the HTML written, and merge fields in it are filled in like the body's. An old `{{signature}}` tag left in a body is simply removed, so it can no longer move the signature.
 - **Preview and test sends** use exactly the same rule, so the preview shows the signature. The plain-text part of an email is always made from the final HTML, so both parts say the same; the old `text_body` column is still there but is no longer used.
 
 **Stay signed in:** a session lasts 30 days from its last use. The cookie is persistent (it survives closing the browser) and every time the app is used the 30 days start again, with the cookie re-issued; the database is written at most once an hour per session. Someone who does not use the app for 30 days is signed out. There is no absolute cap on how long an actively used session can last. **Throttling:** 5 failures for one address within 15 minutes lock that address for 15 minutes (even the right password is refused, with `429 TOO_MANY_ATTEMPTS` and `Retry-After`); 30 failures from one network address lock that address. Unknown addresses are counted too, a good sign-in clears the count, and the counters live in the `login_attempts` table (no passwords). A disabled user or suspended organization is told so only after giving the right password.
@@ -249,7 +261,7 @@ The look comes from the logo, `src/client/assets/logo.png` (kept as supplied). I
 
 #### Tests
 
-`npm test` runs 847 tests: state machines, validation schemas, IDs, password hashing, the CSV parser, the API including tenant isolation, CSV imports up to 8,000 rows and the whole Gmail connection and invitation flow against a stand-in for Google (all on in-memory D1), the migrations, and the UI pages (rendered in a simulated browser with the network stubbed, checking they call the API correctly and handle errors, empty states and read-only roles). The integration tests run the real Hono app and repositories against an in-memory D1 database (Miniflare) built from the committed migrations, so they never touch your local dev data. `npm run typecheck` covers the front end, the server, the server-side tests and the UI tests (the last two use separate configs, because browser and Cloudflare Worker types define clashing globals).
+`npm test` runs 935 tests: state machines, validation schemas, IDs, password hashing, the CSV parser, the API including tenant isolation, CSV imports up to 8,000 rows and the whole Gmail connection and invitation flow against a stand-in for Google (all on in-memory D1), the migrations, and the UI pages (rendered in a simulated browser with the network stubbed, checking they call the API correctly and handle errors, empty states and read-only roles). The integration tests run the real Hono app and repositories against an in-memory D1 database (Miniflare) built from the committed migrations, so they never touch your local dev data. `npm run typecheck` covers the front end, the server, the server-side tests and the UI tests (the last two use separate configs, because browser and Cloudflare Worker types define clashing globals).
 
 | Table | Purpose |
 |---|---|
@@ -350,7 +362,7 @@ If the API is not running, pages show "Could not reach the API. Start it with `n
 
 - Import `.csv` contact lists that follow the `template.csv` columns (see [CSV data structure](#csv-data-structure)). Email is the only required column. The same upload is available when creating a campaign.
 - Validate, normalize and deduplicate addresses, with every rejected row reviewable and downloadable.
-- Create campaigns (name, subject, HTML body, optional text body, sender, recipients) with preview and test-send.
+- Create campaigns (name, subject, rich-text email body and signature, sender, recipients) with preview and test-send.
 - Send each recipient a separate message. No shared To/CC/BCC.
 - Send asynchronously, so no browser request stays open while mail is sent.
 - Track Pending, Queued, Processing, Accepted, Failed, Skipped and Cancelled states, with retries and a full attempt audit trail.

@@ -282,7 +282,7 @@ describe("sending a test", () => {
   });
 
   describe("the signature", () => {
-    const SIGNATURE = "Best regards,\nRico Prinsipe\nMarketing Admin | Sabertooth Software Labs\nsabertoothsoftwarelabs.net";
+    const SIGNATURE = "<p>Best regards,<br/>Rico Prinsipe<br/>Marketing Admin | Sabertooth Software Labs<br/>sabertoothsoftwarelabs.net</p>";
     const sentOnce = async (campaign: Record<string, unknown>) => {
       await connectGmail(h, SENDER);
       await add("qa@acme.test");
@@ -312,14 +312,28 @@ describe("sending a test", () => {
       expect(sent.text).toBe("Hello");
     });
 
-    it("is escaped, so markup in it cannot become HTML", async () => {
-      const sent = await sentOnce({ htmlBody: "<p>Hello</p>", signature: "<script>alert(1)</script> & <b>x</b>" });
-      expect(sent.html).toContain("&lt;script&gt;alert(1)&lt;/script&gt; &amp; &lt;b&gt;x&lt;/b&gt;");
-      expect(sent.html).not.toContain("<script>");
+    it("keeps its formatting: bold, italic, links and lists are sent as written", async () => {
+      const signature = '<p>Thanks,<br/><strong>Rico</strong> <em>Prinsipe</em></p><ul><li><p>one</p></li><li><p>two</p></li></ul><p><a href="https://acme.test">acme.test</a></p>';
+      const sent = await sentOnce({ htmlBody: "<p>Hello</p>", signature });
+      expect(sent.html).toContain(signature);
+    });
+
+    it("is in the plain-text part as text: formatting dropped, links kept, a list as dashes", async () => {
+      const sent = await sentOnce({ htmlBody: "<p>Hello</p>", signature: '<p>Thanks,<br/><strong>Rico</strong></p><ul><li><p>one</p></li><li><p>two</p></li></ul><p><a href="https://acme.test">acme.test</a></p>' });
+      expect(sent.text).toContain("Thanks,\nRico");
+      expect(sent.text).toContain("- one\n");
+      expect(sent.text).toContain("- two");
+      expect(sent.text).toContain("acme.test (https://acme.test)");
+      expect(sent.text).not.toMatch(/<\w|<\/\w/);
+    });
+
+    it("adds nothing for what an empty editor holds", async () => {
+      const sent = await sentOnce({ htmlBody: "<p>Hello</p>", signature: "<p></p>" });
+      expect(sent.html).toBe("<p>Hello</p>");
     });
 
     it("has its merge fields filled in with the sample data, like the body", async () => {
-      const sent = await sentOnce({ htmlBody: "<p>Hello</p>", signature: "P.S. {{firstName}} at {{companyName}}" });
+      const sent = await sentOnce({ htmlBody: "<p>Hello</p>", signature: "<p>P.S. {{firstName}} at {{companyName}}</p>" });
       expect(sent.html).toContain("P.S. Alex at Example Co");
       expect(sent.html).not.toContain("{{");
     });
@@ -751,7 +765,7 @@ describe("the structure of the email: body, signature, standard footer, postal a
 
   it("sends the body, then the signature, then the standard footer, then the postal address, in that order", async () => {
     await h.api("PATCH", "/api/tenant", { requireUnsubscribeLink: true, postalAddress: "Acme Inc.\n1 Road" });
-    const { sent } = await sendOne({ htmlBody: "<p>The message</p>", signature: "Best regards,\nRico" });
+    const { sent } = await sendOne({ htmlBody: "<p>The message</p>", signature: "<p>Best regards,<br/>Rico</p>" });
     const at = (needle: string) => sent!.html.indexOf(needle);
     expect(at("The message")).toBeGreaterThan(-1);
     expect(at("The message")).toBeLessThan(at("Best regards,<br/>Rico"));

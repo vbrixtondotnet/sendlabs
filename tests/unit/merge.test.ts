@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applySignature, composeEmailHtml, defaultSignature, postalFooterHtml, PREVIEW_UNSUBSCRIBE_URL, renderTemplate, SAMPLE_CONTACT, SIGNATURE_TAG, signatureHtml, UNSUBSCRIBE_TAG, unknownTags, unsubscribeFooterHtml } from "../../src/shared/merge";
+import { applySignature, composeEmailHtml, defaultSignature, defaultSignatureHtml, isBlankHtml, postalFooterHtml, PREVIEW_UNSUBSCRIBE_URL, renderTemplate, SAMPLE_CONTACT, SIGNATURE_TAG, signatureHtml, textToHtml, UNSUBSCRIBE_TAG, unknownTags, unsubscribeFooterHtml } from "../../src/shared/merge";
 import { DEFAULT_HTML_BODY } from "../../src/shared/defaults";
 
 describe("defaultSignature", () => {
@@ -21,37 +21,70 @@ describe("defaultSignature", () => {
   });
 });
 
-describe("signatureHtml", () => {
+describe("defaultSignatureHtml", () => {
+  it("is the starting signature as one HTML paragraph, which is what the signature editor holds", () => {
+    expect(defaultSignatureHtml({ name: "Rico Prinsipe", position: "Marketing Admin" }, { name: "Sabertooth Software Labs", website: "sabertoothsoftwarelabs.net" }))
+      .toBe("<p>Best regards,<br/>Rico Prinsipe<br/>Marketing Admin | Sabertooth Software Labs<br/>sabertoothsoftwarelabs.net</p>");
+  });
+  it("escapes what it is given, so a name cannot add markup", () => {
+    expect(defaultSignatureHtml({ name: "A <b>&</b> B", position: "" }, { name: "Smith & Sons", website: "" })).toBe("<p>Best regards,<br/>A &lt;b&gt;&amp;&lt;/b&gt; B<br/>Smith &amp; Sons</p>");
+  });
+});
+
+describe("textToHtml", () => {
   it("escapes the text and keeps its line breaks", () => {
-    expect(signatureHtml("Best regards,\nRico & <Co>")).toBe("<p>Best regards,<br/>Rico &amp; &lt;Co&gt;</p>");
+    expect(textToHtml("Best regards,\nRico & <Co>")).toBe("<p>Best regards,<br/>Rico &amp; &lt;Co&gt;</p>");
   });
   it("handles Windows line breaks, and trims", () => {
-    expect(signatureHtml("  A\r\nB\rC \n")).toBe("<p>A<br/>B<br/>C</p>");
+    expect(textToHtml("  A\r\nB\rC \n")).toBe("<p>A<br/>B<br/>C</p>");
   });
   it("is empty for nothing at all", () => {
-    expect(signatureHtml("")).toBe("");
-    expect(signatureHtml(" \n\t ")).toBe("");
+    expect(textToHtml("")).toBe("");
+    expect(textToHtml(" \n\t ")).toBe("");
+  });
+});
+
+describe("isBlankHtml", () => {
+  it("is true for what an empty editor holds, and for nothing but spaces and empty tags", () => {
+    for (const blank of ["", "  ", "<p></p>", "<p> </p>", "<p><br></p>", "<p><br/></p><p></p>", "<p>&nbsp;</p>", "<p>\n</p>", "<h1></h1>", "<ul><li><p></p></li></ul>", "<strong> </strong>"]) {
+      expect(isBlankHtml(blank), JSON.stringify(blank)).toBe(true);
+    }
+  });
+  it("is false as soon as there is text, a picture or a rule", () => {
+    for (const real of ["a", "<p>a</p>", "<p>0</p>", '<p><img src="https://x.test/a.png"></p>', "<hr>", "<p>{{firstName}}</p>", "<p>&amp;</p>", "<p><a href=\"x\">y</a></p>"]) {
+      expect(isBlankHtml(real), JSON.stringify(real)).toBe(false);
+    }
+  });
+});
+
+describe("signatureHtml", () => {
+  it("is the signature as written in the editor: HTML, passed through (trimmed)", () => {
+    expect(signatureHtml("  <p>Best,<br/><strong>Rico</strong></p> \n")).toBe("<p>Best,<br/><strong>Rico</strong></p>");
+  });
+  it("is empty when it says nothing, including what an empty editor holds", () => {
+    for (const blank of ["", " \n\t ", "<p></p>", "<p><br></p>", "<p>&nbsp;</p>"]) expect(signatureHtml(blank), JSON.stringify(blank)).toBe("");
   });
 });
 
 describe("applySignature", () => {
   it("always adds the signature right after the body", () => {
-    expect(applySignature("<p>A</p>", "X")).toBe("<p>A</p>\n<p>X</p>");
+    expect(applySignature("<p>A</p>", "<p>X</p>")).toBe("<p>A</p>\n<p>X</p>");
   });
-  it("adds nothing when there is no signature", () => {
+  it("adds nothing when there is no signature, or an empty editor", () => {
     expect(applySignature("<p>A</p>", "")).toBe("<p>A</p>");
     expect(applySignature("<p>A</p>", "  ")).toBe("<p>A</p>");
+    expect(applySignature("<p>A</p>", "<p></p>")).toBe("<p>A</p>");
   });
   it("drops an old {{signature}} tag left in a body, instead of showing it or placing the signature there", () => {
-    expect(applySignature(`<p>A</p>${SIGNATURE_TAG}<p>B</p>`, "X")).toBe("<p>A</p><p>B</p>\n<p>X</p>");
+    expect(applySignature(`<p>A</p>${SIGNATURE_TAG}<p>B</p>`, "<p>X</p>")).toBe("<p>A</p><p>B</p>\n<p>X</p>");
     expect(applySignature(`<p>A</p>${SIGNATURE_TAG}`, "")).toBe("<p>A</p>");
-    expect(applySignature(`${SIGNATURE_TAG}|${SIGNATURE_TAG}`, "X")).toBe("|\n<p>X</p>");
+    expect(applySignature(`${SIGNATURE_TAG}|${SIGNATURE_TAG}`, "<p>X</p>")).toBe("|\n<p>X</p>");
   });
-  it("does not run a signature that contains the tag, or any markup", () => {
-    expect(applySignature("<p>A</p>", `${SIGNATURE_TAG}<script>x</script>`)).toBe("<p>A</p>\n<p>{{signature}}&lt;script&gt;x&lt;/script&gt;</p>");
+  it("keeps the signature's formatting: it is HTML", () => {
+    expect(applySignature("<p>A</p>", '<p>Hi <strong>X</strong> <a href="https://x.test">x.test</a></p>')).toBe('<p>A</p>\n<p>Hi <strong>X</strong> <a href="https://x.test">x.test</a></p>');
   });
   it("lets merge fields in the signature be filled in afterwards, like the body", () => {
-    const html = renderTemplate(applySignature("<p>A</p>", "Hi {{firstName}} at {{companyName}}"), SAMPLE_CONTACT, true);
+    const html = renderTemplate(applySignature("<p>A</p>", "<p>Hi {{firstName}} at {{companyName}}</p>"), SAMPLE_CONTACT, true);
     expect(html).toContain("Hi Alex at Example Co");
   });
 });
@@ -126,7 +159,7 @@ describe("postalFooterHtml", () => {
 });
 
 describe("composeEmailHtml: body, then signature, then the standard footer, then the postal address", () => {
-  const parts = (over: Partial<Parameters<typeof composeEmailHtml>[0]> = {}) => ({ body: "<p>Hi {{firstName}}</p>", signature: "Best,\nRico", companyName: "Acme Co", postalAddress: "Acme\n1 Road", unsubscribeFooter: true, ...over });
+  const parts = (over: Partial<Parameters<typeof composeEmailHtml>[0]> = {}) => ({ body: "<p>Hi {{firstName}}</p>", signature: "<p>Best,<br/>Rico</p>", companyName: "Acme Co", postalAddress: "Acme\n1 Road", unsubscribeFooter: true, ...over });
   const LINK = "https://app.test/unsubscribe/tok.sig";
 
   it("puts the four parts in that order, with merge fields filled in", () => {
@@ -170,7 +203,7 @@ describe("composeEmailHtml: body, then signature, then the standard footer, then
     expect(html).not.toContain("Unsubscribe");
   });
   it("the structure holds even if the body still has an old signature tag", () => {
-    const html = composeEmailHtml(parts({ body: `<p>A</p>${SIGNATURE_TAG}`, signature: "Sig", postalAddress: "" }), SAMPLE_CONTACT, LINK);
+    const html = composeEmailHtml(parts({ body: `<p>A</p>${SIGNATURE_TAG}`, signature: "<p>Sig</p>", postalAddress: "" }), SAMPLE_CONTACT, LINK);
     expect(html.startsWith("<p>A</p>\n<p>Sig</p>\n<hr/>")).toBe(true);
     expect(html).not.toContain(SIGNATURE_TAG);
   });

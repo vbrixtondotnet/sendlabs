@@ -23,6 +23,10 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.107.1",
+    "@tiptap/extension-text-align": "^3.33.0",
+    "@tiptap/pm": "^3.33.0",
+    "@tiptap/react": "^3.33.0",
+    "@tiptap/starter-kit": "^3.33.0",
     "drizzle-orm": "^0.45.4",
     "hono": "^4.13.17",
     "react": "^19.3.1",

@@ -104,12 +104,12 @@ const timeOfDay = z.string().regex(HHMM, "Use 24-hour HH:MM, e.g. 09:00");
 const timezone = z.string().max(64).refine(isValidTimeZone, "Unknown IANA timezone");
 
 /** Longest email signature accepted, in characters. */
-export const SIGNATURE_MAX = 2000;
+export const SIGNATURE_MAX = 5000;
 
 const campaignFields = {
   name: text(200).min(1, "Name is required"),
   subject: text(300).min(1, "Subject is required"),
-  htmlBody: z.string().min(1, "HTML body is required").max(200_000),
+  htmlBody: z.string().min(1, "Email body is required").max(200_000),
   textBody: z.string().max(200_000).nullable(),
   signature: z.string().max(SIGNATURE_MAX, `Use at most ${SIGNATURE_MAX} characters`),
   dailyLimit: z.number().int().min(1).max(2000),

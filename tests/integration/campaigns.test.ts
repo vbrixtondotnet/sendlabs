@@ -120,11 +120,11 @@ describe("campaign CRUD", () => {
   });
 
   it("stores the signature, returns it with the bodies, and lets it be changed and cleared on a draft", async () => {
-    const made = await create({ signature: "Best regards,\nRico Prinsipe" });
+    const made = await create({ signature: "<p>Best regards,<br/>Rico Prinsipe</p>" });
     expect(made.status).toBe(201);
-    expect(made.json.signature).toBe("Best regards,\nRico Prinsipe");
-    expect((await h.api("GET", `/api/campaigns/${made.json.id}`)).json.signature).toBe("Best regards,\nRico Prinsipe");
-    expect((await h.api("PATCH", `/api/campaigns/${made.json.id}`, { signature: "Cheers" })).json.signature).toBe("Cheers");
+    expect(made.json.signature).toBe("<p>Best regards,<br/>Rico Prinsipe</p>");
+    expect((await h.api("GET", `/api/campaigns/${made.json.id}`)).json.signature).toBe("<p>Best regards,<br/>Rico Prinsipe</p>");
+    expect((await h.api("PATCH", `/api/campaigns/${made.json.id}`, { signature: "<p>Cheers</p>" })).json.signature).toBe("<p>Cheers</p>");
     expect((await h.api("PATCH", `/api/campaigns/${made.json.id}`, { signature: "" })).json.signature).toBe("");
   });
 
@@ -133,9 +133,9 @@ describe("campaign CRUD", () => {
     const list = (await h.api("GET", "/api/campaigns?pageSize=100")).json;
     expect(JSON.stringify(list)).not.toContain("Hidden from the list");
     expect(list.items.every((i: Record<string, unknown>) => !("signature" in i))).toBe(true);
-    expect((await create({ signature: "x".repeat(2001) })).status).toBe(400);
+    expect((await create({ signature: "x".repeat(5001) })).status).toBe(400);
     expect((await create({ signature: 5 })).status).toBe(400);
-    expect((await create({ signature: "x".repeat(2000) })).status).toBe(201);
+    expect((await create({ signature: "x".repeat(5000) })).status).toBe(201);
   });
 
   it("locks the signature with the rest of the content once the campaign has left Draft", async () => {
@@ -155,8 +155,8 @@ describe("campaign CRUD", () => {
   });
 
   it("a duplicate carries the signature over", async () => {
-    const made = (await create({ signature: "Warm regards,\nTeam" })).json;
-    expect((await h.api("POST", `/api/campaigns/${made.id}/duplicate`)).json.signature).toBe("Warm regards,\nTeam");
+    const made = (await create({ signature: "<p>Warm regards,<br/>Team</p>" })).json;
+    expect((await h.api("POST", `/api/campaigns/${made.id}/duplicate`)).json.signature).toBe("<p>Warm regards,<br/>Team</p>");
   });
 
   it("duplicates into a fresh Draft without recipients or schedule state", async () => {

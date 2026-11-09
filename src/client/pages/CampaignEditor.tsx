@@ -5,13 +5,14 @@ import type { ContactFields } from "@shared/types";
 import { windowIsValid } from "@shared/schemas";
 import { DEFAULT_HTML_BODY } from "@shared/defaults";
 import {
-  Button, Card, CardHeader, ErrorNotice, Field, LoadingRows, Modal, Notice, PageHeader, Select, TextArea, TextInput, fmt,
+  Button, Card, CardHeader, ErrorNotice, Field, LoadingRows, Modal, Notice, PageHeader, Select, TextInput, fmt,
 } from "@/components/ui";
 import { ColumnMapper, CsvDropzone, CsvFileBar, ValidationSummary } from "@/components/csv";
 import { useCsvFile } from "@/hooks/useCsvFile";
 import { useRole } from "@/hooks/useRole";
 import { useToast } from "@/hooks/useToast";
-import { composeEmailHtml, defaultSignature, MERGE_FIELDS, renderTemplate, UNSUBSCRIBE_TAG, unknownTags } from "@/lib/merge";
+import { composeEmailHtml, defaultSignatureHtml, isBlankHtml, MERGE_FIELDS, renderTemplate, UNSUBSCRIBE_TAG, unknownTags } from "@/lib/merge";
+import { RichTextEditor } from "@/components/RichTextEditor";
 import { ApiClientError } from "@/services/http";
 import { useCampaign, useCreateCampaign, useUpdateCampaign } from "@/services/campaigns";
 import { useContacts } from "@/services/contacts";
@@ -80,7 +81,7 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
   useEffect(() => {
     if (signatureSeeded.current || !me.data) return;
     signatureSeeded.current = true; // once: later refreshes of who you are must not overwrite what is being typed
-    setSignature(defaultSignature({ name: me.data.user.displayName, position: me.data.user.position }, me.data.tenant));
+    setSignature(defaultSignatureHtml({ name: me.data.user.displayName, position: me.data.user.position }, me.data.tenant));
   }, [me.data]);
   const editSignature = (value: string) => { signatureSeeded.current = true; setSignature(value); };
   const [source, setSource] = useState<Source>(initial?.recipientImportId ? "import" : "contacts");
@@ -96,7 +97,6 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
   const [launchOpen, setLaunchOpen] = useState(false);
   const [ack1, setAck1] = useState(false);
   const [ack2, setAck2] = useState(false);
-  const bodyRef = useRef<HTMLTextAreaElement>(null);
 
   const saving = create.isPending || update.isPending;
   const saveError = (create.error ?? update.error) as unknown;
@@ -127,7 +127,7 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
   else if (senderStatus.data.sender.status !== "Connected") problems.push("Reconnect your Gmail sender in Settings before launching");
   if (!name.trim()) problems.push("Campaign name is required");
   if (!subject.trim()) problems.push("Subject is required");
-  if (!html.trim()) problems.push("HTML body is required");
+  if (isBlankHtml(html)) problems.push("Email body is required");
   // The company's postal address is printed in every email's footer, so it has to exist before launching.
   if (me.data && !me.data.tenant.postalAddress.trim()) {
     problems.push(isAdmin ? "Add your company's postal address in Settings > Company Details before launching" : "Ask an Administrator to add the company's postal address (Settings > Company Details) before launching");
@@ -140,15 +140,7 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
   else if (audienceTotal < 1) problems.push("There are no recipients");
 
   // A test needs what the server needs to save a draft, a connected sender, and someone to send it to.
-  const canTest = !!name.trim() && !!subject.trim() && !!html.trim() && senderStatus.data?.sender?.status === "Connected" && testAddresses.length > 0;
-
-  function insert(tag: string) {
-    const el = bodyRef.current;
-    if (!el) return setHtml(html + tag);
-    const { selectionStart: s, selectionEnd: e } = el;
-    setHtml(html.slice(0, s) + tag + html.slice(e));
-    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(s + tag.length, s + tag.length); });
-  }
+  const canTest = !!name.trim() && !!subject.trim() && !isBlankHtml(html) && senderStatus.data?.sender?.status === "Connected" && testAddresses.length > 0;
 
   /** Creates the draft, or updates it. Returns the saved campaign, or null if the server rejected it. */
   async function save(): Promise<CampaignDto | null> {
@@ -340,20 +332,28 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
             />
             {tab === "edit" ? (
               <div className="space-y-4 p-5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs text-slate-500">Insert:</span>
-                  {[...MERGE_FIELDS.map((m) => m.tag), UNSUBSCRIBE_TAG].map((m) => (
-                    <button key={m} onClick={() => insert(m)} className="rounded-md bg-slate-100 px-2 py-1 font-mono text-xs hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700">{m}</button>
-                  ))}
-                </div>
-                <Field label="HTML body" htmlFor="html" hint="Just the message. The signature, the standard unsubscribe footer and your postal address are added after it automatically.">
-                  <TextArea id="html" ref={bodyRef} rows={14} className="font-mono text-xs" value={html} onChange={(e) => setHtml(e.target.value)} />
+                <div>
+                  <RichTextEditor
+                    label="Email body"
+                    value={html}
+                    onChange={setHtml}
+                    tags={[...MERGE_FIELDS.map((m) => m.tag), UNSUBSCRIBE_TAG]}
+                    heightClass="min-h-[14rem]"
+                    hint="Just the message. The signature, the standard unsubscribe footer and your postal address are added after it automatically."
+                  />
                   {fieldError("htmlBody") && <p className="mt-1 text-xs text-rose-600">{fieldError("htmlBody")}</p>}
-                </Field>
-                <Field label="Email signature" htmlFor="signature" hint="Your sign-off. It is added right after the body, before the unsubscribe footer. A plain-text version of the email is made for you.">
-                  <TextArea id="signature" rows={5} maxLength={2000} value={signature} onChange={(e) => editSignature(e.target.value)} />
+                </div>
+                <div>
+                  <RichTextEditor
+                    label="Email signature"
+                    value={signature}
+                    onChange={editSignature}
+                    compact
+                    heightClass="min-h-[6rem]"
+                    hint="Your sign-off. It is added right after the body, before the unsubscribe footer. A plain-text version of the email is made for you."
+                  />
                   {fieldError("signature") && <p className="mt-1 text-xs text-rose-600">{fieldError("signature")}</p>}
-                </Field>
+                </div>
               </div>
             ) : (
               <div className="space-y-3 p-5">
