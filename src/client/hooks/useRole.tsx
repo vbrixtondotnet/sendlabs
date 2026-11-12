@@ -11,11 +11,13 @@ interface RoleCtx {
   canEdit: boolean;
   /** Only administrators manage settings, users and sender connection. */
   isAdmin: boolean;
+  /** The global platform user, who belongs to no tenant and manages what every tenant shares (the Available Templates). */
+  isSuperAdmin: boolean;
 }
 
 const Ctx = createContext<RoleCtx | null>(null);
 
-const valueFor = (role: Role, ready: boolean): RoleCtx => ({ role, ready, canEdit: role !== "Viewer", isAdmin: role === "Administrator" });
+const valueFor = (role: Role, ready: boolean): RoleCtx => ({ role, ready, canEdit: role !== "Viewer" && role !== "SuperAdministrator", isAdmin: role === "Administrator", isSuperAdmin: role === "SuperAdministrator" });
 
 /**
  * What the signed-in user may do, taken from their real access level (from /api/me). It is only a way of showing or

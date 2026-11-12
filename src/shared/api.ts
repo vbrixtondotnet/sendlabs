@@ -168,7 +168,7 @@ export interface SenderDto {
 export interface EmailTemplateSummaryDto {
   id: string;
   name: string;
-  /** The key of the Available (system) template this is a copy of, or null for one an Administrator wrote. */
+  /** The id of the Available (system) template this is a copy of, or null for one an Administrator wrote. */
   systemKey: string | null;
   createdAt: string;
 }
@@ -180,8 +180,10 @@ export interface EmailTemplateDto extends EmailTemplateSummaryDto {
 
 /** A system-made template in Available Templates. Shared by every organization. */
 export interface AvailableTemplateDto {
-  key: string;
+  id: string;
   name: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface AvailableTemplateFullDto extends AvailableTemplateDto {

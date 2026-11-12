@@ -165,6 +165,14 @@ describe("the Email Templates menu item", () => {
     expect(screen.getByRole("link", { name: "Email Templates" }).getAttribute("href")).toBe("/templates");
   });
 
+  it("is the only item in the left navigation for a SuperAdministrator, who belongs to no tenant, and is where they land", async () => {
+    stubApi(({ path }) => (path === "/api/me" ? { json: me({ access: "SuperAdministrator" }, "Sendrix Platform") } : undefined));
+    open();
+    await screen.findByText("Sendrix Platform"); // who is signed in has loaded
+    expect(links().filter((l) => ["Overview", "Imports", "Contacts", "Campaigns", "Settings"].includes(l ?? ""))).toEqual([]);
+    expect(links()).toContain("Email Templates");
+  });
+
   it("is not in the left navigation for a Viewer, who has no access to Email Templates", async () => {
     stubApi(({ path }) => (path === "/api/me" ? { json: me({ access: "Viewer" }) } : undefined));
     open();

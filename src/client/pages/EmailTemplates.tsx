@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import type { EmailTemplateSummaryDto } from "@shared/api";
+import type { AvailableTemplateDto, EmailTemplateSummaryDto } from "@shared/api";
 import { Badge, Button, Card, Empty, ErrorNotice, Field, LoadingRows, Modal, Notice, PageHeader, Table, TextInput, Td, Th, fmtDate } from "@/components/ui";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { useRole } from "@/hooks/useRole";
@@ -7,23 +7,25 @@ import { useToast } from "@/hooks/useToast";
 import { MERGE_FIELDS, SAMPLE_CONTACT, UNSUBSCRIBE_TAG, composeEmailHtml, isBlankHtml, unknownTags } from "@/lib/merge";
 import { ApiClientError } from "@/services/http";
 import {
-  useAddAvailableTemplate, useAvailableTemplate, useAvailableTemplates, useCreateEmailTemplate, useEmailTemplate, useEmailTemplates, useRemoveEmailTemplate,
+  useAddAvailableTemplate, useAvailableTemplate, useAvailableTemplates, useCreateAvailableTemplate, useCreateEmailTemplate, useEmailTemplate, useEmailTemplates,
+  useRemoveAvailableTemplate, useRemoveEmailTemplate, useUpdateAvailableTemplate,
 } from "@/services/emailTemplates";
 
 const TABS = ["Available Templates", "My Templates"] as const;
 type Tab = (typeof TABS)[number];
 
-/** What is being previewed: one of My Templates (by id) or an Available one (by key). */
-type Target = { kind: "mine"; id: string; name: string } | { kind: "available"; key: string; name: string };
+/** What is being previewed: one of My Templates or an Available one, both by id. */
+type Target = { kind: "mine" | "available"; id: string; name: string };
 
 /**
- * Two lists. Available Templates are made by the system and are the same for every organization (only a future global
- * SuperAdministrator will manage them). My Templates are the organization's own, the ones its campaign editor offers:
- * Administrators add (from Available, or a new one) and remove them, Campaign Managers can only look, and Viewers have no
- * access to Email Templates at all.
+ * Two lists. Available Templates are made by the system and are the same for every organization: only the global
+ * SuperAdministrator creates, edits and deletes them, and that is the only thing a SuperAdministrator sees here (it belongs
+ * to no organization, so it has no My Templates). My Templates are the organization's own, the ones its campaign editor
+ * offers: Administrators add (from Available, or a new one) and remove them, Campaign Managers can only look, and Viewers
+ * have no access to Email Templates at all.
  */
 export function EmailTemplates() {
-  const { role, ready } = useRole();
+  const { role, ready, isSuperAdmin } = useRole();
   const [tab, setTab] = useState<Tab>("Available Templates");
   const [previewing, setPreviewing] = useState<Target | null>(null);
 
@@ -32,6 +34,15 @@ export function EmailTemplates() {
       <>
         <PageHeader title="Email Templates" />
         <Notice tone="warn" title="No access">Your role does not have access to Email Templates.</Notice>
+      </>
+    );
+  }
+
+  if (isSuperAdmin) {
+    return (
+      <>
+        <AvailableTab onPreview={setPreviewing} />
+        <PreviewModal target={previewing} onClose={() => setPreviewing(null)} />
       </>
     );
   }
@@ -51,26 +62,50 @@ export function EmailTemplates() {
 }
 
 function AvailableTab({ onPreview }: { onPreview: (t: Target) => void }) {
-  const { isAdmin } = useRole();
+  const { isAdmin, isSuperAdmin } = useRole();
   const { toast } = useToast();
   const available = useAvailableTemplates();
-  const mine = useEmailTemplates();
+  // A SuperAdministrator has no My Templates (and the API would refuse), so the list is only read for the others.
+  const mine = useEmailTemplates(!isSuperAdmin);
   const add = useAddAvailableTemplate();
+  const create = useCreateAvailableTemplate();
+  const remove = useRemoveAvailableTemplate();
+  const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<AvailableTemplateDto | null>(null);
+  const [removing, setRemoving] = useState<AvailableTemplateDto | null>(null);
   const items = available.data?.items ?? [];
   const added = new Set((mine.data?.items ?? []).map((t) => t.systemKey).filter((k): k is string => k !== null));
 
-  async function addToMine(key: string, name: string) {
+  async function addToMine(id: string, name: string) {
     try {
-      await add.mutateAsync(key);
+      await add.mutateAsync(id);
       toast(`"${name}" added to My Templates`);
     } catch (e) {
       toast(e instanceof ApiClientError ? e.message : "Something went wrong", "error");
     }
   }
 
+  async function confirmRemove() {
+    if (!removing) return;
+    try {
+      await remove.mutateAsync(removing.id);
+      toast(`"${removing.name}" deleted`);
+    } catch (e) {
+      toast(e instanceof ApiClientError ? e.message : "Something went wrong", "error");
+    }
+    setRemoving(null);
+  }
+
   return (
     <>
-      {!isAdmin && <div className="mb-4"><Notice tone="info">Your role is read-only: you can look at the templates, and an Administrator adds them to My Templates.</Notice></div>}
+      {isSuperAdmin && (
+        <PageHeader
+          title="Available Templates"
+          description="Made by the system and shared by every organization. An Administrator can add them to their own My Templates; their copy is not changed by what you do here."
+          actions={<Button variant="primary" onClick={() => setCreating(true)}>Create template</Button>}
+        />
+      )}
+      {!isAdmin && !isSuperAdmin && <div className="mb-4"><Notice tone="info">Your role is read-only: you can look at the templates, and an Administrator adds them to My Templates.</Notice></div>}
       <Card>
         {available.isError ? (
           <div className="p-4"><ErrorNotice error={available.error} onRetry={() => void available.refetch()} /></div>
@@ -80,26 +115,32 @@ function AvailableTab({ onPreview }: { onPreview: (t: Target) => void }) {
           <Empty>No templates are available yet.</Empty>
         ) : (
           <Table>
-            <thead><tr><Th>Template</Th><Th>Type</Th><Th className="text-right">Actions</Th></tr></thead>
+            <thead><tr><Th>Template</Th><Th>{isSuperAdmin ? "Updated" : "Type"}</Th><Th className="text-right">Actions</Th></tr></thead>
             <tbody>
               {items.map((t) => (
-                <tr key={t.key}>
+                <tr key={t.id}>
                   <Td className="font-medium">
                     {t.name}
-                    {added.has(t.key) && <span className="ml-2 align-middle"><Badge tone="green">In My Templates</Badge></span>}
+                    {added.has(t.id) && <span className="ml-2 align-middle"><Badge tone="green">In My Templates</Badge></span>}
                   </Td>
-                  <Td><Badge tone="slate">System</Badge></Td>
+                  <Td>{isSuperAdmin ? <span className="text-slate-500">{fmtDate(t.updatedAt)}</span> : <Badge tone="slate">System</Badge>}</Td>
                   <Td className="whitespace-nowrap text-right">
-                    <Button variant="ghost" aria-label={`Preview ${t.name}`} onClick={() => onPreview({ kind: "available", key: t.key, name: t.name })}>Preview</Button>
-                    {isAdmin && !added.has(t.key) && (
+                    <Button variant="ghost" aria-label={`Preview ${t.name}`} onClick={() => onPreview({ kind: "available", id: t.id, name: t.name })}>Preview</Button>
+                    {isAdmin && !added.has(t.id) && (
                       <Button
                         variant="ghost"
                         aria-label={`Add ${t.name} to My Templates`}
-                        disabled={add.isPending && add.variables === t.key}
-                        onClick={() => void addToMine(t.key, t.name)}
+                        disabled={add.isPending && add.variables === t.id}
+                        onClick={() => void addToMine(t.id, t.name)}
                       >
                         Add to My Templates
                       </Button>
+                    )}
+                    {isSuperAdmin && (
+                      <>
+                        <Button variant="ghost" aria-label={`Edit ${t.name}`} onClick={() => setEditing(t)}>Edit</Button>
+                        <Button variant="ghost" className="text-rose-600" aria-label={`Delete ${t.name}`} onClick={() => setRemoving(t)}>Delete</Button>
+                      </>
                     )}
                   </Td>
                 </tr>
@@ -108,7 +149,58 @@ function AvailableTab({ onPreview }: { onPreview: (t: Target) => void }) {
           </Table>
         )}
       </Card>
+      {isSuperAdmin && creating && (
+        <TemplateFormModal
+          title="Create template"
+          submitLabel="Create template"
+          note="A new template is offered to every organization's Administrators, who can add it to their My Templates."
+          onSubmit={async (input) => { const made = await create.mutateAsync(input); toast(`Template "${made.name}" created`); }}
+          onClose={() => setCreating(false)}
+        />
+      )}
+      {isSuperAdmin && editing && <EditAvailableModal template={editing} onClose={() => setEditing(null)} />}
+      {isSuperAdmin && (
+        <Modal
+          open={removing !== null}
+          title="Delete template?"
+          onClose={() => setRemoving(null)}
+          footer={
+            <>
+              <Button onClick={() => setRemoving(null)}>Keep it</Button>
+              <Button variant="danger" disabled={remove.isPending} onClick={() => void confirmRemove()}>{remove.isPending ? "Deleting…" : "Delete"}</Button>
+            </>
+          }
+        >
+          <p className="text-sm">
+            <strong>{removing?.name}</strong> will no longer be available to add. Copies organizations already added to their My Templates stay as they are.
+          </p>
+        </Modal>
+      )}
     </>
+  );
+}
+
+/** Opens the form for an Available Template once its message has loaded. */
+function EditAvailableModal({ template, onClose }: { template: AvailableTemplateDto; onClose: () => void }) {
+  const { toast } = useToast();
+  const full = useAvailableTemplate(template.id);
+  const update = useUpdateAvailableTemplate();
+  if (full.isPending || full.isError) {
+    return (
+      <Modal open title={`Edit ${template.name}`} onClose={onClose} wide footer={<Button onClick={onClose}>Close</Button>}>
+        {full.isError ? <ErrorNotice error={full.error} onRetry={() => void full.refetch()} /> : <LoadingRows rows={4} cols={1} />}
+      </Modal>
+    );
+  }
+  return (
+    <TemplateFormModal
+      title={`Edit ${template.name}`}
+      submitLabel="Save changes"
+      initial={{ name: full.data.name, html: full.data.htmlBody }}
+      note="Copies organizations already added to their My Templates are not changed."
+      onSubmit={async (input) => { const saved = await update.mutateAsync({ id: template.id, ...input }); toast(`Template "${saved.name}" saved`); }}
+      onClose={onClose}
+    />
   );
 }
 
@@ -117,6 +209,7 @@ function MyTemplatesTab({ onPreview }: { onPreview: (t: Target) => void }) {
   const { toast } = useToast();
   const list = useEmailTemplates();
   const remove = useRemoveEmailTemplate();
+  const create = useCreateEmailTemplate();
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<EmailTemplateSummaryDto | null>(null);
   const items = list.data?.items ?? [];
@@ -166,7 +259,15 @@ function MyTemplatesTab({ onPreview }: { onPreview: (t: Target) => void }) {
           </Table>
         )}
       </Card>
-      {isAdmin && <AddTemplateModal open={adding} onClose={() => setAdding(false)} />}
+      {isAdmin && adding && (
+        <TemplateFormModal
+          title="Create template"
+          submitLabel="Create template"
+          note="A new template goes straight into My Templates, so campaigns offer it."
+          onSubmit={async (input) => { const made = await create.mutateAsync(input); toast(`Template "${made.name}" created`); }}
+          onClose={() => setAdding(false)}
+        />
+      )}
       <Modal
         open={removing !== null}
         title="Remove template?"
@@ -190,7 +291,7 @@ function MyTemplatesTab({ onPreview }: { onPreview: (t: Target) => void }) {
 /** The message as a recipient would see it, filled in with a sample contact. Only the body: the signature, the unsubscribe footer and the postal address are added when a campaign is sent. */
 function PreviewModal({ target, onClose }: { target: Target | null; onClose: () => void }) {
   const mine = useEmailTemplate(target?.kind === "mine" ? target.id : null);
-  const available = useAvailableTemplate(target?.kind === "available" ? target.key : null);
+  const available = useAvailableTemplate(target?.kind === "available" ? target.id : null);
   const full = target?.kind === "available" ? available : mine;
   const doc = full.data
     ? `<!doctype html><html><body style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#222;padding:16px">${composeEmailHtml({ body: full.data.htmlBody, signature: "", companyName: "", postalAddress: "", unsubscribeFooter: false }, SAMPLE_CONTACT)}</body></html>`
@@ -211,59 +312,66 @@ function PreviewModal({ target, onClose }: { target: Target | null; onClose: () 
   );
 }
 
-function AddTemplateModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { toast } = useToast();
-  const create = useCreateEmailTemplate();
-  const [name, setName] = useState("");
-  const [html, setHtml] = useState("");
-  const { reset } = create;
-  const fieldError = (path: string) => (create.error instanceof ApiClientError ? create.error.fieldErrors.find((f) => f.path === path)?.message : undefined);
-  const general = create.error instanceof ApiClientError && !(create.error.fieldErrors.length > 0 && create.error.fieldErrors.every((f) => ["name", "htmlBody"].includes(f.path))) ? create.error.message : create.isError && !(create.error instanceof ApiClientError) ? "Something went wrong. Please try again." : null;
+/**
+ * A name and a message in a dialog. Used to create (empty) and to edit (`initial`). It is mounted only while open, so it
+ * always starts from `initial`. `onSubmit` does the saving and throws if the server refuses; the reason is shown here.
+ */
+function TemplateFormModal({ title, submitLabel, initial, note, onSubmit, onClose }: {
+  title: string;
+  submitLabel: string;
+  initial?: { name: string; html: string };
+  note: string;
+  onSubmit: (input: { name: string; htmlBody: string }) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(initial?.name ?? "");
+  const [html, setHtml] = useState(initial?.html ?? "");
+  const [error, setError] = useState<unknown>(null);
+  const [pending, setPending] = useState(false);
+  const fieldError = (path: string) => (error instanceof ApiClientError ? error.fieldErrors.find((f) => f.path === path)?.message : undefined);
+  const general = error === null ? null
+    : error instanceof ApiClientError ? (error.fieldErrors.length > 0 && error.fieldErrors.every((f) => ["name", "htmlBody"].includes(f.path)) ? null : error.message)
+    : "Something went wrong. Please try again.";
   const unknown = unknownTags(html);
   const complete = name.trim() !== "" && !isBlankHtml(html);
 
-  function close() {
-    reset();
-    setName("");
-    setHtml("");
-    onClose();
-  }
-
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (!complete || create.isPending) return;
+    if (!complete || pending) return;
+    setPending(true);
     try {
-      const made = await create.mutateAsync({ name: name.trim(), htmlBody: html });
-      toast(`Template "${made.name}" created`);
-      close();
-    } catch {
-      /* shown in the dialog */
+      await onSubmit({ name: name.trim(), htmlBody: html });
+      onClose();
+    } catch (err) {
+      setError(err);
+    } finally {
+      setPending(false);
     }
   }
 
   return (
     <Modal
-      open={open}
-      title="Create template"
-      onClose={close}
+      open
+      title={title}
+      onClose={onClose}
       wide
       footer={
         <>
-          <Button onClick={close}>Cancel</Button>
-          <Button variant="primary" type="submit" form="add-template-form" disabled={!complete || create.isPending}>{create.isPending ? "Creating…" : "Create template"}</Button>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button variant="primary" type="submit" form="template-form" disabled={!complete || pending}>{pending ? "Saving…" : submitLabel}</Button>
         </>
       }
     >
-      <form id="add-template-form" onSubmit={submit} noValidate className="space-y-4">
+      <form id="template-form" onSubmit={submit} noValidate className="space-y-4">
         <Field label="Template name" htmlFor="tpl-name" hint="Shown in the list and in the campaign dropdown, e.g. the industry it is written for.">
-          <TextInput id="tpl-name" autoFocus autoComplete="off" maxLength={100} value={name} onChange={(e) => { setName(e.target.value); reset(); }} aria-invalid={!!fieldError("name")} />
+          <TextInput id="tpl-name" autoFocus autoComplete="off" maxLength={100} value={name} onChange={(e) => { setName(e.target.value); setError(null); }} aria-invalid={!!fieldError("name")} />
           {fieldError("name") && <p className="mt-1 text-xs text-rose-600">{fieldError("name")}</p>}
         </Field>
         <div>
           <RichTextEditor
             label="Message"
             value={html}
-            onChange={(v) => { setHtml(v); reset(); }}
+            onChange={(v) => { setHtml(v); setError(null); }}
             tags={[...MERGE_FIELDS.map((m) => m.tag), UNSUBSCRIBE_TAG]}
             heightClass="min-h-[14rem]"
             hint="Just the message. A campaign adds your signature, the standard unsubscribe footer and your postal address after it."
@@ -272,7 +380,7 @@ function AddTemplateModal({ open, onClose }: { open: boolean; onClose: () => voi
           {!fieldError("htmlBody") && unknown.length > 0 && <p className="mt-1 text-xs text-rose-600">Unknown merge field{unknown.length > 1 ? "s" : ""}: {unknown.join(", ")}</p>}
         </div>
         {general && <Notice tone="error">{general}</Notice>}
-        <p className="text-xs text-slate-500">A new template goes straight into My Templates, so campaigns offer it.</p>
+        <p className="text-xs text-slate-500">{note}</p>
       </form>
     </Modal>
   );

@@ -36,7 +36,10 @@ export function Layout() {
   const isAdmin = me.data?.user.access === "Administrator";
   // Viewers have no access to Email Templates, so they do not see that item either.
   const isViewer = me.data?.user.access === "Viewer";
-  const items = NAV.filter((n) => (n.to !== "/settings" || isAdmin) && (n.to !== "/templates" || !isViewer));
+  // A SuperAdministrator belongs to no tenant: its only screen is Email Templates (the Available Templates it manages).
+  const isSuperAdmin = me.data?.user.access === "SuperAdministrator";
+  if (isSuperAdmin && location.pathname !== "/templates" && location.pathname !== "/account") return <Navigate to="/templates" replace />;
+  const items = NAV.filter((n) => (isSuperAdmin ? n.to === "/templates" : (n.to !== "/settings" || isAdmin) && (n.to !== "/templates" || !isViewer)));
 
   const nav = (
     <nav aria-label="Main" className="flex flex-col gap-1 px-3">

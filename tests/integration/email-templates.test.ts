@@ -1,14 +1,22 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { BUILTIN_EMAIL_TEMPLATES } from "../../src/shared/builtin-templates";
 import { MAX_EMAIL_TEMPLATES } from "../../src/shared/schemas";
+import { hashPassword } from "../../src/server/lib/password";
 import { startHarness, uniqueEmail, type Caller, type Harness } from "./harness";
 
 let h: Harness;
 const GLOBEX = "admin@globex.test";
+const SUPER = "superadmin@sabertoothsoftwarelabs.net";
 
 beforeAll(async () => {
   h = await startHarness();
   await h.addTenant("Globex Corp", GLOBEX);
+  // The SuperAdministrator, as the seed script makes it: a global user held in the reserved platform tenant.
+  await h.sql("INSERT INTO tenants (id,name,slug,status,created_at,updated_at) VALUES (?,?,?,?,?,?)", "platform", "Sendrix Platform", "sendrix-platform", "Active", 1, 1);
+  await h.sql(
+    "INSERT INTO users (id,tenant_id,first_name,last_name,display_name,email,normalized_email,password_hash,access_id,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+    "super-1", "platform", "Super", "Administrator", "Super Administrator", SUPER, SUPER, await hashPassword("Password@123"), "super-administrator", "Active", 1, 1,
+  );
 });
 afterAll(async () => { await h.dispose(); });
 
@@ -53,14 +61,15 @@ describe("Available Templates (made by the system)", () => {
     for (const who of [h, await member("campaign-manager"), h.as(GLOBEX)]) {
       const r = await who.api("GET", "/api/email-templates/available");
       expect(r.status).toBe(200);
-      expect(r.json.items).toEqual(BUILTIN_EMAIL_TEMPLATES.map((t) => ({ key: t.key, name: t.name })));
+      expect(r.json.items.map((t: { id: string; name: string }) => [t.id, t.name]).sort()).toEqual(BUILTIN_EMAIL_TEMPLATES.map((t) => [t.key, t.name]).sort());
+      expect(Object.keys(r.json.items[0]).sort()).toEqual(["createdAt", "id", "name", "updatedAt"]); // no body in the list
     }
   });
 
   it("can be read one at a time, with the exact text of the files", async () => {
     for (const t of BUILTIN_EMAIL_TEMPLATES) {
       const r = await h.api("GET", `/api/email-templates/available/${t.key}`);
-      expect(r.json).toEqual({ key: t.key, name: t.name, htmlBody: t.htmlBody });
+      expect(r.json).toMatchObject({ id: t.key, name: t.name, htmlBody: t.htmlBody });
     }
     expect((await h.api("GET", "/api/email-templates/available/nope")).status).toBe(404);
   });
@@ -72,13 +81,91 @@ describe("Available Templates (made by the system)", () => {
     const rows = await h.rows<{ n: number }>("SELECT count(*) AS n FROM email_templates WHERE tenant_id = ?", t.tenantId);
     expect(rows[0]!.n).toBe(0);
   });
+});
 
-  it("cannot be changed through the API (only a future SuperAdministrator will manage them)", async () => {
-    for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
-      const r = await h.api(method, "/api/email-templates/available/construction", { name: "x" });
-      expect([404, 405, 403, 400].includes(r.status) || (method === "POST" && r.status === 404), `${method} ${r.status}`).toBe(true);
+describe("a SuperAdministrator managing the Available Templates", () => {
+  const sa = () => h.as(SUPER);
+  const mk = (name: string, who: Caller = sa()) => who.api("POST", "/api/email-templates/available", { name, htmlBody: BODY });
+
+  it("is the only role that can create one: it is listed for everyone and readable with its body", async () => {
+    const r = await mk("Aerospace");
+    expect(r.status).toBe(201);
+    expect(r.json).toMatchObject({ name: "Aerospace", htmlBody: BODY });
+    const [row] = await h.rows<{ created_by: string }>("SELECT created_by FROM system_templates WHERE id = ?", r.json.id);
+    expect(row!.created_by).toBe("super-1");
+    for (const who of [h, await member("campaign-manager"), h.as(GLOBEX)]) {
+      expect((await who.api("GET", "/api/email-templates/available")).json.items.some((t: { name: string }) => t.name === "Aerospace")).toBe(true);
+      expect((await who.api("GET", `/api/email-templates/available/${r.json.id}`)).json.htmlBody).toBe(BODY);
     }
-    expect((await h.api("POST", "/api/email-templates/available", { key: "x", name: "x", htmlBody: BODY })).status).not.toBe(201);
+  });
+
+  it("is refused to everyone else: Administrators, Campaign Managers and Viewers cannot create, change or delete", async () => {
+    const made = (await mk("Protected")).json;
+    for (const [level, who] of [["administrator", h], ["campaign-manager", await member("campaign-manager")], ["viewer", await member("viewer")]] as const) {
+      expect((await mk(`By ${level}`, who)).status, level).toBe(403);
+      expect((await who.api("PUT", `/api/email-templates/available/${made.id}`, { name: "Hijacked", htmlBody: BODY })).status, level).toBe(403);
+      expect((await who.api("DELETE", `/api/email-templates/available/${made.id}`)).status, level).toBe(403);
+    }
+    const after = (await h.api("GET", `/api/email-templates/available/${made.id}`)).json;
+    expect(after.name).toBe("Protected");
+    expect((await h.anonymous.api("POST", "/api/email-templates/available", { name: "x", htmlBody: BODY })).status).toBe(401);
+  });
+
+  it("can edit one: the name and message change for everyone, and organizations' existing copies do not", async () => {
+    const made = (await mk("Before")).json;
+    const copy = (await addAvailable(made.id)).json;
+    const r = await sa().api("PUT", `/api/email-templates/available/${made.id}`, { name: "After", htmlBody: "<p>New {{firstName}}</p>" });
+    expect(r.status).toBe(200);
+    expect(r.json).toMatchObject({ id: made.id, name: "After", htmlBody: "<p>New {{firstName}}</p>" });
+    expect((await h.api("GET", `/api/email-templates/available/${made.id}`)).json.name).toBe("After");
+    expect((await h.api("GET", `/api/email-templates/${copy.id}`)).json).toMatchObject({ name: "Before", htmlBody: BODY }); // the copy is independent
+  });
+
+  it("can delete one: it is gone for everyone, and organizations' copies stay", async () => {
+    const made = (await mk("Doomed")).json;
+    const copy = (await addAvailable(made.id)).json;
+    expect((await sa().api("DELETE", `/api/email-templates/available/${made.id}`)).status).toBe(204);
+    expect((await h.api("GET", `/api/email-templates/available/${made.id}`)).status).toBe(404);
+    expect((await addAvailable(made.id)).status).toBe(404);
+    expect((await h.api("GET", `/api/email-templates/${copy.id}`)).status).toBe(200);
+    expect((await sa().api("DELETE", `/api/email-templates/available/${made.id}`)).status).toBe(404);
+  });
+
+  it("can change one of the nine that came with the app", async () => {
+    const original = BUILTIN_EMAIL_TEMPLATES.find((t) => t.key === "transportation-logistics")!;
+    const r = await sa().api("PUT", "/api/email-templates/available/transportation-logistics", { name: "Transport & Logistics", htmlBody: BODY });
+    expect(r.status).toBe(200);
+    expect((await h.api("GET", "/api/email-templates/available")).json.items.map((t: { name: string }) => t.name)).toContain("Transport & Logistics");
+    await sa().api("PUT", "/api/email-templates/available/transportation-logistics", { name: original.name, htmlBody: original.htmlBody });
+  });
+
+  it("validates like My Templates: a name that is taken (ignoring case), a blank or long one, a missing message, an unknown merge field", async () => {
+    await mk("Unique One");
+    expect((await mk("unique one")).status).toBe(409);
+    expect((await mk("Construction")).json.error.code).toBe("TEMPLATE_NAME_TAKEN"); // one of the nine
+    const other = (await mk("Unique Two")).json;
+    const clash = await sa().api("PUT", `/api/email-templates/available/${other.id}`, { name: "UNIQUE ONE", htmlBody: BODY });
+    expect(clash.status).toBe(409);
+    expect((await sa().api("PUT", `/api/email-templates/available/${other.id}`, { name: "Unique Two", htmlBody: BODY })).status).toBe(200); // keeping its own name is fine
+    for (const body of [{ name: "", htmlBody: BODY }, { name: "   ", htmlBody: BODY }, { name: "x".repeat(101), htmlBody: BODY }, { name: "N1" }, { name: "N2", htmlBody: "<p>&nbsp;</p>" }, { name: "N3", htmlBody: BODY, key: "x" }]) {
+      expect((await sa().api("POST", "/api/email-templates/available", body)).status, JSON.stringify(body)).toBe(400);
+    }
+    const typo = await sa().api("POST", "/api/email-templates/available", { name: "Typo 2", htmlBody: "<p>{{frstName}}</p>" });
+    expect(typo.status).toBe(400);
+    expect(typo.json.error.details).toEqual([{ path: "htmlBody", message: "Unknown merge field: {{frstName}}" }]);
+    expect((await sa().api("PUT", "/api/email-templates/available/nope", { name: "Whatever", htmlBody: BODY })).status).toBe(404);
+  });
+
+  it("has no My Templates: every route of an organization's own list answers 403", async () => {
+    const mine = (await create({ name: "Org only", htmlBody: BODY })).json;
+    for (const [method, path] of [["GET", "/api/email-templates"], ["GET", `/api/email-templates/${mine.id}`], ["POST", "/api/email-templates/available/construction/add"], ["DELETE", `/api/email-templates/${mine.id}`]] as const) {
+      expect((await sa().api(method, path)).status, `${method} ${path}`).toBe(403);
+    }
+    expect((await create({ name: "By super", htmlBody: BODY }, sa())).status).toBe(403);
+  });
+
+  it("refuses a cross-site request", async () => {
+    expect((await sa().api("POST", "/api/email-templates/available", { name: "Evil", htmlBody: BODY }, { origin: "https://evil.test" })).status).toBe(403);
   });
 });
 
@@ -268,10 +355,10 @@ describe("removing a template from My Templates", () => {
   });
 
   it("changes nothing in Available Templates", async () => {
+    const before = (await h.api("GET", "/api/email-templates/available")).json.items;
     const copied = (await addAvailable("food-beverage-manufacturing")).json;
     await remove(copied.id);
-    const r = await h.api("GET", "/api/email-templates/available");
-    expect(r.json.items).toHaveLength(BUILTIN_EMAIL_TEMPLATES.length);
+    expect((await h.api("GET", "/api/email-templates/available")).json.items).toEqual(before);
   });
 
   it("cannot touch another organization's template, or one that does not exist", async () => {

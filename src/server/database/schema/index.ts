@@ -11,3 +11,4 @@ export * from "./login-attempts";
 export * from "./test-recipients";
 export * from "./suppressions";
 export * from "./email-templates";
+export * from "./system-templates";

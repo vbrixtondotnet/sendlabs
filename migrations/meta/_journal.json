@@ -141,6 +141,13 @@
       "when": 1794488835084,
       "tag": "0019_super_administrator_role",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1794489472697,
+      "tag": "0020_system_templates",
+      "breakpoints": true
     }
   ]
 }
