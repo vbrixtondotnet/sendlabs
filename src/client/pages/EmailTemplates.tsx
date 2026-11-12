@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from "react";
 import type { AvailableTemplateDto, EmailTemplateSummaryDto } from "@shared/api";
-import { Badge, Button, Card, Empty, ErrorNotice, Field, LoadingRows, Modal, Notice, PageHeader, Table, TextInput, Td, Th, fmtDate } from "@/components/ui";
+import { Badge, Button, Card, Empty, ErrorNotice, Field, LoadingRows, Modal, Notice, PageHeader, Pagination, Table, TextInput, Td, Th, fmtDate } from "@/components/ui";
 import { RichTextEditor } from "@/components/RichTextEditor";
+import { RowActions, type RowAction } from "@/components/RowActions";
 import { useRole } from "@/hooks/useRole";
 import { useToast } from "@/hooks/useToast";
 import { MERGE_FIELDS, SAMPLE_CONTACT, UNSUBSCRIBE_TAG, composeEmailHtml, isBlankHtml, unknownTags } from "@/lib/merge";
@@ -10,6 +11,16 @@ import {
   useAddAvailableTemplate, useAvailableTemplate, useAvailableTemplates, useCreateAvailableTemplate, useCreateEmailTemplate, useEmailTemplate, useEmailTemplates,
   useRemoveAvailableTemplate, useRemoveEmailTemplate, useUpdateAvailableTemplate,
 } from "@/services/emailTemplates";
+
+const PAGE_SIZE = 10;
+
+/** Client-side paging for a list the API returns whole (at most 200 rows). Steps back if the current page empties. */
+function usePaged<T>(items: T[]) {
+  const [page, setPage] = useState(1);
+  const pageCount = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  const current = Math.min(page, pageCount);
+  return { page: current, pageCount, setPage, total: items.length, rows: items.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE) };
+}
 
 const TABS = ["Available Templates", "My Templates"] as const;
 type Tab = (typeof TABS)[number];
@@ -74,6 +85,7 @@ function AvailableTab({ onPreview }: { onPreview: (t: Target) => void }) {
   const [editing, setEditing] = useState<AvailableTemplateDto | null>(null);
   const [removing, setRemoving] = useState<AvailableTemplateDto | null>(null);
   const items = available.data?.items ?? [];
+  const paged = usePaged(items);
   const added = new Set((mine.data?.items ?? []).map((t) => t.systemKey).filter((k): k is string => k !== null));
 
   async function addToMine(id: string, name: string) {
@@ -115,9 +127,9 @@ function AvailableTab({ onPreview }: { onPreview: (t: Target) => void }) {
           <Empty>No templates are available yet.</Empty>
         ) : (
           <Table>
-            <thead><tr><Th>Template</Th><Th>{isSuperAdmin ? "Updated" : "Type"}</Th><Th className="text-right">Actions</Th></tr></thead>
+            <thead><tr><Th>Template</Th><Th>{isSuperAdmin ? "Updated" : "Type"}</Th><Th className="text-right"><span className="sr-only">Actions</span></Th></tr></thead>
             <tbody>
-              {items.map((t) => (
+              {paged.rows.map((t) => (
                 <tr key={t.id}>
                   <Td className="font-medium">
                     {t.name}
@@ -125,29 +137,28 @@ function AvailableTab({ onPreview }: { onPreview: (t: Target) => void }) {
                   </Td>
                   <Td>{isSuperAdmin ? <span className="text-slate-500">{fmtDate(t.updatedAt)}</span> : <Badge tone="slate">System</Badge>}</Td>
                   <Td className="whitespace-nowrap text-right">
-                    <Button variant="ghost" aria-label={`Preview ${t.name}`} onClick={() => onPreview({ kind: "available", id: t.id, name: t.name })}>Preview</Button>
-                    {isAdmin && !added.has(t.id) && (
-                      <Button
-                        variant="ghost"
-                        aria-label={`Add ${t.name} to My Templates`}
-                        disabled={add.isPending && add.variables === t.id}
-                        onClick={() => void addToMine(t.id, t.name)}
-                      >
-                        Add to My Templates
-                      </Button>
-                    )}
-                    {isSuperAdmin && (
-                      <>
-                        <Button variant="ghost" aria-label={`Edit ${t.name}`} onClick={() => setEditing(t)}>Edit</Button>
-                        <Button variant="ghost" className="text-rose-600" aria-label={`Delete ${t.name}`} onClick={() => setRemoving(t)}>Delete</Button>
-                      </>
-                    )}
+                    <RowActions
+                      label={`Actions for ${t.name}`}
+                      actions={[
+                        { label: "Preview", icon: "preview", ariaLabel: `Preview ${t.name}`, onSelect: () => onPreview({ kind: "available", id: t.id, name: t.name }) },
+                        ...(isAdmin && !added.has(t.id)
+                          ? [{ label: "Add to My Templates", icon: "add", ariaLabel: `Add ${t.name} to My Templates`, disabled: add.isPending && add.variables === t.id, onSelect: () => void addToMine(t.id, t.name) }]
+                          : []),
+                        ...(isSuperAdmin
+                          ? [
+                              { label: "Edit", icon: "edit", ariaLabel: `Edit ${t.name}`, onSelect: () => setEditing(t) },
+                              { label: "Delete", icon: "delete", ariaLabel: `Delete ${t.name}`, danger: true, onSelect: () => setRemoving(t) },
+                            ]
+                          : []),
+                      ] as RowAction[]}
+                    />
                   </Td>
                 </tr>
               ))}
             </tbody>
           </Table>
         )}
+        {paged.total > PAGE_SIZE && <Pagination page={paged.page} pageCount={paged.pageCount} total={paged.total} pageSize={PAGE_SIZE} onPage={paged.setPage} />}
       </Card>
       {isSuperAdmin && creating && (
         <TemplateFormModal
@@ -213,6 +224,7 @@ function MyTemplatesTab({ onPreview }: { onPreview: (t: Target) => void }) {
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<EmailTemplateSummaryDto | null>(null);
   const items = list.data?.items ?? [];
+  const paged = usePaged(items);
 
   async function confirmRemove() {
     if (!removing) return;
@@ -242,22 +254,28 @@ function MyTemplatesTab({ onPreview }: { onPreview: (t: Target) => void }) {
           <Empty>My Templates is empty, so campaigns offer no templates.{isAdmin ? " Add one from Available Templates, or create your own." : ""}</Empty>
         ) : (
           <Table>
-            <thead><tr><Th>Template</Th><Th>Source</Th><Th>Added</Th><Th className="text-right">Actions</Th></tr></thead>
+            <thead><tr><Th>Template</Th><Th>Source</Th><Th>Added</Th><Th className="text-right"><span className="sr-only">Actions</span></Th></tr></thead>
             <tbody>
-              {items.map((t) => (
+              {paged.rows.map((t) => (
                 <tr key={t.id}>
                   <Td className="font-medium">{t.name}</Td>
                   <Td><Badge tone={t.systemKey ? "slate" : "blue"}>{t.systemKey ? "From Available" : "Created by you"}</Badge></Td>
                   <Td className="text-slate-500">{fmtDate(t.createdAt)}</Td>
                   <Td className="whitespace-nowrap text-right">
-                    <Button variant="ghost" aria-label={`Preview ${t.name}`} onClick={() => onPreview({ kind: "mine", id: t.id, name: t.name })}>Preview</Button>
-                    {isAdmin && <Button variant="ghost" className="text-rose-600" aria-label={`Remove ${t.name} from My Templates`} onClick={() => setRemoving(t)}>Remove</Button>}
+                    <RowActions
+                      label={`Actions for ${t.name}`}
+                      actions={[
+                        { label: "Preview", icon: "preview", ariaLabel: `Preview ${t.name}`, onSelect: () => onPreview({ kind: "mine", id: t.id, name: t.name }) },
+                        ...(isAdmin ? [{ label: "Remove", icon: "delete", ariaLabel: `Remove ${t.name} from My Templates`, danger: true, onSelect: () => setRemoving(t) }] : []),
+                      ] as RowAction[]}
+                    />
                   </Td>
                 </tr>
               ))}
             </tbody>
           </Table>
         )}
+        {paged.total > PAGE_SIZE && <Pagination page={paged.page} pageCount={paged.pageCount} total={paged.total} pageSize={PAGE_SIZE} onPage={paged.setPage} />}
       </Card>
       {isAdmin && adding && (
         <TemplateFormModal

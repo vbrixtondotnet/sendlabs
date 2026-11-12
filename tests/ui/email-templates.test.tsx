@@ -83,7 +83,19 @@ const open = (handler: Handler = server(), role: Role = "Administrator") => {
 const row = (name: string) => screen.getByText(name, { selector: "td" }).closest("tr")!;
 const writes = (calls: Call[]) => calls.filter((c) => c.method !== "GET");
 const tab = (name: string) => fireEvent.click(screen.getByRole("tab", { name }));
-const addBtn = (name: string) => screen.getByRole("button", { name: `Add ${name} to My Templates` }) as HTMLButtonElement;
+const openMenu = (rowName: string) => fireEvent.click(within(row(rowName)).getByRole("button", { name: `Actions for ${rowName}` }));
+/** The entries of a row's Actions dropdown, in order (the menu is closed again afterwards). */
+const items = (rowName: string) => {
+  openMenu(rowName);
+  const labels = screen.getAllByRole("menuitem").map((b) => b.textContent);
+  fireEvent.keyDown(document, { key: "Escape" });
+  return labels;
+};
+/** Opens a row's Actions dropdown and picks one entry by its accessible name. */
+const choose = (rowName: string, entry: string) => {
+  openMenu(rowName);
+  fireEvent.click(screen.getByRole("menuitem", { name: entry }));
+};
 
 describe("Email Templates page: the two tabs", () => {
   it("has Available Templates and My Templates, in that order, and starts on Available", async () => {
@@ -98,6 +110,29 @@ describe("Email Templates page: the two tabs", () => {
   });
 });
 
+describe("paging", () => {
+  const many = Array.from({ length: 23 }, (_, i) => ({ id: `t${i + 1}`, name: `Template ${String(i + 1).padStart(2, "0")}`, createdAt: T, updatedAt: T }));
+
+  it("shows 10 Available Templates per page and moves between pages", async () => {
+    open(server({ availableReply: { json: { items: many } } }));
+    await screen.findByText("Template 01", { selector: "td" });
+    expect(screen.getByText("1-10 of 23")).toBeTruthy();
+    expect(screen.queryByText("Template 11", { selector: "td" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByText("Template 11", { selector: "td" })).toBeTruthy();
+    expect(screen.queryByText("Template 01", { selector: "td" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Last page" }));
+    expect(await screen.findByText("Template 23", { selector: "td" })).toBeTruthy();
+    expect(screen.getByText("21-23 of 23")).toBeTruthy();
+  });
+
+  it("shows no pager when everything fits on one page", async () => {
+    open();
+    await screen.findByText("Construction", { selector: "td" });
+    expect(screen.queryByRole("navigation", { name: "Pagination" })).toBeNull();
+  });
+});
+
 describe("Available Templates tab", () => {
   it("lists the system templates, marked System, with Preview and Add to My Templates", async () => {
     open();
@@ -105,7 +140,7 @@ describe("Available Templates tab", () => {
     expect(screen.getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Template", "Type", "Actions"]);
     for (const name of ["Automotive Services", "Construction"]) {
       expect(within(row(name)).getByText("System")).toBeTruthy();
-      expect(within(row(name)).getAllByRole("button").map((b) => b.textContent)).toEqual(["Preview", "Add to My Templates"]);
+      expect(items(name)).toEqual(["Preview", "Add to My Templates"]);
     }
   });
 
@@ -113,28 +148,28 @@ describe("Available Templates tab", () => {
     open();
     await screen.findByText("Construction", { selector: "td" });
     await waitFor(() => expect(within(row("Digital Marketing")).queryByText("In My Templates")).not.toBeNull());
-    expect(within(row("Digital Marketing")).getAllByRole("button").map((b) => b.textContent)).toEqual(["Preview"]);
+    expect(items("Digital Marketing")).toEqual(["Preview"]);
     expect(within(row("Construction")).queryByText("In My Templates")).toBeNull();
   });
 
   it("lets an Administrator add one: it is copied on the server, marked, and the Add button goes away", async () => {
     const calls = open();
     await screen.findByText("Construction", { selector: "td" });
-    fireEvent.click(addBtn("Construction"));
+    choose("Construction", "Add Construction to My Templates");
     expect(await screen.findByText('"Construction" added to My Templates')).toBeTruthy();
     expect(writes(calls)).toHaveLength(1);
     expect(writes(calls)[0]).toMatchObject({ method: "POST", path: "/api/email-templates/available/construction/add" });
     await waitFor(() => expect(within(row("Construction")).queryByText("In My Templates")).not.toBeNull());
-    expect(screen.queryByRole("button", { name: "Add Construction to My Templates" })).toBeNull();
-    expect(addBtn("Automotive Services")).toBeTruthy(); // the others are untouched
+    expect(items("Construction")).toEqual(["Preview"]);
+    expect(items("Automotive Services")).toContain("Add to My Templates"); // the others are untouched
   });
 
   it("shows why adding failed", async () => {
     open(server({ addReply: fail(409, "TOO_MANY_TEMPLATES", "You can have at most 100 templates") }));
     await screen.findByText("Construction", { selector: "td" });
-    fireEvent.click(addBtn("Construction"));
+    choose("Construction", "Add Construction to My Templates");
     expect(await screen.findByText("You can have at most 100 templates")).toBeTruthy();
-    expect(addBtn("Construction")).toBeTruthy();
+    expect(items("Construction")).toContain("Add to My Templates");
   });
 
   it("is read-only for a Campaign Manager: they can look and preview, with no way to add, and are told why", async () => {
@@ -142,7 +177,7 @@ describe("Available Templates tab", () => {
     await screen.findByText("Construction", { selector: "td" });
     expect(screen.queryByRole("button", { name: /Add .* to My Templates/ })).toBeNull();
     expect(screen.getByText(/Your role is read-only/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Preview Construction" })).toBeTruthy();
+    expect(items("Construction")).toEqual(["Preview"]);
     expect(writes(calls)).toHaveLength(0);
   });
 
@@ -185,13 +220,13 @@ describe("My Templates tab", () => {
     expect(screen.getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Template", "Source", "Added", "Actions"]);
     expect(within(row("Digital Marketing")).getByText("From Available")).toBeTruthy();
     expect(within(row("Our own pitch")).getByText("Created by you")).toBeTruthy();
-    expect(within(row("Our own pitch")).getAllByRole("button").map((b) => b.textContent)).toEqual(["Preview", "Remove"]);
+    expect(items("Our own pitch")).toEqual(["Preview", "Remove"]);
   });
 
   it("removes one after asking, and it leaves the list", async () => {
     const calls = await openMine();
     await screen.findByText("Our own pitch", { selector: "td" });
-    fireEvent.click(screen.getByRole("button", { name: "Remove Our own pitch from My Templates" }));
+    choose("Our own pitch", "Remove Our own pitch from My Templates");
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText(/will no longer be offered when writing a campaign/)).toBeTruthy();
     expect(within(dialog).getByText(/cannot be brought back/)).toBeTruthy(); // it was written by the user
@@ -206,7 +241,7 @@ describe("My Templates tab", () => {
   it("does not remove anything when the question is answered with Keep it", async () => {
     const calls = await openMine();
     await screen.findByText("Our own pitch", { selector: "td" });
-    fireEvent.click(screen.getByRole("button", { name: "Remove Digital Marketing from My Templates" }));
+    choose("Digital Marketing", "Remove Digital Marketing from My Templates");
     expect(within(await screen.findByRole("dialog")).queryByText(/cannot be brought back/)).toBeNull(); // it can be added again from Available
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Keep it" }));
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -217,7 +252,7 @@ describe("My Templates tab", () => {
   it("shows why a removal failed", async () => {
     await openMine(server({ removeReply: fail(500, "INTERNAL_ERROR", "Something went wrong on our side") }));
     await screen.findByText("Our own pitch", { selector: "td" });
-    fireEvent.click(screen.getByRole("button", { name: "Remove Our own pitch from My Templates" }));
+    choose("Our own pitch", "Remove Our own pitch from My Templates");
     fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Remove" }));
     expect(await screen.findByText("Something went wrong on our side")).toBeTruthy();
     expect(screen.getByText("Our own pitch", { selector: "td" })).toBeTruthy();
@@ -229,7 +264,7 @@ describe("My Templates tab", () => {
     expect(screen.queryByRole("button", { name: "Create template" })).toBeNull();
     expect(screen.queryByRole("button", { name: /Remove/ })).toBeNull();
     expect(screen.getByText(/Your role is read-only/)).toBeTruthy();
-    expect(within(row("Our own pitch")).getAllByRole("button").map((b) => b.textContent)).toEqual(["Preview"]);
+    expect(items("Our own pitch")).toEqual(["Preview"]);
     expect(writes(calls)).toHaveLength(0);
   });
 
@@ -257,7 +292,7 @@ describe("Previewing a template", () => {
   it("shows an available template filled in with a sample contact, in a sandboxed frame", async () => {
     open();
     await screen.findByText("Construction", { selector: "td" });
-    fireEvent.click(screen.getByRole("button", { name: "Preview Construction" }));
+    choose("Construction", "Preview Construction");
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("Construction", { selector: "h2" })).toBeTruthy();
     const frame = (await within(dialog).findByTitle("Template preview")) as HTMLIFrameElement;
@@ -274,17 +309,17 @@ describe("Previewing a template", () => {
     await screen.findByRole("tab", { name: "My Templates" });
     tab("My Templates");
     await screen.findByText("Our own pitch", { selector: "td" });
-    fireEvent.click(screen.getByRole("button", { name: "Preview Our own pitch" }));
+    choose("Our own pitch", "Preview Our own pitch");
     expect(((await screen.findByTitle("Template preview")) as HTMLIFrameElement).getAttribute("srcdoc")).toContain("(mine Our own pitch)");
   });
 
   it("closes, and opens another", async () => {
     open();
     await screen.findByText("Construction", { selector: "td" });
-    fireEvent.click(screen.getByRole("button", { name: "Preview Construction" }));
+    choose("Construction", "Preview Construction");
     fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("dialog")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Preview Automotive Services" }));
+    choose("Automotive Services", "Preview Automotive Services");
     expect(((await screen.findByTitle("Template preview")) as HTMLIFrameElement).getAttribute("srcdoc")).toContain("(system Automotive Services)");
   });
 });
@@ -397,7 +432,7 @@ describe("SuperAdministrator", () => {
     await screen.findByText("Construction", { selector: "td" });
     expect(screen.getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Template", "Updated", "Actions"]);
     for (const name of ["Automotive Services", "Construction", "Digital Marketing"]) {
-      expect(within(row(name)).getAllByRole("button").map((b) => b.textContent)).toEqual(["Preview", "Edit", "Delete"]);
+      expect(items(name)).toEqual(["Preview", "Edit", "Delete"]);
     }
     expect(screen.getByRole("button", { name: "Create template" })).toBeTruthy();
   });
@@ -420,7 +455,7 @@ describe("SuperAdministrator", () => {
   it("edits one: the form opens with its current name and message, and saving sends the changes", async () => {
     const calls = openSuper();
     await screen.findByText("Construction", { selector: "td" });
-    fireEvent.click(screen.getByRole("button", { name: "Edit Construction" }));
+    choose("Construction", "Edit Construction");
     await waitFor(() => expect(nameBox().value).toBe("Construction"));
     await waitFor(() => expect(message().value()).toContain("system Construction"));
     expect(screen.getByText(/Copies organizations already added to their My Templates are not changed/)).toBeTruthy();
@@ -435,7 +470,7 @@ describe("SuperAdministrator", () => {
   it("deletes one after asking, and explains that organizations keep their copies", async () => {
     const calls = openSuper();
     await screen.findByText("Construction", { selector: "td" });
-    fireEvent.click(screen.getByRole("button", { name: "Delete Construction" }));
+    choose("Construction", "Delete Construction");
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText(/Copies organizations already added to their My Templates stay as they are/)).toBeTruthy();
     expect(writes(calls)).toHaveLength(0);
@@ -448,7 +483,7 @@ describe("SuperAdministrator", () => {
   it("keeps the template when the question is answered with Keep it", async () => {
     const calls = openSuper();
     await screen.findByText("Construction", { selector: "td" });
-    fireEvent.click(screen.getByRole("button", { name: "Delete Construction" }));
+    choose("Construction", "Delete Construction");
     fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Keep it" }));
     expect(writes(calls)).toHaveLength(0);
     expect(screen.getByText("Construction", { selector: "td" })).toBeTruthy();
@@ -470,7 +505,7 @@ describe("SuperAdministrator", () => {
   it("previews an available template", async () => {
     openSuper();
     await screen.findByText("Construction", { selector: "td" });
-    fireEvent.click(screen.getByRole("button", { name: "Preview Construction" }));
+    choose("Construction", "Preview Construction");
     expect(((await screen.findByTitle("Template preview")) as HTMLIFrameElement).getAttribute("srcdoc")).toContain("(system Construction)");
   });
 });
