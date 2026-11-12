@@ -164,19 +164,27 @@ export interface SenderDto {
   connectedAt: string;
 }
 
-/** A template in the list. The body is left out (it is large): fetch one template to get it. */
+/** A template in My Templates. The body is left out (it is large): fetch one template to get it. */
 export interface EmailTemplateSummaryDto {
   id: string;
   name: string;
-  /** True for the ready-made ones that come with the app; false for one an Administrator added. */
-  builtin: boolean;
-  /** Offered in the campaign editor's template dropdown. */
-  selected: boolean;
+  /** The key of the Available (system) template this is a copy of, or null for one an Administrator wrote. */
+  systemKey: string | null;
   createdAt: string;
 }
 
 export interface EmailTemplateDto extends EmailTemplateSummaryDto {
   /** The message body, as HTML. */
+  htmlBody: string;
+}
+
+/** A system-made template in Available Templates. Shared by every organization. */
+export interface AvailableTemplateDto {
+  key: string;
+  name: string;
+}
+
+export interface AvailableTemplateFullDto extends AvailableTemplateDto {
   htmlBody: string;
 }
 

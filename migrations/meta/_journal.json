@@ -127,6 +127,20 @@
       "when": 1794487043308,
       "tag": "0017_campaign_recipient_industries",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1794490000000,
+      "tag": "0018_my_templates_drop_selected",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1794488835084,
+      "tag": "0019_super_administrator_role",
+      "breakpoints": true
     }
   ]
 }

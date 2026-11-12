@@ -34,7 +34,9 @@ export function Layout() {
 
   // Settings belong to Administrators: everyone else does not even see the menu item (the page and the API refuse them too).
   const isAdmin = me.data?.user.access === "Administrator";
-  const items = NAV.filter((n) => n.to !== "/settings" || isAdmin);
+  // Viewers have no access to Email Templates, so they do not see that item either.
+  const isViewer = me.data?.user.access === "Viewer";
+  const items = NAV.filter((n) => (n.to !== "/settings" || isAdmin) && (n.to !== "/templates" || !isViewer));
 
   const nav = (
     <nav aria-label="Main" className="flex flex-col gap-1 px-3">

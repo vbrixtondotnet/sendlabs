@@ -157,7 +157,7 @@ export type CampaignPatch = z.infer<typeof campaignPatchSchema>;
 
 /** Longest email template name, in characters. */
 export const TEMPLATE_NAME_MAX = 100;
-/** An organization's library is kept to a size a person can scan and a dropdown can hold. */
+/** An organization's My Templates is kept to a size a person can scan and a dropdown can hold. */
 export const MAX_EMAIL_TEMPLATES = 100;
 
 /** An Administrator adding a template: a name and the message body (HTML, written in the rich-text editor). */
@@ -169,9 +169,6 @@ export const emailTemplateCreateSchema = z.strictObject({
     .refine((v) => !isBlankHtml(v), "The message is required"),
 });
 export type EmailTemplateCreate = z.infer<typeof emailTemplateCreateSchema>;
-
-/** Picking a template (or putting it back): whether the campaign editor offers it. */
-export const templateSelectionSchema = z.strictObject({ selected: z.boolean() });
 
 /** The suppression list, a page at a time. */
 export const suppressionListQuery = pageQuery;

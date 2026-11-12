@@ -132,7 +132,7 @@ export const meDto = (user: Partial<MeDto["user"]> = {}, tenant: Partial<MeDto["
   });
 
 export const templateSummary = (over: Partial<EmailTemplateSummaryDto> = {}): EmailTemplateSummaryDto => ({
-  id: "tpl1", name: "Construction", builtin: true, selected: false, createdAt: ts, ...over,
+  id: "tpl1", name: "Construction", systemKey: "construction", createdAt: ts, ...over,
 });
 
 export const templateDto = (over: Partial<EmailTemplateDto> = {}): EmailTemplateDto => ({

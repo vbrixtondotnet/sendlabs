@@ -18,7 +18,8 @@
     "db:migrate:local": "wrangler d1 migrations apply sendrix-db-local --local",
     "db:clear:local": "wrangler d1 execute sendrix-db-local --local --file scripts/clear-local-data.sql",
     "db:seed:tenant:local": "tsx scripts/seed-default-tenant.ts",
-    "db:reset:local": "npm run db:clear:local && npm run db:seed:tenant:local",
+    "db:seed:superadmin:local": "tsx scripts/seed-super-admin.ts",
+    "db:reset:local": "npm run db:clear:local && npm run db:seed:tenant:local && npm run db:seed:superadmin:local",
     "db:migrate:staging": "wrangler d1 migrations apply sendrix-db-staging --remote --env staging",
     "db:migrate:production": "wrangler d1 migrations apply sendrix-db-production --remote --env production"
   },

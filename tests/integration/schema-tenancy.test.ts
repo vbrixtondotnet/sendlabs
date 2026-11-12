@@ -3,7 +3,7 @@ import { getPlatformProxy } from "wrangler";
 import { createDb } from "../../src/server/database/client";
 import { verifyPassword } from "../../src/server/lib/password";
 import { provisionTenant } from "../../src/server/services/tenants";
-import { ACCESS_LEVELS } from "../../src/shared/types";
+import { ACCESS_LEVELS, SUPER_ADMINISTRATOR } from "../../src/shared/types";
 import { applyMigrations, migrationFiles, startHarness, uniqueEmail, type Harness } from "./harness";
 
 let h: Harness;
@@ -19,10 +19,10 @@ const insertUser = (id: string, tenantId: string, email: string, accessId = "vie
     id, tenantId, email, email.trim().toLowerCase(), hash, accessId, status, now, now);
 
 describe("access (the roles)", () => {
-  it("holds exactly Administrator, Campaign Manager and Viewer, matching the shared catalog", async () => {
+  it("holds the SuperAdministrator plus Administrator, Campaign Manager and Viewer, matching the shared catalog", async () => {
     const rows = await h.rows<{ id: string; name: string; description: string; sort_order: number }>("SELECT id,name,description,sort_order FROM access ORDER BY sort_order");
-    expect(rows).toEqual(ACCESS_LEVELS.map((a) => ({ id: a.id, name: a.name, description: a.description, sort_order: a.sortOrder })));
-    expect(rows.map((r) => r.name)).toEqual(["Administrator", "Campaign Manager", "Viewer"]);
+    expect(rows).toEqual([SUPER_ADMINISTRATOR, ...ACCESS_LEVELS].map((a) => ({ id: a.id, name: a.name, description: a.description, sort_order: a.sortOrder })));
+    expect(rows.map((r) => r.name)).toEqual(["SuperAdministrator", "Administrator", "Campaign Manager", "Viewer"]);
   });
   it("does not allow two levels with the same name", async () => {
     await rejected("INSERT INTO access (id,name,description,sort_order,created_at) VALUES (?,?,?,?,?)", "admin-2", "Administrator", "dup", 9, now);

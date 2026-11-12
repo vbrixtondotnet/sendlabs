@@ -19,7 +19,7 @@ export function TemplatePicker({ isStarting, onUse }: { isStarting: boolean; onU
   const list = useEmailTemplates();
   const [loading, setLoading] = useState(false);
   const [pending, setPending] = useState<EmailTemplateDto | null>(null);
-  const picked = (list.data?.items ?? []).filter((t) => t.selected);
+  const picked = list.data?.items ?? [];
 
   async function choose(id: string) {
     if (!id) return;

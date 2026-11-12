@@ -155,7 +155,7 @@ describe("initials", () => {
 describe("the Email Templates menu item", () => {
   const links = () => screen.getAllByRole("link").map((l) => l.textContent);
 
-  it.each(["Administrator", "Campaign Manager", "Viewer"] as const)("is in the left navigation for a %s, straight after Campaigns", async (access) => {
+  it.each(["Administrator", "Campaign Manager"] as const)("is in the left navigation for a %s, straight after Campaigns", async (access) => {
     stubApi(({ path }) => (path === "/api/me" ? { json: me({ access }) } : undefined));
     open();
     await screen.findByText("Sabertooth Software Labs");
@@ -163,5 +163,13 @@ describe("the Email Templates menu item", () => {
     expect(order).toContain("Email Templates");
     expect(order.indexOf("Email Templates")).toBe(order.indexOf("Campaigns") + 1);
     expect(screen.getByRole("link", { name: "Email Templates" }).getAttribute("href")).toBe("/templates");
+  });
+
+  it("is not in the left navigation for a Viewer, who has no access to Email Templates", async () => {
+    stubApi(({ path }) => (path === "/api/me" ? { json: me({ access: "Viewer" }) } : undefined));
+    open();
+    await screen.findByText("Sabertooth Software Labs");
+    expect(links()).toContain("Campaigns");
+    expect(links()).not.toContain("Email Templates");
   });
 });

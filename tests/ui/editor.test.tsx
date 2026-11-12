@@ -941,9 +941,8 @@ describe("Rich text editors in the Message section", () => {
 
 describe("Start from a template (campaign editor)", () => {
   const ALL = [
-    templateSummary({ id: "t1", name: "Construction", selected: true }),
-    templateSummary({ id: "t2", name: "Digital Marketing", selected: true }),
-    templateSummary({ id: "t3", name: "Healthcare Administration", selected: false }),
+    templateSummary({ id: "t1", name: "Construction" }),
+    templateSummary({ id: "t2", name: "Digital Marketing" }),
   ];
   const CONSTRUCTION = "<p>Hi {{firstName}}, construction pitch for {{companyName}}.</p>";
   const MARKETING = "<p>Marketing pitch</p>";
@@ -960,11 +959,11 @@ describe("Start from a template (campaign editor)", () => {
   const bodyHtml = () => bodyField.value();
   const save = () => fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
 
-  it("is a small dropdown above the merge-field buttons and the Email body, listing only the templates that were picked", async () => {
+  it("is a small dropdown above the merge-field buttons and the Email body, listing the templates in My Templates", async () => {
     stubApi(withTemplates());
     newCampaign();
     await ready();
-    expect([...picker().options].map((o) => o.textContent)).toEqual(["Choose a template…", "Construction", "Digital Marketing"]); // not Healthcare: it is not picked
+    expect([...picker().options].map((o) => o.textContent)).toEqual(["Choose a template…", "Construction", "Digital Marketing"]);
     expect(picker().className).toContain("max-w-xs");
     const FOLLOWING = Node.DOCUMENT_POSITION_FOLLOWING;
     expect(picker().compareDocumentPosition(screen.getByText("Insert:")) & FOLLOWING).toBeTruthy();
@@ -1081,7 +1080,7 @@ describe("Start from a template (campaign editor)", () => {
   });
 
   it("says My Templates is empty, and links to the Email Templates page, when nothing has been added", async () => {
-    stubApi(withTemplates([templateSummary({ id: "t3", selected: false })]));
+    stubApi(withTemplates([]));
     newCampaign();
     await screen.findByText(/My Templates is empty/);
     expect(screen.queryByRole("combobox", { name: "Start from a template" })).toBeNull();
@@ -1097,7 +1096,7 @@ describe("Start from a template (campaign editor)", () => {
   });
 
   it("tells the user if the chosen template could not be loaded, and leaves the message alone", async () => {
-    stubApi(withTemplates([templateSummary({ id: "gone", name: "Gone", selected: true })]));
+    stubApi(withTemplates([templateSummary({ id: "gone", name: "Gone" })]));
     newCampaign();
     await ready();
     const before = bodyHtml();

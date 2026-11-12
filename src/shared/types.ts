@@ -22,8 +22,24 @@ export const ACCESS_LEVELS = [
     description: "Read-only access to contacts, campaigns and reports.",
   },
 ] as const;
-export type Role = (typeof ACCESS_LEVELS)[number]["name"];
+export type TenantRole = (typeof ACCESS_LEVELS)[number]["name"];
+/** The access levels a tenant can give its users (the ones in ACCESS_LEVELS). */
 export type AccessId = (typeof ACCESS_LEVELS)[number]["id"];
+
+/**
+ * The SuperAdministrator: a global user of the platform itself, not tied to any tenant (`users.tenant_id` is NULL).
+ * Deliberately NOT in ACCESS_LEVELS: a tenant can never invite someone as one, and the role pickers never list it.
+ * It is in the `access` table (reference data, seeded by a migration) so a user can hold it.
+ */
+export const SUPER_ADMINISTRATOR = {
+  id: "super-administrator",
+  name: "SuperAdministrator",
+  sortOrder: 0,
+  description: "Platform-wide access, not tied to any tenant. Manages what every tenant shares, such as the Available Templates.",
+} as const;
+
+/** Every access level a signed-in user can hold. */
+export type Role = TenantRole | typeof SUPER_ADMINISTRATOR.name;
 
 /** A tenant is one customer organization. Everything it owns is invisible to every other tenant. */
 export const TENANT_STATUSES = ["Active", "Suspended"] as const;
