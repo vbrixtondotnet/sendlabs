@@ -50,6 +50,11 @@ export const campaigns = sqliteTable(
      * and Completed.
      */
     recipientImportId: text("recipient_import_id"),
+    /**
+     * Alternative audience: every contact of the tenant whose industry is one of these (exact match). Empty means
+     * "not used". Mutually exclusive with `recipientImportId`. Resolved into campaign_recipients at launch.
+     */
+    recipientIndustries: text("recipient_industries", { mode: "json" }).$type<string[]>().notNull().default(sql`'[]'`),
 
     /* --- daily drip schedule --- */
     dailyLimit: integer("daily_limit").notNull().default(500),

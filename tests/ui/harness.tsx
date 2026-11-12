@@ -85,7 +85,7 @@ const zero = { Pending: 0, Queued: 0, Processing: 0, Accepted: 0, Failed: 0, Ski
 
 export const campaign = (over: Partial<CampaignDto> = {}): CampaignDto => ({
   id: "k1", name: "Access-to-SQL", subject: "Hi {{firstName}}", htmlBody: "<p>Hello {{firstName}} <a href=\"{{unsubscribeUrl}}\">unsubscribe</a></p>",
-  textBody: null, signature: "", status: "Draft", senderAccountId: null, recipientImportId: null, createdBy: "dev@local", dailyLimit: 500, sendWindowStart: "09:00",
+  textBody: null, signature: "", status: "Draft", senderAccountId: null, recipientImportId: null, recipientIndustries: [], createdBy: "dev@local", dailyLimit: 500, sendWindowStart: "09:00",
   sendWindowEnd: "17:00", timezone: "America/Los_Angeles", nextRunAt: null, lastRunAt: null, launchedAt: null, completedAt: null,
   archivedAt: null, createdAt: ts, updatedAt: ts, totals: { ...zero }, ...over,
 });

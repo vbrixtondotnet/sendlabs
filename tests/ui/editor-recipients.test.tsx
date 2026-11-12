@@ -34,66 +34,58 @@ describe("campaign recipients (saved with the draft)", () => {
     expect(calls.find((c) => c.method === "POST")!.body.recipientImportId).toBeNull();
   });
 
-  it("lets you pick a saved import, offers only completed ones, and saves its id", async () => {
-    const calls = stubApi(world((c) => (c.method === "POST" && c.path === "/api/campaigns" ? { status: 201, json: campaign({ id: "n" }) } : undefined)));
+  it("lists the tenant's industries, lets you tick several, counts them, and saves the list", async () => {
+    const calls = stubApi(world((c) =>
+      c.path === "/api/contacts/industries" ? { json: { items: ["construction", "retail", "wholesale"], counts: { construction: 120, retail: 30, wholesale: 5 } } }
+      : c.method === "POST" && c.path === "/api/campaigns" ? { status: 201, json: campaign({ id: "n" }) } : undefined));
     fresh();
     fillBasics();
-    tab("An import");
-    const select = (await screen.findByLabelText("Import")) as HTMLSelectElement;
-    await screen.findByRole("option", { name: /q4-leads\.csv \(7,968 contacts/ });
-    expect(screen.queryByRole("option", { name: /broken\.csv/ })).toBeNull(); // a failed import cannot be chosen
-    expect(screen.getByText("Choose an import for the recipients")).toBeTruthy(); // launch is blocked until you do
+    expect(screen.queryByRole("tab", { name: "An import" })).toBeNull(); // replaced by Industries
+    tab("Industries");
+    await screen.findByLabelText(/construction/);
+    expect(screen.getByText("Choose at least one industry for the recipients")).toBeTruthy(); // launch blocked until you do
 
-    fireEvent.change(select, { target: { value: "imp-ready" } });
-    await waitFor(() => expect(screen.queryByText("Choose an import for the recipients")).toBeNull());
-    expect(screen.getByText("Will be emailed").nextSibling!.textContent).toBe("7,968");
+    fireEvent.click(screen.getByLabelText(/construction/));
+    fireEvent.click(screen.getByLabelText(/wholesale/));
+    await waitFor(() => expect(screen.queryByText("Choose at least one industry for the recipients")).toBeNull());
+    expect(screen.getByText("Will be emailed").nextSibling!.textContent).toBe("125");
 
     fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
     await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/campaigns")).toBe(true));
-    expect(calls.find((c) => c.method === "POST")!.body.recipientImportId).toBe("imp-ready");
+    const body = calls.find((c) => c.method === "POST")!.body;
+    expect(body.recipientIndustries).toEqual(["construction", "wholesale"]);
+    expect(body.recipientImportId).toBeNull();
   });
 
-  it("says plainly when there are no imports to choose from", async () => {
-    stubApi(world((c) => (c.path === "/api/imports" ? { json: page([]) } : undefined)));
-    fresh();
-    tab("An import");
-    expect(await screen.findByRole("option", { name: "No imports yet" })).toBeTruthy();
-  });
-
-  it("reopens a draft with its import already selected", async () => {
-    stubApi(world((c) => (c.path === "/api/campaigns/k1" && c.method === "GET" ? { json: campaign({ id: "k1", recipientImportId: "imp-ready" }) } : undefined)));
+  it("reopens a draft with its industries already ticked", async () => {
+    stubApi(world((c) =>
+      c.path === "/api/contacts/industries" ? { json: { items: ["construction", "retail"], counts: { construction: 120, retail: 30 } } }
+      : c.path === "/api/campaigns/k1" && c.method === "GET" ? { json: campaign({ id: "k1", recipientIndustries: ["retail"] }) } : undefined));
     renderAt(<CampaignEditor />, { path: "/campaigns/k1/edit", route: "/campaigns/:id/edit" });
-    const select = (await screen.findByLabelText("Import")) as HTMLSelectElement;
-    await waitFor(() => expect(select.value).toBe("imp-ready"));
-    expect(screen.getByRole("tab", { name: "An import" }).getAttribute("aria-selected")).toBe("true");
+    const retail = (await screen.findByLabelText(/retail/)) as HTMLInputElement;
+    expect(retail.checked).toBe(true);
+    expect((screen.getByLabelText(/construction/) as HTMLInputElement).checked).toBe(false);
+    expect(screen.getByRole("tab", { name: "Industries" }).getAttribute("aria-selected")).toBe("true");
   });
 
-  it("changing a draft back to all contacts saves null", async () => {
+  it("changing a draft back to all contacts clears the industries", async () => {
     const calls = stubApi(world((c) => {
-      if (c.path === "/api/campaigns/k1" && c.method === "GET") return { json: campaign({ id: "k1", recipientImportId: "imp-ready" }) };
+      if (c.path === "/api/campaigns/k1" && c.method === "GET") return { json: campaign({ id: "k1", recipientIndustries: ["retail"] }) };
       if (c.path === "/api/campaigns/k1" && c.method === "PATCH") return { json: campaign({ id: "k1" }) };
       return undefined;
     }));
     renderAt(<CampaignEditor />, { path: "/campaigns/k1/edit", route: "/campaigns/:id/edit" });
-    await screen.findByLabelText("Import");
+    await screen.findByText("Industries");
     tab("All contacts");
     fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
     await waitFor(() => expect(calls.some((c) => c.method === "PATCH")).toBe(true));
-    expect(calls.find((c) => c.method === "PATCH")!.body.recipientImportId).toBeNull();
+    expect(calls.find((c) => c.method === "PATCH")!.body.recipientIndustries).toEqual([]);
   });
 
-  it("shows the server's refusal when the import is no longer usable", async () => {
-    stubApi(world((c) =>
-      c.method === "POST" && c.path === "/api/campaigns"
-        ? { status: 400, json: { error: { code: "VALIDATION_ERROR", message: "Validation failed", details: [{ path: "recipientImportId", message: "That import does not exist or did not complete" }], correlationId: "x" } } }
-        : undefined,
-    ));
-    fresh();
-    fillBasics();
-    tab("An import");
-    fireEvent.change(await screen.findByLabelText("Import"), { target: { value: "imp-ready" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
-    expect((await screen.findAllByText(/That import does not exist or did not complete/)).length).toBeGreaterThan(0);
+  it("reopens an older draft that used an import, showing which one", async () => {
+    stubApi(world((c) => (c.path === "/api/campaigns/k1" && c.method === "GET" ? { json: campaign({ id: "k1", recipientImportId: "imp-ready" }) } : undefined)));
+    renderAt(<CampaignEditor />, { path: "/campaigns/k1/edit", route: "/campaigns/:id/edit" });
+    expect(await screen.findByText("q4-leads.csv")).toBeTruthy();
   });
 });
 
@@ -134,9 +126,8 @@ describe("uploading a CSV from the editor", () => {
     expect(up.form!.file.name).toBe("new-leads.csv");
     expect(up.form!.mapping).toMatchObject({ email: 4 });
 
-    // it switched to "An import" with the new import chosen, and launch is no longer blocked
-    await waitFor(() => expect(screen.getByRole("tab", { name: "An import" }).getAttribute("aria-selected")).toBe("true"));
-    await waitFor(() => expect((screen.getByLabelText("Import") as HTMLSelectElement).value).toBe("imp-new"));
+    // the new import is now the audience, and launch is no longer blocked
+    expect(await screen.findByText("new-leads.csv")).toBeTruthy();
     expect(screen.getByText("Will be emailed").nextSibling!.textContent).toBe("25");
     expect(await screen.findByText(/Imported 20 new contacts\. 25 will be emailed/)).toBeTruthy();
     await waitFor(() => expect((screen.getByRole("button", { name: "Review and launch" }) as HTMLButtonElement).disabled).toBe(false));

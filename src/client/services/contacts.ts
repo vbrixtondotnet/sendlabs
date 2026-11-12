@@ -34,6 +34,18 @@ export function useIndustries() {
   });
 }
 
+/** Distinct industries with how many contacts each has. */
+export function useIndustryCounts() {
+  return useQuery({
+    queryKey: [...keys.industries, "counts"] as const,
+    queryFn: async () => {
+      const r = await api<{ items: string[]; counts?: Record<string, number> }>("GET", "/api/contacts/industries");
+      return r.items.map((industry) => ({ industry, count: r.counts?.[industry] ?? 0 }));
+    },
+    staleTime: 60_000,
+  });
+}
+
 export function useCreateContact() {
   const qc = useQueryClient();
   return useMutation({

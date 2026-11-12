@@ -16,14 +16,15 @@ import { RichTextEditor } from "@/components/RichTextEditor";
 import { TemplatePicker } from "@/components/TemplatePicker";
 import { ApiClientError } from "@/services/http";
 import { useCampaign, useCreateCampaign, useUpdateCampaign } from "@/services/campaigns";
-import { useContacts } from "@/services/contacts";
+import { useContacts, useIndustryCounts } from "@/services/contacts";
 import { useMe } from "@/services/me";
 import { useSender } from "@/services/sender";
 import { useSendTest, useTestRecipients } from "@/services/testRecipients";
 import { useCreateImport, useImports } from "@/services/imports";
 
 const TIMEZONES = ["America/Los_Angeles", "America/Denver", "America/Chicago", "America/New_York", "UTC"];
-type Source = "contacts" | "import" | "upload";
+// "import" is not a tab: it is the state after a CSV was imported here (or an older draft that used an import).
+type Source = "contacts" | "industries" | "import" | "upload";
 
 export function CampaignEditor() {
   const { id } = useParams();
@@ -66,6 +67,7 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
   const senderStatus = useSender();
   const senderEmail = senderStatus.data?.sender?.email ?? null;
   const imports = useImports(1, 100);
+  const industryCounts = useIndustryCounts();
   const { isAdmin } = useRole();
   const testRecipients = useTestRecipients();
   const sendTest = useSendTest();
@@ -87,7 +89,10 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
     setSignature(defaultSignatureHtml({ name: me.data.user.displayName, position: me.data.user.position }, me.data.tenant));
   }, [me.data]);
   const editSignature = (value: string) => { signatureSeeded.current = true; setSignature(value); };
-  const [source, setSource] = useState<Source>(initial?.recipientImportId ? "import" : "contacts");
+  const [source, setSource] = useState<Source>(
+    initial?.recipientImportId ? "import" : (initial?.recipientIndustries.length ?? 0) > 0 ? "industries" : "contacts",
+  );
+  const [industries, setIndustries] = useState<string[]>(initial?.recipientIndustries ?? []);
   const [importId, setImportId] = useState(initial?.recipientImportId ?? "");
   const [daily, setDaily] = useState(initial?.dailyLimit ?? 500);
   const [from, setFrom] = useState(initial?.sendWindowStart ?? "09:00");
@@ -110,7 +115,13 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
   const completedImports = (imports.data?.items ?? []).filter((i) => i.status === "Completed");
   const chosenImport = completedImports.find((i) => i.id === importId);
   const uploaded = source === "upload" ? csv.result : null;
-  const audienceTotal = source === "contacts" ? (allContacts.data?.total ?? 0) : source === "import" ? (chosenImport?.validRows ?? 0) : 0;
+  const industryRows = industryCounts.data ?? [];
+  // A saved industry that no contact has any more still counts as chosen (so it can be unticked) but adds nobody.
+  const industryTotal = industryRows.filter((r) => industries.includes(r.industry)).reduce((sum, r) => sum + r.count, 0);
+  const audienceTotal = source === "contacts" ? (allContacts.data?.total ?? 0)
+    : source === "industries" ? industryTotal
+    : source === "import" ? (chosenImport?.validRows ?? 0) : 0;
+  const toggleIndustry = (name: string) => setIndustries((cur) => (cur.includes(name) ? cur.filter((i) => i !== name) : [...cur, name]));
 
   const previewContacts: Partial<ContactFields>[] = useMemo(() => {
     if (source === "upload" && uploaded && uploaded.valid.length > 0) return uploaded.valid.slice(0, 8);
@@ -138,7 +149,8 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
   if (unknown.length) problems.push(`Unknown merge field${unknown.length > 1 ? "s" : ""}: ${unknown.join(", ")}`);
   if (!Number.isInteger(daily) || daily < 1 || daily > 2000) problems.push("Daily limit must be a whole number from 1 to 2,000");
   if (!windowIsValid(from, to)) problems.push("The send window must end after it starts");
-  if (source === "import" && !chosenImport) problems.push("Choose an import for the recipients");
+  if (source === "industries" && industries.length === 0) problems.push("Choose at least one industry for the recipients");
+  else if (source === "import" && !chosenImport) problems.push("Choose an import for the recipients");
   else if (source === "upload") problems.push("Import the uploaded CSV first (use the button in Recipients)");
   else if (audienceTotal < 1) problems.push("There are no recipients");
 
@@ -152,6 +164,7 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
       dailyLimit: daily, sendWindowStart: from, sendWindowEnd: to, timezone: tz,
       // null = every contact. The choice is saved with the draft and resolved into recipients at launch.
       recipientImportId: source === "import" && importId ? importId : null,
+      recipientIndustries: source === "industries" ? industries : [],
     };
     try {
       // After the first save the draft exists, so saving again (e.g. before another test) updates it instead of making a copy.
@@ -266,8 +279,8 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
               subtitle="Saved with the draft. The list is built when you launch, which is not connected yet."
               action={
                 <div className="inline-flex rounded-lg border border-slate-300 p-0.5 text-sm dark:border-slate-700" role="tablist" aria-label="Recipient source">
-                  {([["contacts", "All contacts"], ["import", "An import"], ["upload", "Upload CSV"]] as const).map(([k, label]) => (
-                    <button key={k} role="tab" aria-selected={source === k} onClick={() => setSource(k)} className={`rounded-md px-3 py-1 font-medium ${source === k ? "bg-brand-600 text-white" : "text-slate-600 dark:text-slate-300"}`}>{label}</button>
+                  {([["contacts", "All contacts"], ["industries", "Industries"], ["upload", "Upload CSV"]] as const).map(([k, label]) => (
+                    <button key={k} role="tab" aria-selected={source === k || (k === "upload" && source === "import")} onClick={() => setSource(k)} className={`rounded-md px-3 py-1 font-medium ${source === k ? "bg-brand-600 text-white" : "text-slate-600 dark:text-slate-300"}`}>{label}</button>
                   ))}
                 </div>
               }
@@ -281,15 +294,44 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
                 )
               )}
 
-              {source === "import" && (
-                imports.isError ? <ErrorNotice error={imports.error} onRetry={() => void imports.refetch()} /> : (
-                  <Field label="Import" htmlFor="imp" hint="Everyone with a valid email in that file is emailed, including contacts that already existed.">
-                    <Select id="imp" value={importId} onChange={(e) => setImportId(e.target.value)}>
-                      <option value="">{imports.isPending ? "Loading imports…" : completedImports.length === 0 ? "No imports yet" : "Choose an import"}</option>
-                      {completedImports.map((i) => <option key={i.id} value={i.id}>{i.filename} ({fmt(i.validRows)} contacts, {new Date(i.createdAt).toLocaleDateString("en-US")})</option>)}
-                    </Select>
-                  </Field>
+              {source === "industries" && (
+                industryCounts.isError ? <ErrorNotice error={industryCounts.error} onRetry={() => void industryCounts.refetch()} /> : (
+                  <fieldset>
+                    <legend className="text-sm font-medium">Industries</legend>
+                    <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Every contact in the industries you tick is emailed. Pick as many as you like.</p>
+                    {industryCounts.isPending ? <p className="mt-3 text-sm text-slate-500">Loading industries…</p>
+                      : industryRows.length === 0 && industries.length === 0 ? <p className="mt-3 text-sm text-slate-500">No industries yet. Contacts without an industry cannot be picked this way.</p>
+                      : (
+                        <>
+                          <div className="mt-2 flex gap-3 text-xs">
+                            <button type="button" className="text-brand-600 hover:underline" onClick={() => setIndustries(industryRows.map((r) => r.industry))}>Select all</button>
+                            <button type="button" className="text-brand-600 hover:underline" onClick={() => setIndustries([])}>Clear</button>
+                          </div>
+                          <div className="mt-2 grid max-h-64 gap-1 overflow-y-auto rounded-lg border border-slate-200 p-2 sm:grid-cols-2 dark:border-slate-800">
+                            {[...industryRows.map((r) => r), ...industries.filter((i) => !industryRows.some((r) => r.industry === i)).map((industry) => ({ industry, count: 0 }))].map((r) => (
+                              <label key={r.industry} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                                <input type="checkbox" checked={industries.includes(r.industry)} onChange={() => toggleIndustry(r.industry)} />
+                                <span className="flex-1 truncate">{r.industry}</span>
+                                <span className="tabular-nums text-xs text-slate-500">{fmt(r.count)}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                  </fieldset>
                 )
+              )}
+
+              {source === "import" && (
+                <div className="rounded-lg border border-slate-200 p-3 text-sm dark:border-slate-800">
+                  {imports.isError ? <ErrorNotice error={imports.error} onRetry={() => void imports.refetch()} /> : (
+                    <p>
+                      Everyone in <span className="font-medium">{chosenImport ? chosenImport.filename : imports.isPending ? "…" : "the chosen import"}</span>
+                      {chosenImport ? ` (${fmt(chosenImport.validRows)} contacts)` : ""} will be emailed, including contacts that already existed.
+                    </p>
+                  )}
+                  <button type="button" className="mt-2 text-brand-600 hover:underline" onClick={() => setSource("upload")}>Upload a different file</button>
+                </div>
               )}
 
               {source === "upload" && csv.status !== "ready" && <CsvDropzone csv={csv} compact />}

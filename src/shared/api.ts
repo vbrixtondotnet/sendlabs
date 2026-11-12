@@ -46,6 +46,8 @@ export interface CampaignDto {
   senderAccountId: string | null;
   /** null = every contact, otherwise the people in that import. */
   recipientImportId: string | null;
+  /** When not empty: everyone whose industry is one of these. Never combined with an import. */
+  recipientIndustries: string[];
   createdBy: string;
   dailyLimit: number;
   sendWindowStart: string;

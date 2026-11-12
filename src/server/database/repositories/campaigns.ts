@@ -125,6 +125,12 @@ export function campaignsRepo(db: Database, tenantId: string) {
         throw conflict("Only draft campaigns can be edited", "CAMPAIGN_LOCKED", { status: current.status });
       }
       if (patch.recipientImportId) await imports.assertUsable(patch.recipientImportId);
+      // An audience is an import or a set of industries, never both (after merging the patch with what is stored).
+      const importId = patch.recipientImportId === undefined ? current.recipientImportId : patch.recipientImportId;
+      const industries = patch.recipientIndustries ?? current.recipientIndustries;
+      if (importId && industries.length > 0) {
+        throw badRequest("Choose an import or industries, not both", [{ path: "recipientIndustries", message: "Cannot be combined with an import" }], "VALIDATION_ERROR");
+      }
       const start = patch.sendWindowStart ?? current.sendWindowStart;
       const end = patch.sendWindowEnd ?? current.sendWindowEnd;
       if (!windowIsValid(start, end)) {
@@ -155,6 +161,7 @@ export function campaignsRepo(db: Database, tenantId: string) {
           signature: src.signature,
           senderAccountId: src.senderAccountId,
           recipientImportId: src.recipientImportId,
+          recipientIndustries: src.recipientIndustries,
           dailyLimit: src.dailyLimit,
           sendWindowStart: src.sendWindowStart,
           sendWindowEnd: src.sendWindowEnd,

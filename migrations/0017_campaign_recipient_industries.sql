@@ -1,0 +1,1 @@
+ALTER TABLE `campaigns` ADD `recipient_industries` text DEFAULT '[]' NOT NULL;

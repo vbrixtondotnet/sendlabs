@@ -134,6 +134,8 @@ describe("contacts", () => {
     const mine = r.json.items.filter((i: string) => i.startsWith("zz-"));
     expect(mine).toEqual(["zz-aerospace", "zz-construction"]); // distinct and sorted
     expect(r.json.items).not.toContain("");
+    expect(r.json.counts["zz-construction"]).toBe(2); // how many contacts each industry would reach
+    expect(r.json.counts["zz-aerospace"]).toBe(1);
   });
 
   it("rejects bad list parameters", async () => {

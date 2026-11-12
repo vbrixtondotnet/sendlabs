@@ -18,7 +18,10 @@ contactRoutes.post("/", async (c) => {
 });
 
 // Registered before "/:id" so "industries" is not read as an id.
-contactRoutes.get("/industries", async (c) => c.json({ items: await contactsRepo(c.get("db"), c.get("actor").tenantId).industries() }));
+contactRoutes.get("/industries", async (c) => {
+  const rows = await contactsRepo(c.get("db"), c.get("actor").tenantId).industryCounts();
+  return c.json({ items: rows.map((r) => r.industry), counts: Object.fromEntries(rows.map((r) => [r.industry, r.count])) });
+});
 
 contactRoutes.get("/:id",async (c) => c.json(await contactsRepo(c.get("db"), c.get("actor").tenantId).get(c.req.param("id"))));
 

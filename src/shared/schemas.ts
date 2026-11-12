@@ -119,6 +119,8 @@ const campaignFields = {
   timezone,
   /** null = every contact. Otherwise the id of a Completed import. */
   recipientImportId: z.string().min(1).max(64).nullable(),
+  /** Empty = not used. Otherwise everyone whose industry is one of these. Cannot be combined with an import. */
+  recipientIndustries: z.array(text(200).min(1)).max(200),
 };
 
 /** The send window must end after it starts. Checked after merging with stored values on PATCH. */
@@ -134,6 +136,11 @@ export const campaignCreateSchema = z
     sendWindowEnd: timeOfDay.default("17:00"),
     timezone: timezone.default("America/Los_Angeles"),
     recipientImportId: campaignFields.recipientImportId.default(null),
+    recipientIndustries: campaignFields.recipientIndustries.default([]),
+  })
+  .refine((v) => !(v.recipientImportId && v.recipientIndustries.length > 0), {
+    message: "Choose an import or industries, not both",
+    path: ["recipientIndustries"],
   })
   .refine((v) => windowIsValid(v.sendWindowStart, v.sendWindowEnd), {
     message: "The send window must end after it starts",

@@ -218,6 +218,22 @@ describe("history", () => {
 describe("campaign recipients from an import", () => {
   const campaign = { name: "From import", subject: "s", htmlBody: "<p>b</p>" };
 
+  it("saves chosen industries, copies them, and refuses to combine them with an import", async () => {
+    const made = await h.api("POST", "/api/campaigns", { ...campaign, recipientIndustries: ["construction", "retail"] });
+    expect(made.status).toBe(201);
+    expect(made.json.recipientIndustries).toEqual(["construction", "retail"]);
+    expect((await h.api("GET", `/api/campaigns/${made.json.id}`)).json.recipientIndustries).toEqual(["construction", "retail"]);
+    expect((await h.api("POST", `/api/campaigns/${made.json.id}/duplicate`)).json.recipientIndustries).toEqual(["construction", "retail"]);
+    expect((await h.api("POST", "/api/campaigns", campaign)).json.recipientIndustries).toEqual([]); // default: not used
+
+    const imp = (await upload(h, { filename: "ind.csv", text: bigCsv(2, "ind") })).json;
+    expect((await h.api("POST", "/api/campaigns", { ...campaign, recipientImportId: imp.id, recipientIndustries: ["retail"] })).status).toBe(400);
+    expect((await h.api("PATCH", `/api/campaigns/${made.json.id}`, { recipientImportId: imp.id })).status).toBe(400); // merged with the stored industries
+    const cleared = await h.api("PATCH", `/api/campaigns/${made.json.id}`, { recipientImportId: imp.id, recipientIndustries: [] });
+    expect(cleared.status).toBe(200);
+    expect(cleared.json.recipientIndustries).toEqual([]);
+  });
+
   it("defaults to all contacts, and saves a chosen import", async () => {
     const imp = (await upload(h, { filename: "recipients.csv", text: bigCsv(3, "rcp") })).json;
     const all = await h.api("POST", "/api/campaigns", campaign);

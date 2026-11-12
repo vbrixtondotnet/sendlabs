@@ -53,7 +53,7 @@ describe("Campaign editor (live drafts)", () => {
     });
     expect(body.htmlBody).not.toContain("{{unsubscribeUrl}}"); // the body is just the message; the footer is added for you
     expect(body.htmlBody).not.toContain("{{signature}}");
-    expect(Object.keys(body).sort()).toEqual(["dailyLimit", "htmlBody", "name", "recipientImportId", "sendWindowEnd", "sendWindowStart", "signature", "subject", "textBody", "timezone"]); // never status or owner
+    expect(Object.keys(body).sort()).toEqual(["dailyLimit", "htmlBody", "name", "recipientImportId", "recipientIndustries", "sendWindowEnd", "sendWindowStart", "signature", "subject", "textBody", "timezone"]); // never status or owner
     expect(body.recipientImportId).toBeNull(); // all contacts
     expect(await screen.findByTestId("elsewhere")).toBeTruthy(); // back to the list
   });

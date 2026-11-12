@@ -112,13 +112,19 @@ export function contactsRepo(db: Database, tenantId: string) {
 
     /** Distinct non-empty industries for the filter dropdown. Capped so a messy import cannot bloat it. */
     async industries(): Promise<string[]> {
+      return (await this.industryCounts()).map((r) => r.industry);
+    },
+
+    /** Each distinct non-empty industry with how many contacts have it (the audience size when it is chosen). */
+    async industryCounts(): Promise<{ industry: string; count: number }[]> {
       const rows = await db
-        .selectDistinct({ industry: contacts.industry })
+        .select({ industry: contacts.industry, n: count() })
         .from(contacts)
         .where(and(mine, sql`${contacts.industry} <> ''`))
+        .groupBy(contacts.industry)
         .orderBy(contacts.industry)
         .limit(200);
-      return rows.map((r) => r.industry);
+      return rows.map((r) => ({ industry: r.industry, count: r.n }));
     },
 
     async get(id: string): Promise<ContactDto> {
