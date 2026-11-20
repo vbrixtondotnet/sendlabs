@@ -20,6 +20,10 @@ function server(initial: CampaignDto): Handler {
       ].filter((r) => !query.get("status") || r.status === query.get("status"));
       return { json: page(rows, rows.length) };
     }
+    if (method === "POST" && path === "/api/campaigns/k1/retry-failed") {
+      current = { ...current, status: "Sending", totals: { ...current.totals, Failed: 0, Pending: current.totals.Pending + current.totals.Failed } };
+      return { json: current };
+    }
     const m = path.match(/^\/api\/campaigns\/k1\/(pause|resume|cancel)$/);
     if (method === "POST" && m) {
       const to = { pause: "Paused", resume: "Sending", cancel: "Cancelled" }[m[1] as "pause"] as CampaignDto["status"];
@@ -94,8 +98,33 @@ describe("Campaign details (live data)", () => {
   it("explains a draft and links to the editor", async () => {
     stubApi(server(campaign({ id: "k1", status: "Draft" })));
     open(server(sending));
-    expect(await screen.findByText(/Launching is not connected yet/)).toBeTruthy();
+    expect(await screen.findByText(/this campaign is a draft, so it has no recipients yet/i)).toBeTruthy();
     expect(screen.getByRole("link", { name: "Edit draft" }).getAttribute("href")).toBe("/campaigns/k1/edit");
+  });
+
+  it("shows a Sending campaign's pace, and offers to retry the emails that failed", async () => {
+    const calls = stubApi(server(sending));
+    open(server(sending));
+    expect(await screen.findByText(/Sending\. Emails go out a few at a time during the daily window \(09:00 to 17:00 America\/Los_Angeles\), up to 500 a day/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry 2 failed" }));
+    expect(await screen.findByText("The failed emails will be sent again")).toBeTruthy();
+    expect(calls.some((c) => c.method === "POST" && c.path === "/api/campaigns/k1/retry-failed")).toBe(true);
+    await waitFor(() => expect(screen.queryByRole("button", { name: /Retry \d+ failed/ })).toBeNull()); // nothing failed any more
+  });
+
+  it("tells you what to do when sending stopped because the connection was rejected, and offers Resume", async () => {
+    stubApi(server(campaign({ id: "k1", status: "Failed", totals: totals({ Accepted: 5, Pending: 20 }) })));
+    open(server(sending));
+    expect(await screen.findByText("Sending stopped")).toBeTruthy();
+    expect(screen.getByText(/reconnect Gmail\), then press Resume/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Resume" })).toBeTruthy();
+  });
+
+  it("offers to retry a campaign that finished with errors", async () => {
+    stubApi(server(campaign({ id: "k1", status: "CompletedWithErrors", totals: totals({ Accepted: 8, Failed: 2 }) })));
+    open(server(sending));
+    expect(await screen.findByText(/Finished, but 2 emails failed/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry 2 failed" })).toBeTruthy();
   });
 
   it("hides every action from a Viewer", async () => {

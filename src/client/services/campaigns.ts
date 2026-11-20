@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { CampaignDto, CampaignSummaryDto, Page, RecipientDto } from "@shared/api";
+import type { CampaignDto, CampaignSummaryDto, Page, RecipientDto, LaunchResultDto } from "@shared/api";
 import type { CampaignStatus, RecipientStatus } from "@shared/types";
 import type { CampaignCreate, CampaignPatch } from "@shared/schemas";
 import type { CampaignAction } from "@shared/status";
@@ -81,6 +81,14 @@ export const useArchiveCampaign = () =>
   useCampaignMutation(({ id, archived }: { id: string; archived: boolean }) =>
     api<CampaignDto>("POST", `/api/campaigns/${id}/${archived ? "archive" : "unarchive"}`),
   );
+
+/** Starts a Draft sending. Nothing goes out at once: the scheduled sender sends a few at a time inside the campaign's daily window. */
+export const useLaunchCampaign = () =>
+  useCampaignMutation((id: string) => api<LaunchResultDto>("POST", `/api/campaigns/${id}/launch`));
+
+/** Puts the recipients that failed back in line to be sent again. */
+export const useRetryFailed = () =>
+  useCampaignMutation((id: string) => api<CampaignDto>("POST", `/api/campaigns/${id}/retry-failed`));
 
 export const useCampaignAction = () =>
   useCampaignMutation(({ id, action }: { id: string; action: CampaignAction }) =>

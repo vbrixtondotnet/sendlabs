@@ -1,4 +1,5 @@
 import { and, eq } from "drizzle-orm";
+import { authEnabled, devShortcutAllowed } from "../lib/auth-enabled";
 import type { MiddlewareHandler } from "hono";
 import { normalizeEmail } from "../../shared/email";
 import type { Role } from "../../shared/types";
@@ -54,14 +55,15 @@ export const requireAccess = (...allowed: Role[]): MiddlewareHandler<AppEnv> => 
  *     except signing in.
  *
  * It fails closed: outside the local environment every protected route answers 503, session or not, so deploying
- * this build cannot expose anyone's data until that is deliberately enabled. The tenant always comes from the user's
+ * this build cannot expose anyone's data until that is deliberately enabled with `AUTH_ENABLED="true"` for that
+ * deployment (see lib/auth-enabled.ts). Even then only sessions work: the DEV_ACTOR_EMAIL shortcut is local-only. The tenant always comes from the user's
  * database row, never from anything the client sends, so a request can only ever reach its own tenant's data.
  *
  * A session whose user is disabled, or whose tenant is suspended, is refused outright. It does NOT quietly fall back
  * to the shortcut user. A cookie that is merely unknown or expired is ignored.
  */
 export const requireActor: MiddlewareHandler<AppEnv> = async (c, next) => {
-  if (c.env.ENVIRONMENT !== "local") {
+  if (!authEnabled(c.env)) {
     throw new ApiError(503, "AUTH_NOT_CONFIGURED", "Authentication is not configured for this environment");
   }
   const db = c.get("db");
@@ -80,7 +82,7 @@ export const requireActor: MiddlewareHandler<AppEnv> = async (c, next) => {
     }
   }
 
-  if (!row && c.env.DEV_ACTOR_EMAIL) {
+  if (!row && c.env.DEV_ACTOR_EMAIL && devShortcutAllowed(c.env)) {
     const email = normalizeEmail(c.env.DEV_ACTOR_EMAIL);
     const [dev] = await db
       .select({

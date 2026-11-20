@@ -29,6 +29,12 @@ export function senderRepo(db: Database, tenantId: string) {
       return row;
     },
 
+    /** Sets the name shown on the From line. Returns the updated account, or null when none is connected. */
+    async setSenderName(senderName: string) {
+      const [row] = await db.update(senderAccounts).set({ senderName }).where(mine).returning();
+      return row ?? null;
+    },
+
     /** Google no longer honours the stored token: flag it, so the UI asks for a reconnect and nothing tries to send. */
     async markNeedsReconnect(): Promise<void> {
       await db.update(senderAccounts).set({ status: "NeedsReconnect" }).where(mine);

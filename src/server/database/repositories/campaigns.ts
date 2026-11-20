@@ -160,6 +160,7 @@ export function campaignsRepo(db: Database, tenantId: string) {
           textBody: src.textBody,
           signature: src.signature,
           senderAccountId: src.senderAccountId,
+          plainText: src.plainText,
           recipientImportId: src.recipientImportId,
           recipientIndustries: src.recipientIndustries,
           dailyLimit: src.dailyLimit,
@@ -221,6 +222,8 @@ export function campaignsRepo(db: Database, tenantId: string) {
         // Pause and cancel stop the daily tick. Resume makes the campaign due at the next tick.
         nextRunAt: action === "resume" ? now : null,
         ...(stampsCompletedAt(def.to) ? { completedAt: now } : {}),
+        // Resuming (from Paused, or from Failed once the cause is fixed) means it is not finished any more.
+        ...(action === "resume" ? { completedAt: null } : {}),
       };
 
       const campaignUpdate = db

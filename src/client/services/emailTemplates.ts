@@ -76,6 +76,16 @@ export function useAddAvailableTemplate() {
   });
 }
 
+/** Administrators only: change one of My Templates. The Available Template it was copied from is not touched. */
+export function useUpdateEmailTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { id: string; name: string; htmlBody: string }) =>
+      api<EmailTemplateDto>("PUT", `/api/email-templates/${encodeURIComponent(input.id)}`, { name: input.name, htmlBody: input.htmlBody }),
+    onSettled: () => qc.invalidateQueries({ queryKey: KEY }),
+  });
+}
+
 /** Administrators only: take a template out of My Templates. */
 export function useRemoveEmailTemplate() {
   const qc = useQueryClient();

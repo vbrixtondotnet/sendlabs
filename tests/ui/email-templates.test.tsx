@@ -20,7 +20,7 @@ const MINE: EmailTemplateSummaryDto[] = [
 ];
 
 /** A server that remembers what was added and removed, like the real one. */
-function server(opts: { mine?: EmailTemplateSummaryDto[]; manageReply?: ReturnType<typeof fail>; availableReply?: ReturnType<typeof fail>; listReply?: ReturnType<typeof fail>; addReply?: ReturnType<typeof fail>; removeReply?: ReturnType<typeof fail>; createReply?: ReturnType<typeof fail> } = {}): Handler {
+function server(opts: { mine?: EmailTemplateSummaryDto[]; manageReply?: ReturnType<typeof fail>; availableReply?: ReturnType<typeof fail> | { json: unknown }; listReply?: ReturnType<typeof fail>; addReply?: ReturnType<typeof fail>; removeReply?: ReturnType<typeof fail>; createReply?: ReturnType<typeof fail> } = {}): Handler {
   let mine = opts.mine ?? MINE;
   let available = AVAILABLE;
   return ({ method, path, body }: Call) => {
@@ -60,6 +60,10 @@ function server(opts: { mine?: EmailTemplateSummaryDto[]; manageReply?: ReturnTy
     if (one && method === "GET") {
       const t = mine.find((i) => i.id === one[1]);
       return t ? { json: templateDto({ ...t, htmlBody: `<p>Hello {{firstName}} at <strong>{{companyName}}</strong> (mine ${t.name})</p>` }) } : fail(404, "NOT_FOUND", "Template not found");
+    }
+    if (one && method === "PUT") {
+      mine = mine.map((i) => (i.id === one[1] ? { ...i, name: body.name } : i));
+      return { json: templateDto({ ...mine.find((i) => i.id === one[1])!, htmlBody: body.htmlBody }) };
     }
     if (one && method === "DELETE") {
       if (opts.removeReply) return opts.removeReply;
@@ -220,7 +224,7 @@ describe("My Templates tab", () => {
     expect(screen.getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Template", "Source", "Added", "Actions"]);
     expect(within(row("Digital Marketing")).getByText("From Available")).toBeTruthy();
     expect(within(row("Our own pitch")).getByText("Created by you")).toBeTruthy();
-    expect(items("Our own pitch")).toEqual(["Preview", "Remove"]);
+    expect(items("Our own pitch")).toEqual(["Preview", "Edit", "Remove"]);
   });
 
   it("removes one after asking, and it leaves the list", async () => {
@@ -236,6 +240,20 @@ describe("My Templates tab", () => {
     expect(writes(calls)).toHaveLength(1);
     expect(writes(calls)[0]).toMatchObject({ method: "DELETE", path: "/api/email-templates/m2" });
     await waitFor(() => expect(screen.queryByText("Our own pitch", { selector: "td" })).toBeNull());
+  });
+
+  it("lets an Administrator edit one, and says a copy of an Available Template is changed on its own", async () => {
+    const calls = await openMine();
+    await screen.findByText("Digital Marketing", { selector: "td" });
+    choose("Digital Marketing", "Edit Digital Marketing");
+    await waitFor(() => expect((screen.getByLabelText("Template name") as HTMLInputElement).value).toBe("Digital Marketing"));
+    expect(screen.getByText(/changes only your copy. The version in Available Templates stays as it is/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Template name"), { target: { value: "Our Marketing" } });
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Save changes" }));
+    expect(await screen.findByText('Template "Our Marketing" saved')).toBeTruthy();
+    expect(writes(calls)).toHaveLength(1);
+    expect(writes(calls)[0]).toMatchObject({ method: "PUT", path: "/api/email-templates/m1", body: { name: "Our Marketing" } });
+    expect(await screen.findByText("Our Marketing", { selector: "td" })).toBeTruthy();
   });
 
   it("does not remove anything when the question is answered with Keep it", async () => {

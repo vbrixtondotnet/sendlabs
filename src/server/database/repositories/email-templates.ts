@@ -1,5 +1,6 @@
 import { and, asc, count, eq } from "drizzle-orm";
 import type { EmailTemplateDto, EmailTemplateSummaryDto } from "../../../shared/api";
+import { isUniqueViolation } from "../../lib/errors";
 import { iso } from "../../lib/http";
 import type { Database } from "../client";
 import { emailTemplates, type EmailTemplateRow } from "../schema";
@@ -42,6 +43,21 @@ export function emailTemplatesRepo(db: Database, tenantId: string) {
       const { systemKey, ...rest } = input;
       const [row] = await db.insert(emailTemplates).values({ tenantId, ...rest, builtinKey: systemKey ?? null }).onConflictDoNothing().returning();
       return row ? toDto(row) : null;
+    },
+
+    /**
+     * Changes the name and message of one of the organization's templates. Only this row changes: a copy of an Available
+     * Template is the organization's own, so editing it never touches the system version (and the system version never
+     * touches it). It keeps its link to that template, so it still counts as already added.
+     */
+    async update(id: string, input: { name: string; htmlBody: string }): Promise<EmailTemplateDto | "missing" | "name-taken"> {
+      try {
+        const [row] = await db.update(emailTemplates).set(input).where(and(mine, eq(emailTemplates.id, id))).returning();
+        return row ? toDto(row) : "missing";
+      } catch (err) {
+        if (isUniqueViolation(err)) return "name-taken";
+        throw err;
+      }
     },
 
     /** Returns false if there is no such template in this organization. */

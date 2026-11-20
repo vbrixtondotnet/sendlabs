@@ -148,6 +148,34 @@
       "when": 1794489472697,
       "tag": "0020_system_templates",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1794555872542,
+      "tag": "0021_sender_company_placeholder",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1794557678990,
+      "tag": "0022_campaign_plain_text",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1794618013221,
+      "tag": "0023_sender_name",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1794664682849,
+      "tag": "0024_personal_emails",
+      "breakpoints": true
     }
   ]
 }

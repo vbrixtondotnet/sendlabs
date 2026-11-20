@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMime, cleanHeaderValue, encodeHeader, escapeHtml, toBase64Url } from "../../src/server/lib/mime";
+import { buildMime, cleanHeaderValue, encodeHeader, escapeHtml, inspectMime, toBase64Url } from "../../src/server/lib/mime";
 
 /** A minimal reader, so the tests check what a mail client would see, not just what we wrote. */
 function parse(raw: string) {
@@ -151,5 +151,25 @@ describe("List-Unsubscribe headers", () => {
     for (const url of ["", "javascript:alert(1)", "mailto:a@b.test", "ftp://acme.test", "https://acme.test/u\r\nBcc: evil@x.test", "https://acme.test/a b", "https://acme.test/>, <https://evil.test", "https://acme.test/u,https://evil.test", "https://", "//acme.test/u", "https://acme.test/\u0000"]) {
       expect(() => buildMime({ ...base, listUnsubscribe: { url, oneClick: true } }), JSON.stringify(url)).toThrow();
     }
+  });
+});
+
+describe("Reply-To and inspection", () => {
+  const base = { from: "me@acme.test", to: "you@x.test", subject: "Hi", text: "Hello" };
+
+  it("adds Reply-To only when asked, and refuses anything but a plain address", () => {
+    expect(buildMime(base)).not.toContain("Reply-To");
+    expect(buildMime({ ...base, replyTo: "boss@acme.test" })).toContain("\r\nReply-To: boss@acme.test\r\n");
+    expect(() => buildMime({ ...base, replyTo: "x@y.test\r\nBcc: z@y.test" })).toThrow();
+  });
+
+  it("reads a built message back: headers, and each part decoded", () => {
+    const plain = inspectMime(buildMime(base));
+    expect(plain.headers.map((h) => h.name)).toEqual(["From", "To", "Subject", "Date", "Message-ID", "MIME-Version", "Content-Type", "Content-Transfer-Encoding"]);
+    expect(plain.parts).toEqual([{ contentType: 'text/plain; charset="UTF-8"', text: "Hello" }]);
+    const both = inspectMime(buildMime({ ...base, html: "<p>Hello</p>", listUnsubscribe: { url: "https://x.test/u", oneClick: true } }));
+    expect(both.headers.find((h) => h.name === "List-Unsubscribe")?.value).toBe("<https://x.test/u>");
+    expect(both.headers.find((h) => h.name === "List-Unsubscribe-Post")?.value).toBe("List-Unsubscribe=One-Click");
+    expect(both.parts.map((p) => p.text)).toEqual(["Hello", "<p>Hello</p>"]);
   });
 });

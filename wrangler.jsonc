@@ -1,6 +1,6 @@
 {
-  // Sendrix Worker. Only the D1 binding is configured so far. R2, Queues, Cron and static
-  // assets are added in later phases.
+  // Sendrix Worker: the API, the daily sender (Cron) and, once deployed, the built app (static assets).
+  // R2 and Queues are not used. Staging and production declare their own bindings, since environments inherit none.
   "name": "sendrix",
   "main": "src/server/index.ts",
   "compatibility_date": "2026-11-01",
@@ -13,6 +13,11 @@
     // Google redirects back to <APP_BASE_URL>/api/sender/gmail/callback, so register that exact address with Google.
     "APP_BASE_URL": "http://localhost:5173"
   },
+
+  // The campaign sender runs every minute. Each run sends a few emails per launched campaign, inside its daily send window
+  // and limit (see src/server/services/campaign-sender.ts). Locally, run `wrangler dev --test-scheduled` and open
+  // http://localhost:8787/__scheduled, or use POST /api/campaigns/run-tick (local only).
+  "triggers": { "crons": ["* * * * *"] },
 
   // Top level = local development. Wrangler simulates D1 on disk under .wrangler/, so the
   // database_id below is a placeholder and is never sent anywhere.
@@ -31,6 +36,11 @@
     "staging": {
       "name": "sendrix-staging",
       "vars": { "ENVIRONMENT": "staging", "APP_BASE_URL": "https://REPLACE_WITH_STAGING_URL" },
+      "triggers": { "crons": ["* * * * *"] },
+      // The deployed Worker serves the built app (run `npm run build` first) as well as /api, so the pages people open from an email,
+      // above all /unsubscribe/<token>, load from the same address. Requests under /api/ always go to the Worker; every other
+      // address that is not a file falls back to the app (single-page application), where the router takes over.
+      "assets": { "directory": "./dist", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*"] },
       "d1_databases": [
         {
           "binding": "DB",
@@ -42,12 +52,20 @@
     },
     "production": {
       "name": "sendrix-production",
-      "vars": { "ENVIRONMENT": "production", "APP_BASE_URL": "https://REPLACE_WITH_PRODUCTION_URL" },
+      "vars": { "ENVIRONMENT": "production", "APP_BASE_URL": "https://sendrix.app", "AUTH_ENABLED": "true" },
+      // The app lives at https://sendrix.app. A custom domain makes Cloudflare create the DNS record and the certificate; the
+      // domain must be a zone in this Cloudflare account.
+      "routes": [{ "pattern": "sendrix.app", "custom_domain": true }],
+      "triggers": { "crons": ["* * * * *"] },
+      // The deployed Worker serves the built app (run `npm run build` first) as well as /api, so the pages people open from an email,
+      // above all /unsubscribe/<token>, load from the same address. Requests under /api/ always go to the Worker; every other
+      // address that is not a file falls back to the app (single-page application), where the router takes over.
+      "assets": { "directory": "./dist", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*"] },
       "d1_databases": [
         {
           "binding": "DB",
           "database_name": "sendrix-db-production",
-          "database_id": "REPLACE_WITH_PRODUCTION_DATABASE_ID",
+          "database_id": "cdd7cd9a-c008-464f-a61a-9a107021d752",
           "migrations_dir": "migrations"
         }
       ]

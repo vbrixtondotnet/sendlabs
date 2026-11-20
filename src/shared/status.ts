@@ -31,7 +31,7 @@ export const canTransitionCampaign = (from: CampaignStatus, to: CampaignStatus):
 /** Actions a person can trigger from the UI, mapped to the status change they cause. */
 export const CAMPAIGN_ACTIONS = {
   pause: { from: ["Queued", "Sending"], to: "Paused" },
-  resume: { from: ["Paused"], to: "Sending" },
+  resume: { from: ["Paused", "Failed"], to: "Sending" },
   cancel: { from: ["Queuing", "Queued", "Sending", "Paused", "Failed"], to: "Cancelled" },
 } as const satisfies Record<string, { from: readonly CampaignStatus[]; to: CampaignStatus }>;
 export type CampaignAction = keyof typeof CAMPAIGN_ACTIONS;

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { EMAIL_FOOTER_ENABLED, LIST_UNSUBSCRIBE_HEADERS_ENABLED } from "../../src/shared/merge";
 import { MAX_TEST_RECIPIENTS } from "../../src/shared/schemas";
 import { GoogleOAuth } from "../../src/server/services/google-oauth";
 import { FakeGoogle } from "./fake-google";
@@ -60,6 +61,9 @@ function decode(raw: string) {
   const lf = (t: string) => t.replace(/\r\n/g, "\n");
   return { head, text: lf(parts[0] ?? ""), html: lf(parts[1] ?? "") };
 }
+/** The message without the standard unsubscribe footer (and the address after it), which every email now has. */
+const bareHtml = (html: string) => html.split(/\n?<hr\/>/)[0]!;
+const bareText = (text: string) => text.replace(/\r\n/g, "\n").split("\n\nYou're receiving this email")[0]!;
 const header = (raw: string, name: string) => new RegExp(`^${name}: (.*)$`, "m").exec(raw.split("\r\n\r\n")[0]!)?.[1];
 
 describe("the allowlist", () => {
@@ -267,7 +271,7 @@ describe("sending a test", () => {
     await connectGmail(h, SENDER);
     await add("qa@acme.test");
     await testSend(await makeCampaign({ htmlBody: "<style>p{}</style><p>One &amp; two</p><p>Three <a href=\"https://x.test/a\">link</a></p>" }));
-    expect(decode(google.mailbox[0]!.raw).text.replace(/\r\n/g, "\n")).toBe("One & two\nThree link (https://x.test/a)");
+    expect(bareText(decode(google.mailbox[0]!.raw).text)).toBe("One & two\nThree link (https://x.test/a)");
   });
 
   it("ignores an old plain-text body: the text and HTML parts always say the same", async () => {
@@ -277,7 +281,7 @@ describe("sending a test", () => {
     const id = (await h.rows<{ id: string }>("SELECT id FROM campaigns WHERE text_body = 'Stale plain text'"))[0]!.id;
     await testSend(id);
     const sent = decode(google.mailbox[0]!.raw);
-    expect(sent.text).toBe("Fresh HTML");
+    expect(bareText(sent.text)).toBe("Fresh HTML");
     expect(sent.text).not.toContain("Stale");
   });
 
@@ -294,7 +298,7 @@ describe("sending a test", () => {
     it("is in the HTML and in the plain text of the test email", async () => {
       const sent = await sentOnce({ htmlBody: "<p>Hello</p>", signature: SIGNATURE });
       expect(sent.html).toContain("Best regards,<br/>Rico Prinsipe<br/>Marketing Admin | Sabertooth Software Labs<br/>sabertoothsoftwarelabs.net");
-      expect(sent.text.replace(/\r\n/g, "\n")).toBe(`Hello\n\nBest regards,\nRico Prinsipe\nMarketing Admin | Sabertooth Software Labs\nsabertoothsoftwarelabs.net`);
+      expect(bareText(sent.text)).toBe(`Hello\n\nBest regards,\nRico Prinsipe\nMarketing Admin | Sabertooth Software Labs\nsabertoothsoftwarelabs.net`);
     });
 
     it("always goes right after the body, and an old {{signature}} tag in the body is dropped, not shown", async () => {
@@ -308,8 +312,8 @@ describe("sending a test", () => {
 
     it("adds nothing, and leaves no stray tag, when the campaign has none", async () => {
       const sent = await sentOnce({ htmlBody: "<p>Hello</p>{{signature}}", signature: "" });
-      expect(sent.html).toBe("<p>Hello</p>");
-      expect(sent.text).toBe("Hello");
+      expect(bareHtml(sent.html)).toBe("<p>Hello</p>");
+      expect(bareText(sent.text)).toBe("Hello");
     });
 
     it("keeps its formatting: bold, italic, links and lists are sent as written", async () => {
@@ -329,7 +333,7 @@ describe("sending a test", () => {
 
     it("adds nothing for what an empty editor holds", async () => {
       const sent = await sentOnce({ htmlBody: "<p>Hello</p>", signature: "<p></p>" });
-      expect(sent.html).toBe("<p>Hello</p>");
+      expect(bareHtml(sent.html)).toBe("<p>Hello</p>");
     });
 
     it("has its merge fields filled in with the sample data, like the body", async () => {
@@ -350,17 +354,67 @@ describe("sending a test", () => {
     });
   });
 
-  it("goes only where the allowlist says: addresses in the request are ignored", async () => {
+  it("goes only where the allowlist says: an address that is not on it is refused, and nothing is sent", async () => {
     await connectGmail(h, SENDER);
     await add("qa@acme.test");
     const id = await makeCampaign();
-    for (const body of [{ to: "evil@x.test" }, { email: "evil@x.test" }, { recipients: ["evil@x.test"] }, "evil@x.test"]) {
-      google.mailbox.length = 0;
+    for (const body of [{ to: ["evil@x.test"] }, { to: ["qa@acme.test", "evil@x.test"] }]) {
       const r = await testSend(id, h, body);
-      expect(r.status, JSON.stringify(body)).toBe(200);
-      expect(google.mailbox.map((m) => header(m.raw, "To"))).toEqual(["qa@acme.test"]);
-      expect(google.mailbox[0]!.raw).not.toContain("evil@x.test");
+      expect(r.status, JSON.stringify(body)).toBe(400);
+      expect(r.json.error.code).toBe("NOT_ON_ALLOWLIST");
+      expect(google.mailbox).toHaveLength(0);
     }
+    // Anything but a list of addresses is refused too.
+    for (const body of [{ to: "evil@x.test" }, { to: [] }, { email: "evil@x.test" }, { recipients: ["evil@x.test"] }, "evil@x.test", { to: ["qa@acme.test"], extra: 1 }]) {
+      expect((await testSend(id, h, body)).status, JSON.stringify(body)).toBe(400);
+    }
+    expect(google.mailbox).toHaveLength(0);
+  });
+
+  it("a plain-text campaign is sent as text only: no HTML part, the same words, links kept, unsubscribe header still there", async () => {
+    await connectGmail(h, SENDER);
+    await add("qa@acme.test");
+    const id = await makeCampaign({ plainText: true, htmlBody: '<p>Hi <strong>{{firstName}}</strong>, see <a href="https://acme.test/x">our page</a>.</p><ul><li>One</li></ul><p><a href="{{unsubscribeUrl}}">Unsubscribe</a></p>' });
+    expect((await h.api("GET", `/api/campaigns/${id}`)).json.plainText).toBe(true);
+    expect((await testSend(id)).status).toBe(200);
+    const raw = google.mailbox[0]!.raw;
+    const [head, ...rest] = raw.split("\r\n\r\n");
+    expect(head).toContain('Content-Type: text/plain; charset="UTF-8"');
+    expect(head).not.toContain("multipart");
+    expect(raw).not.toContain("text/html");
+    expect(header(raw, "List-Unsubscribe") !== undefined).toBe(LIST_UNSUBSCRIBE_HEADERS_ENABLED);
+    const text = Buffer.from(rest.join("").replace(/\s+/g, ""), "base64").toString("utf8").replace(/\r\n/g, "\n");
+    expect(text).toContain("Hi Alex, see our page (https://acme.test/x).");
+    expect(text).toContain("- One");
+    expect(text).toMatch(/Unsubscribe \(https?:\/\//);
+    expect(text).not.toContain("<");
+  });
+
+  it("a normal campaign still sends both parts, and plain text is off unless chosen; it can be switched on, and a duplicate keeps it", async () => {
+    await connectGmail(h, SENDER);
+    await add("qa@acme.test");
+    const id = await makeCampaign();
+    expect((await h.api("GET", `/api/campaigns/${id}`)).json.plainText).toBe(false);
+    await testSend(id);
+    expect(decode(google.mailbox[0]!.raw).html).toContain("<p>");
+    expect((await h.api("PATCH", `/api/campaigns/${id}`, { plainText: true })).json.plainText).toBe(true);
+    expect((await h.api("POST", `/api/campaigns/${id}/duplicate`)).json.plainText).toBe(true);
+    expect((await h.api("PATCH", `/api/campaigns/${id}`, { plainText: "yes" })).status).toBe(400);
+  });
+
+  it("can be sent to just some of the allowlisted addresses, whatever their letter case, and no one else", async () => {
+    await connectGmail(h, SENDER);
+    await add("a@acme.test");
+    await add("b@acme.test");
+    await add("c@acme.test");
+    const id = await makeCampaign();
+    const r = await testSend(id, h, { to: ["C@Acme.test", "a@acme.test", "a@acme.test"] });
+    expect(r.status).toBe(200);
+    expect(r.json.sent).toEqual(["a@acme.test", "c@acme.test"]);
+    expect(google.mailbox.map((m) => header(m.raw, "To"))).toEqual(["a@acme.test", "c@acme.test"]);
+    google.mailbox.length = 0;
+    expect((await testSend(id)).status).toBe(200); // no body: the whole allowlist, as before
+    expect(google.mailbox.map((m) => header(m.raw, "To"))).toEqual(["a@acme.test", "b@acme.test", "c@acme.test"]);
   });
 
   it("uses the list as it is now: an added address receives it, a removed one does not", async () => {
@@ -536,7 +590,7 @@ describe("compliance rules apply to a test send exactly as they will to a real o
       expect((await h.as("boss@brandnew.test").api("GET", "/api/me")).json.tenant).toMatchObject({ requireUnsubscribeLink: true, oneClickUnsubscribe: true });
     });
 
-    it("adds the standard footer to every email when ON, to a body that has no link of its own, and so never refuses a campaign", async () => {
+    it.runIf(EMAIL_FOOTER_ENABLED)("adds the standard footer to every email when ON, to a body that has no link of its own, and so never refuses a campaign", async () => {
       await settings({ requireUnsubscribeLink: true });
       const { r, sent } = await sendOne({ htmlBody: "<p>No link here</p>" });
       expect(r.status).toBe(200);
@@ -544,7 +598,7 @@ describe("compliance rules apply to a test send exactly as they will to a real o
       expect(sent!.html).toContain(">Unsubscribe</a><br/>\nSabertooth Software Labs\n</p>");
     });
 
-    it("is exactly the footer given, with the company name last, and nothing left unfilled", async () => {
+    it.runIf(EMAIL_FOOTER_ENABLED)("is exactly the footer given, with the company name last, and nothing left unfilled", async () => {
       await settings({ requireUnsubscribeLink: true });
       const { sent } = await sendOne({ htmlBody: "<p>Body</p>" });
       const footer = sent!.html.slice(sent!.html.indexOf("<hr/>"));
@@ -557,7 +611,7 @@ Sabertooth Software Labs
       expect(sent!.html).not.toContain("{{");
     });
 
-    it("shows the SENDING company's name, not the recipient's: it follows a rename, and is escaped", async () => {
+    it.runIf(EMAIL_FOOTER_ENABLED)("shows the SENDING company's name, not the recipient's: it follows a rename, and is escaped", async () => {
       await settings({ requireUnsubscribeLink: true, name: "Acme & <Sons>" });
       const { sent } = await sendOne({ htmlBody: "<p>Hi {{companyName}}</p>" });
       expect(sent!.html).toContain("<p>Hi Example Co</p>"); // the body's merge field is the contact's company
@@ -565,37 +619,32 @@ Sabertooth Software Labs
       await settings({ name: "Sabertooth Software Labs" });
     });
 
-    it("cannot be edited or removed by the campaign: it is not a field, and a body cannot suppress it", async () => {
+    it.runIf(EMAIL_FOOTER_ENABLED)("cannot be edited or removed by the campaign: it is not a field, and a body cannot suppress it", async () => {
       await settings({ requireUnsubscribeLink: true });
       expect((await h.api("POST", "/api/campaigns", { name: "N", subject: "S", htmlBody: "<p>x</p>", footer: "<p>mine</p>" })).status).toBe(400);
       const { sent } = await sendOne({ htmlBody: "<p>Mine</p><!-- no footer please -->" });
       expect(sent!.html).toContain("Unsubscribe</a>");
     });
 
-    it("is left out, and nothing is refused, when the organization turned the option off", async () => {
+    it.runIf(EMAIL_FOOTER_ENABLED)("cannot be turned off: a stored OFF setting is ignored and the footer is still added", async () => {
       await settings({ requireUnsubscribeLink: false });
       const { r, sent } = await sendOne({ htmlBody: "<p>No link here</p>" });
       expect(r.status).toBe(200);
-      expect(sent!.html).toBe("<p>No link here</p>");
-      expect(sent!.html).not.toContain("Unsubscribe");
+      expect(sent!.html).toContain(">Unsubscribe</a>");
+      await settings({ requireUnsubscribeLink: true });
     });
 
-    it("is each organization's own setting", async () => {
-      await settings({ requireUnsubscribeLink: false });
+    it.runIf(EMAIL_FOOTER_ENABLED)("applies to every organization, whatever its stored setting", async () => {
       const globex = h.as(GLOBEX);
-      await globex.api("PATCH", "/api/tenant", { requireUnsubscribeLink: true });
+      await globex.api("PATCH", "/api/tenant", { requireUnsubscribeLink: false });
       await connectGmail(globex, "sales@globex.test");
       await add("qa@globex.test", globex);
       google.mailbox.length = 0;
       await testSend(await makeCampaign({ htmlBody: "<p>No link</p>" }, globex), globex);
-      const theirs = decode(google.mailbox[0]!.raw);
-      expect(theirs.html).toContain("Unsubscribe</a><br/>\nGlobex Corp\n</p>");
-      await connectGmail(h, SENDER);
-      await add("qa@acme.test");
-      google.mailbox.length = 0;
-      await testSend(await makeCampaign({ htmlBody: "<p>No link</p>" }));
-      expect(decode(google.mailbox[0]!.raw).html).toBe("<p>No link</p>");
+      expect(decode(google.mailbox[0]!.raw).html).toContain(">Unsubscribe</a>");
+      expect(header(google.mailbox[0]!.raw, "List-Unsubscribe-Post") !== undefined).toBe(LIST_UNSUBSCRIBE_HEADERS_ENABLED);
     });
+
   });
 
   describe("the unsubscribe link in the footer", () => {
@@ -609,7 +658,7 @@ Sabertooth Software Labs
       expect(url).toMatch(/^http:\/\/localhost:5173\/unsubscribe\/[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
     });
 
-    it("is a working link: the page's endpoint accepts it, and says it came from a test", async () => {
+    it.runIf(EMAIL_FOOTER_ENABLED)("is a working link: the page's endpoint accepts it, and says it came from a test", async () => {
       await settings({ requireUnsubscribeLink: true });
       const { sent } = await sendOne();
       const r = await h.anonymous.api("GET", `/api/unsubscribe/${tokenOf(linkIn(sent!.html))}`);
@@ -638,7 +687,7 @@ Sabertooth Software Labs
       expect((await h.anonymous.api("GET", `/api/unsubscribe/${tokenOf(urls[1]!)}`)).json.email).toBe("t***@acme.test");
     });
 
-    it("is also where a body's own {{unsubscribeUrl}} points", async () => {
+    it.runIf(EMAIL_FOOTER_ENABLED)("is also where a body's own {{unsubscribeUrl}} points", async () => {
       await settings({ requireUnsubscribeLink: true });
       const { sent } = await sendOne({ htmlBody: '<p><a href="{{unsubscribeUrl}}">stop mailing me</a></p>' });
       const links = [...sent!.html.matchAll(/href="(http:\/\/localhost:5173\/unsubscribe\/[^"]+)"/g)].map((m) => m[1]);
@@ -646,7 +695,7 @@ Sabertooth Software Labs
       expect(links[0]).toBe(links[1]);
     });
 
-    it("is in the plain-text part too, as the full address", async () => {
+    it.runIf(EMAIL_FOOTER_ENABLED)("is in the plain-text part too, as the full address", async () => {
       await settings({ requireUnsubscribeLink: true });
       const { sent } = await sendOne();
       expect(sent!.text).toMatch(/Unsubscribe \(http:\/\/localhost:5173\/unsubscribe\/[A-Za-z0-9_.-]+\)/);
@@ -654,7 +703,16 @@ Sabertooth Software Labs
     });
   });
 
-  describe("one-click List-Unsubscribe headers", () => {
+  describe.runIf(!LIST_UNSUBSCRIBE_HEADERS_ENABLED)("List-Unsubscribe headers are switched off", () => {
+    it("sends a campaign email like a one-to-one email: no List-Unsubscribe and no one-click header, but the footer link stays", async () => {
+      const { raw, sent } = await sendOne();
+      expect(header(raw, "List-Unsubscribe")).toBeUndefined();
+      expect(header(raw, "List-Unsubscribe-Post")).toBeUndefined();
+      if (EMAIL_FOOTER_ENABLED) expect(sent!.html).toContain(">Unsubscribe</a>");
+    });
+  });
+
+  describe.runIf(LIST_UNSUBSCRIBE_HEADERS_ENABLED)("one-click List-Unsubscribe headers", () => {
     it("are added when ON (the default), with the unsubscribe address and the one-click marker", async () => {
       await settings({ oneClickUnsubscribe: true });
       const { raw } = await sendOne();
@@ -674,12 +732,13 @@ Sabertooth Software Labs
       expect(r.json).toMatchObject({ test: true, unsubscribed: false }); // a test email's link changes nothing
     });
 
-    it("are left out when the organization turned them off", async () => {
+    it("cannot be turned off: a stored OFF setting is ignored and both headers are still sent", async () => {
       await settings({ oneClickUnsubscribe: false });
       const { r, raw } = await sendOne();
       expect(r.status).toBe(200);
-      expect(header(raw, "List-Unsubscribe")).toBeUndefined();
-      expect(header(raw, "List-Unsubscribe-Post")).toBeUndefined();
+      expect(header(raw, "List-Unsubscribe")).toBeTruthy();
+      expect(header(raw, "List-Unsubscribe-Post")).toBe("List-Unsubscribe=One-Click");
+      await settings({ oneClickUnsubscribe: true });
     });
 
     it("are on every message of a test to several addresses", async () => {
@@ -693,13 +752,6 @@ Sabertooth Software Labs
       for (const m of google.mailbox) expect(header(m.raw, "List-Unsubscribe-Post")).toBe("List-Unsubscribe=One-Click");
     });
 
-    it("follow the setting as it changes", async () => {
-      await settings({ oneClickUnsubscribe: false });
-      expect(header((await sendOne()).raw, "List-Unsubscribe")).toBeUndefined();
-      await settings({ oneClickUnsubscribe: true });
-      expect(header((await sendOne()).raw, "List-Unsubscribe")).toBeTruthy();
-    });
-
     it("do not depend on the other option", async () => {
       await settings({ requireUnsubscribeLink: false, oneClickUnsubscribe: true });
       expect(header((await sendOne({ htmlBody: "<p>No link</p>" })).raw, "List-Unsubscribe")).toBeTruthy();
@@ -707,7 +759,7 @@ Sabertooth Software Labs
   });
 
   describe("the company's postal address in the footer", () => {
-    it("is added to the end of every email, after the body and the signature, in the HTML and the plain text", async () => {
+    it.runIf(EMAIL_FOOTER_ENABLED)("is added to the end of every email, after the body and the signature, in the HTML and the plain text", async () => {
       await settings({ postalAddress: "Acme Inc.\n100 Main Street\nSpringfield" });
       const { sent } = await sendOne({ htmlBody: "<p>Hello</p>", signature: "Cheers" });
       expect(sent!.html).toContain('<p style="font-size:12px;color:#666666">Acme Inc.<br/>100 Main Street<br/>Springfield</p>');
@@ -718,7 +770,7 @@ Sabertooth Software Labs
       expect(text.trimEnd().endsWith("Acme Inc.\n100 Main Street\nSpringfield")).toBe(true);
     });
 
-    it("is the address saved in Company Details: change it and the next email shows the new one", async () => {
+    it.runIf(EMAIL_FOOTER_ENABLED)("is the address saved in Company Details: change it and the next email shows the new one", async () => {
       await settings({ postalAddress: "Old Address 1" });
       expect((await sendOne()).sent!.html).toContain("Old Address 1");
       await settings({ postalAddress: "New Address 2" });
@@ -729,17 +781,18 @@ Sabertooth Software Labs
 
     it("adds nothing when there is no address", async () => {
       const { sent } = await sendOne({ htmlBody: "<p>Hello</p>" });
-      expect(sent!.html).toBe("<p>Hello</p>");
+      expect(bareHtml(sent!.html)).toBe("<p>Hello</p>");
+      expect(sent!.html).not.toContain("Acme Inc.");
     });
 
-    it("is escaped, so markup in it cannot become HTML", async () => {
+    it.runIf(EMAIL_FOOTER_ENABLED)("is escaped, so markup in it cannot become HTML", async () => {
       await settings({ postalAddress: "<script>alert(1)</script> & Co" });
       const { sent } = await sendOne();
       expect(sent!.html).toContain("&lt;script&gt;alert(1)&lt;/script&gt; &amp; Co");
       expect(sent!.html).not.toContain("<script>");
     });
 
-    it("is each organization's own", async () => {
+    it.runIf(EMAIL_FOOTER_ENABLED)("is each organization's own", async () => {
       await settings({ postalAddress: "Acme Street" });
       const globex = h.as(GLOBEX);
       await globex.api("PATCH", "/api/tenant", { postalAddress: "Globex Street" });
@@ -763,7 +816,7 @@ describe("the structure of the email: body, signature, standard footer, postal a
     return { r, sent: google.mailbox.length ? decode(google.mailbox[0]!.raw) : null };
   };
 
-  it("sends the body, then the signature, then the standard footer, then the postal address, in that order", async () => {
+  it.runIf(EMAIL_FOOTER_ENABLED)("sends the body, then the signature, then the standard footer, then the postal address, in that order", async () => {
     await h.api("PATCH", "/api/tenant", { requireUnsubscribeLink: true, postalAddress: "Acme Inc.\n1 Road" });
     const { sent } = await sendOne({ htmlBody: "<p>The message</p>", signature: "<p>Best regards,<br/>Rico</p>" });
     const at = (needle: string) => sent!.html.indexOf(needle);
@@ -776,7 +829,7 @@ describe("the structure of the email: body, signature, standard footer, postal a
     expect(sent!.html.trimEnd().endsWith("Acme Inc.<br/>1 Road</p>")).toBe(true);
   });
 
-  it("has the same order in the plain-text part", async () => {
+  it.runIf(EMAIL_FOOTER_ENABLED)("has the same order in the plain-text part", async () => {
     await h.api("PATCH", "/api/tenant", { requireUnsubscribeLink: true, postalAddress: "Acme Inc.\n1 Road" });
     const { sent } = await sendOne({ htmlBody: "<p>The message</p>", signature: "Cheers" });
     const text = sent!.text.replace(/\r\n/g, "\n");
@@ -786,10 +839,185 @@ describe("the structure of the email: body, signature, standard footer, postal a
     expect(at("You're receiving this email")).toBeLessThan(at("Acme Inc."));
   });
 
-  it("adds no footer of its own beyond these: the body is just what the user wrote", async () => {
+  it.runIf(EMAIL_FOOTER_ENABLED)("adds no footer of its own beyond these: the body is just what the user wrote", async () => {
     await h.api("PATCH", "/api/tenant", { requireUnsubscribeLink: true, postalAddress: "" });
     const { sent } = await sendOne({ htmlBody: "<p>The message</p>", signature: "" });
     expect(sent!.html.startsWith("<p>The message</p>\n<hr/>")).toBe(true);
     expect((sent!.html.match(/<hr\/>/g) ?? []).length).toBe(1);
+  });
+});
+
+describe("the sender name on the From line", () => {
+  const setName = (senderName: unknown, who: Caller = h) => who.api("PATCH", "/api/sender", { senderName });
+
+  it("is empty at first, and then a test email is sent under the sending user's name", async () => {
+    await connectGmail(h, SENDER);
+    await add("qa@acme.test");
+    expect((await h.api("GET", "/api/sender")).json.sender.senderName).toBe("");
+    await testSend(await makeCampaign());
+    expect(header(google.mailbox[0]!.raw, "From")).toBe(`"Rico Prinsipe" <${SENDER}>`);
+  });
+
+  it("can be set by an Administrator, and then every email is sent under it", async () => {
+    await connectGmail(h, SENDER);
+    await add("qa@acme.test");
+    const r = await setName("  Marketing   Admin ");
+    expect(r.status).toBe(200);
+    expect(r.json.sender.senderName).toBe("Marketing Admin");
+    expect((await h.api("GET", "/api/sender")).json.sender.senderName).toBe("Marketing Admin");
+    await testSend(await makeCampaign());
+    expect(header(google.mailbox[0]!.raw, "From")).toBe(`"Marketing Admin" <${SENDER}>`);
+    // and it can be cleared again
+    expect((await setName("")).json.sender.senderName).toBe("");
+  });
+
+  it("refuses markup and control characters, an over-long name, and anything else in the body", async () => {
+    await connectGmail(h, SENDER);
+    for (const bad of ['Evil <x@y.test>', 'Say "hi"', "Line\nBreak", "x".repeat(101), 5, null]) expect((await setName(bad)).status, JSON.stringify(bad)).toBe(400);
+    expect((await h.api("PATCH", "/api/sender", { senderName: "Ok", extra: 1 })).status).toBe(400);
+  });
+
+  it("is for Administrators, needs a connected account, and is each organization's own", async () => {
+    expect((await h.api("DELETE", "/api/sender")).status).toBeLessThan(300);
+    expect((await setName("Name")).status).toBe(409);
+    await connectGmail(h, SENDER);
+    for (const level of ["campaign-manager", "viewer"]) expect((await setName("Name", await member(level))).status).toBe(403);
+    expect((await h.anonymous.api("PATCH", "/api/sender", { senderName: "Name" })).status).toBe(401);
+    await setName("Acme Sales");
+    await connectGmail(h.as(GLOBEX), "sales@globex.test");
+    expect((await h.as(GLOBEX).api("GET", "/api/sender")).json.sender.senderName).toBe("");
+    await setName(""); // leave it as it was for the tests that follow
+  });
+});
+
+describe("the Gmail classification diagnostic (temporary)", () => {
+  const on = () => h.withEnv({ ENABLE_EMAIL_DIAGNOSTICS: "true", DEV_ACTOR_EMAIL: h.adminEmail });
+  const diag = (body: unknown, who: Caller = on()) => who.api("POST", "/api/sender/diagnostic", body);
+  const headerNames = (raw: string) => raw.split("\r\n\r\n")[0]!.split("\r\n").map((l) => l.split(":")[0]!.toLowerCase());
+
+  it("does not exist unless ENABLE_EMAIL_DIAGNOSTICS is true", async () => {
+    await connectGmail(h, SENDER);
+    await add("qa@acme.test");
+    // Set explicitly: a developer's own .dev.vars may turn it on, and the tests must not depend on that.
+    expect((await h.withEnv({ ENABLE_EMAIL_DIAGNOSTICS: "", DEV_ACTOR_EMAIL: h.adminEmail }).api("POST", "/api/sender/diagnostic", { to: "qa@acme.test" })).status).toBe(404);
+    expect((await h.withEnv({ ENABLE_EMAIL_DIAGNOSTICS: "false", DEV_ACTOR_EMAIL: h.adminEmail }).api("POST", "/api/sender/diagnostic", { to: "qa@acme.test" })).status).toBe(404);
+    expect(google.mailbox).toHaveLength(0);
+  });
+
+  it("sends the fixed message as plain text only, with no campaign or bulk-mail headers", async () => {
+    await connectGmail(h, SENDER);
+    await add("qa@acme.test");
+    const r = await diag({ to: "QA@acme.test" });
+    expect(r.status).toBe(200);
+    expect(r.json).toMatchObject({ sent: true, to: "qa@acme.test" });
+    expect(google.mailbox).toHaveLength(1);
+    const raw = google.mailbox[0]!.raw;
+    // Only what a person's own email has.
+    expect(headerNames(raw)).toEqual(["from", "to", "subject", "date", "message-id", "mime-version", "content-type", "content-transfer-encoding"]);
+    for (const absent of ["list-unsubscribe", "list-unsubscribe-post", "precedence", "x-mailer", "x-campaign-id", "reply-to", "return-path"]) {
+      expect(header(raw, absent), absent).toBeUndefined();
+    }
+    expect(header(raw, "Content-Type")).toBe('text/plain; charset="UTF-8"');
+    expect(header(raw, "Subject")).toBe("Quick question");
+    expect(header(raw, "To")).toBe("qa@acme.test");
+    expect(raw).not.toContain("text/html");
+    expect(raw).not.toContain("multipart");
+    const body = Buffer.from(raw.split("\r\n\r\n").slice(1).join("").replace(/\s+/g, ""), "base64").toString("utf8").replace(/\r\n/g, "\n");
+    expect(body).toBe("Hi John,\n\nJust checking if you received my previous message.\n\nThanks!");
+    expect(body).not.toMatch(/unsubscribe|<img|http/i);
+  });
+
+  it("returns the message as submitted, so its headers can be checked, and never any credentials", async () => {
+    await connectGmail(h, SENDER);
+    await add("qa@acme.test");
+    const r = await diag({ to: "qa@acme.test" });
+    const names = r.json.message.headers.map((x: { name: string }) => x.name);
+    expect(names).toEqual(["From", "To", "Subject", "Date", "Message-ID", "MIME-Version", "Content-Type", "Content-Transfer-Encoding"]);
+    expect(r.json.message.parts).toEqual([{ contentType: 'text/plain; charset="UTF-8"', text: "Hi John,\n\nJust checking if you received my previous message.\n\nThanks!" }]);
+    const dump = JSON.stringify(r.json).toLowerCase();
+    for (const secret of ["access_token", "refresh_token", "bearer", "authorization"]) expect(dump).not.toContain(secret);
+  });
+
+  it('"web-like" sends the same words as text plus HTML, still with no campaign or bulk-mail headers', async () => {
+    await connectGmail(h, SENDER);
+    await add("qa@acme.test");
+    const r = await diag({ to: "qa@acme.test", variant: "web-like" });
+    expect(r.status).toBe(200);
+    const raw = google.mailbox[0]!.raw;
+    expect(header(raw, "Content-Type")).toMatch(/^multipart\/alternative;/);
+    for (const absent of ["list-unsubscribe", "list-unsubscribe-post", "precedence", "x-mailer", "x-campaign-id", "reply-to"]) expect(header(raw, absent), absent).toBeUndefined();
+    const sent = decode(raw);
+    expect(sent.text).toBe("Hi John,\n\nJust checking if you received my previous message.\n\nThanks!");
+    expect(sent.html).toBe('<div dir="ltr">Hi John,<div><br></div><div>Just checking if you received my previous message.</div><div><br></div><div>Thanks!</div></div>');
+    expect(sent.html).not.toMatch(/unsubscribe|<img|href/i);
+    expect((await diag({ to: "qa@acme.test", variant: "other" })).status).toBe(400);
+  });
+
+  it("can send under a chosen display name, or none, instead of the signed-in user's", async () => {
+    await connectGmail(h, SENDER);
+    await add("qa@acme.test");
+    expect((await diag({ to: "qa@acme.test", fromName: "Marketing Admin" })).status).toBe(200);
+    expect(header(google.mailbox[0]!.raw, "From")).toBe(`"Marketing Admin" <${SENDER}>`);
+    google.mailbox.length = 0;
+    expect((await diag({ to: "qa@acme.test", fromName: "" })).status).toBe(200);
+    expect(header(google.mailbox[0]!.raw, "From")).toBe(SENDER);
+    google.mailbox.length = 0;
+    await diag({ to: "qa@acme.test" });
+    expect(header(google.mailbox[0]!.raw, "From")).toBe(`"Rico Prinsipe" <${SENDER}>`); // default: the signed-in user
+  });
+
+  it("with dryRun builds and returns the message but sends nothing", async () => {
+    await connectGmail(h, SENDER);
+    await add("qa@acme.test");
+    const r = await diag({ to: "qa@acme.test", dryRun: true });
+    expect(r.status).toBe(200);
+    expect(r.json.sent).toBe(false);
+    expect(r.json.message.headers.length).toBeGreaterThan(5);
+    expect(google.mailbox).toHaveLength(0);
+  });
+
+  it("only mails an address on the test-send allowlist, and is for Administrators", async () => {
+    await connectGmail(h, SENDER);
+    await add("qa@acme.test");
+    const r = await diag({ to: "stranger@x.test" });
+    expect(r.status).toBe(400);
+    expect(r.json.error.code).toBe("NOT_ON_ALLOWLIST");
+    expect((await diag({ to: "qa@acme.test", extra: 1 })).status).toBe(400);
+    expect((await h.anonymous.api("POST", "/api/sender/diagnostic", { to: "qa@acme.test" })).status).toBe(401);
+    expect(google.mailbox).toHaveLength(0);
+  });
+
+  it("needs a connected Gmail account", async () => {
+    expect((await h.api("DELETE", "/api/sender")).status).toBeLessThan(300);
+    await add("qa@acme.test");
+    const r = await diag({ to: "qa@acme.test" });
+    expect(r.status).toBe(409);
+    expect(google.mailbox).toHaveLength(0);
+  });
+});
+
+describe.runIf(!EMAIL_FOOTER_ENABLED)("the email footer is switched off", () => {
+  it("ends the email with the message and the signature: no rule, no Unsubscribe link, no company name line, no postal address, in the HTML or the text", async () => {
+    await connectGmail(h, SENDER);
+    await add("qa@acme.test");
+    await h.api("PATCH", "/api/tenant", { postalAddress: "Acme Inc.\n1 Road" });
+    const id = await makeCampaign({ htmlBody: "<p>The message</p>", signature: "<p>Best regards,<br/>Rico</p>" });
+    expect((await testSend(id)).status).toBe(200);
+    const sent = decode(google.mailbox[0]!.raw);
+    expect(sent.html.trimEnd().endsWith("Best regards,<br/>Rico</p>")).toBe(true);
+    for (const gone of ["<hr", "Unsubscribe", "You're receiving this email", "Acme Inc.", "1 Road"]) {
+      expect(sent.html, gone).not.toContain(gone);
+      expect(sent.text, gone).not.toContain(gone);
+    }
+  });
+
+  it.runIf(LIST_UNSUBSCRIBE_HEADERS_ENABLED)("still sends the List-Unsubscribe and one-click headers, which are separate from the footer", async () => {
+    await connectGmail(h, SENDER);
+    await add("qa@acme.test");
+    google.mailbox.length = 0;
+    await testSend(await makeCampaign());
+    const raw = google.mailbox[0]!.raw;
+    expect(header(raw, "List-Unsubscribe")).toMatch(/^<http:\/\/localhost:5173\/api\/unsubscribe\/[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+>$/);
+    expect(header(raw, "List-Unsubscribe-Post")).toBe("List-Unsubscribe=One-Click");
   });
 });

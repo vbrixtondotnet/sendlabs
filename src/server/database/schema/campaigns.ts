@@ -56,6 +56,12 @@ export const campaigns = sqliteTable(
      */
     recipientIndustries: text("recipient_industries", { mode: "json" }).$type<string[]>().notNull().default(sql`'[]'`),
 
+    /**
+     * Send as plain text only (no HTML part), which reads like a personal email and is less likely to land in Gmail's
+     * Promotions tab. The text is made from the same message, so links stay (as "text (url)") but formatting is lost.
+     */
+    plainText: integer("plain_text", { mode: "boolean" }).notNull().default(false),
+
     /* --- daily drip schedule --- */
     dailyLimit: integer("daily_limit").notNull().default(500),
     /** "HH:MM" in `timezone`. */

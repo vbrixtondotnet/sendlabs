@@ -15,6 +15,8 @@ export interface OutgoingEmail {
   /** Shown to the recipient instead of the bare address, e.g. "Sendrix". Optional. */
   fromName?: string;
   to: string;
+  /** Where replies go, when that is not the sender. Adds `Reply-To`; left out otherwise. A plain address, validated. */
+  replyTo?: string;
   subject: string;
   text: string;
   html?: string;
@@ -95,6 +97,7 @@ export function buildMime(msg: OutgoingEmail): string {
     `Message-ID: <${crypto.randomUUID()}@${domain}>`,
     "MIME-Version: 1.0",
   ];
+  if (msg.replyTo) headers.push(`Reply-To: ${addressOf(msg.replyTo, "Reply-To")}`);
   if (msg.listUnsubscribe) {
     const url = msg.listUnsubscribe.url.trim();
     if (!/^https?:\/\/[^\s<>",;\\\u0000-\u001f\u007f]+$/i.test(url)) throw new Error("Invalid List-Unsubscribe address");
@@ -126,3 +129,51 @@ export function toBase64Url(raw: string): string {
 
 export const escapeHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+
+/** What a built message holds, in a form a person can read: its headers, and each body part decoded. For diagnostics only. */
+export interface MimeInspection {
+  headers: { name: string; value: string }[];
+  parts: { contentType: string; text: string }[];
+}
+
+const decodeB64Text = (b64: string): string => {
+  try {
+    const bin = atob(b64.replace(/\s+/g, ""));
+    return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0))).replace(/\r\n/g, "\n"); // shown with plain line breaks
+  } catch {
+    return "(could not decode)";
+  }
+};
+
+const parseHeaders = (block: string) =>
+  block
+    .replace(/\r\n[ \t]+/g, " ") // unfold continuation lines
+    .split("\r\n")
+    .filter(Boolean)
+    .map((line) => {
+      const i = line.indexOf(":");
+      return { name: line.slice(0, i), value: line.slice(i + 1).trim() };
+    });
+
+/**
+ * Reads a message made by `buildMime` back into headers and decoded parts, so what is about to be submitted can be
+ * checked by eye. It holds only the message itself: the access token travels in the HTTP request, never in the message.
+ */
+export function inspectMime(raw: string): MimeInspection {
+  const split = raw.indexOf(CRLF + CRLF);
+  const headers = parseHeaders(split < 0 ? raw : raw.slice(0, split));
+  const body = split < 0 ? "" : raw.slice(split + 4);
+  const type = headers.find((h) => h.name.toLowerCase() === "content-type")?.value ?? "";
+  const boundary = /boundary="([^"]+)"/.exec(type)?.[1];
+  if (!boundary) return { headers, parts: [{ contentType: type, text: decodeB64Text(body) }] };
+  const parts = body
+    .split(`--${boundary}`)
+    .map((p) => p.trim())
+    .filter((p) => p && p !== "--")
+    .map((p) => {
+      const at = p.indexOf(CRLF + CRLF);
+      const h = parseHeaders(p.slice(0, at));
+      return { contentType: h.find((x) => x.name.toLowerCase() === "content-type")?.value ?? "", text: decodeB64Text(p.slice(at + 4)) };
+    });
+  return { headers, parts };
+}

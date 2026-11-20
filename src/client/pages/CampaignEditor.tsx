@@ -11,11 +11,11 @@ import { ColumnMapper, CsvDropzone, CsvFileBar, ValidationSummary } from "@/comp
 import { useCsvFile } from "@/hooks/useCsvFile";
 import { useRole } from "@/hooks/useRole";
 import { useToast } from "@/hooks/useToast";
-import { composeEmailHtml, defaultSignatureHtml, isBlankHtml, MERGE_FIELDS, renderTemplate, UNSUBSCRIBE_TAG, unknownTags } from "@/lib/merge";
+import { EMAIL_FOOTER_ENABLED, escapeHtml, footerFor, textFromHtml, composeEmailHtml, defaultSignatureHtml, isBlankHtml, MERGE_FIELDS, renderTemplate, UNSUBSCRIBE_TAG, unknownTags } from "@/lib/merge";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { TemplatePicker } from "@/components/TemplatePicker";
 import { ApiClientError } from "@/services/http";
-import { useCampaign, useCreateCampaign, useUpdateCampaign } from "@/services/campaigns";
+import { useCampaign, useCreateCampaign, useUpdateCampaign, useLaunchCampaign } from "@/services/campaigns";
 import { useContacts, useIndustryCounts } from "@/services/contacts";
 import { useMe } from "@/services/me";
 import { useSender } from "@/services/sender";
@@ -25,6 +25,16 @@ import { useCreateImport, useImports } from "@/services/imports";
 const TIMEZONES = ["America/Los_Angeles", "America/Denver", "America/Chicago", "America/New_York", "UTC"];
 // "import" is not a tab: it is the state after a CSV was imported here (or an older draft that used an import).
 type Source = "contacts" | "industries" | "import" | "upload";
+
+/** What a refused launch means, in words a person can act on. The server's own message is used for anything else. */
+function launchMessage(e: ApiClientError): string {
+  if (e.code === "POSTAL_ADDRESS_REQUIRED") return "Add your company's postal address in Settings (Company Details) first. It goes in the footer of every email.";
+  if (e.code === "NO_RECIPIENTS") return e.message;
+  if (e.code === "SENDER_REQUIRED") return "Connect a Gmail account in Settings first.";
+  if (e.code === "SENDER_RECONNECT") return "Google no longer accepts your Gmail connection. Reconnect it in Settings, then launch.";
+  if (e.fieldErrors.length > 0) return e.fieldErrors.map((f) => f.message).join(". ");
+  return e.message;
+}
 
 export function CampaignEditor() {
   const { id } = useParams();
@@ -72,6 +82,10 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
   const testRecipients = useTestRecipients();
   const sendTest = useSendTest();
   const testAddresses = (testRecipients.data?.items ?? []).map((r) => r.email);
+  // Every allowlisted address is ticked to start with, and one added later is ticked too: only what is unticked is remembered.
+  const [unticked, setUnticked] = useState<string[]>([]);
+  const testTo = testAddresses.filter((a) => !unticked.includes(a));
+  const toggleTest = (a: string) => setUnticked((u) => (u.includes(a) ? u.filter((x) => x !== a) : [...u, a]));
 
   const [name, setName] = useState(initial?.name ?? "");
   const [subject, setSubject] = useState(initial?.subject ?? "");
@@ -93,6 +107,7 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
     initial?.recipientImportId ? "import" : (initial?.recipientIndustries.length ?? 0) > 0 ? "industries" : "contacts",
   );
   const [industries, setIndustries] = useState<string[]>(initial?.recipientIndustries ?? []);
+  const [plainText, setPlainText] = useState(initial?.plainText ?? false);
   const [importId, setImportId] = useState(initial?.recipientImportId ?? "");
   const [daily, setDaily] = useState(initial?.dailyLimit ?? 500);
   const [from, setFrom] = useState(initial?.sendWindowStart ?? "09:00");
@@ -103,6 +118,8 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
   const [draftId, setDraftId] = useState<string | null>(initial?.id ?? null);
   const [testProblem, setTestProblem] = useState<string | null>(null);
   const [launchOpen, setLaunchOpen] = useState(false);
+  const [launchProblem, setLaunchProblem] = useState<string | null>(null);
+  const launch = useLaunchCampaign();
   const [ack1, setAck1] = useState(false);
   const [ack2, setAck2] = useState(false);
 
@@ -155,12 +172,12 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
   else if (audienceTotal < 1) problems.push("There are no recipients");
 
   // A test needs what the server needs to save a draft, a connected sender, and someone to send it to.
-  const canTest = !!name.trim() && !!subject.trim() && !isBlankHtml(html) && senderStatus.data?.sender?.status === "Connected" && testAddresses.length > 0;
+  const canTest = !!name.trim() && !!subject.trim() && !isBlankHtml(html) && senderStatus.data?.sender?.status === "Connected" && testTo.length > 0;
 
   /** Creates the draft, or updates it. Returns the saved campaign, or null if the server rejected it. */
   async function save(): Promise<CampaignDto | null> {
     const fields = {
-      name, subject, htmlBody: html, textBody: null, signature,
+      name, subject, htmlBody: html, textBody: null, signature, plainText,
       dailyLimit: daily, sendWindowStart: from, sendWindowEnd: to, timezone: tz,
       // null = every contact. The choice is saved with the draft and resolved into recipients at launch.
       recipientImportId: source === "import" && importId ? importId : null,
@@ -196,7 +213,7 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
     const saved = await save();
     if (!saved) return; // the save error is shown above
     try {
-      const result = await sendTest.mutateAsync(saved.id);
+      const result = await sendTest.mutateAsync({ campaignId: saved.id, to: testTo });
       toast(`Test sent to ${result.sent.join(", ")}`);
     } catch (e) {
       setTestProblem(e instanceof ApiClientError ? e.message : "Something went wrong. Please try again.");
@@ -210,16 +227,30 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
     nav("/campaigns");
   }
 
+  /** Saves the draft exactly as it is on screen, then launches it. A refusal (no postal address, nobody to send to...) is shown in the dialog. */
   async function onConfirmLaunch() {
+    setLaunchProblem(null);
     const saved = await save();
-    if (!saved) return;
-    setLaunchOpen(false);
-    toast("Saved as a draft. Launching is not connected to the backend yet.", "info");
-    nav(`/campaigns/${saved.id}`);
+    if (!saved) {
+      setLaunchOpen(false); // the save error is shown above the page
+      return;
+    }
+    try {
+      const result = await launch.mutateAsync(saved.id);
+      setLaunchOpen(false);
+      toast(`Launched. ${fmt(result.recipients)} recipients${result.excluded ? ` (${fmt(result.excluded)} left out: unsubscribed or withdrawn)` : ""}. Emails go out a few at a time during the daily window.`);
+      nav(`/campaigns/${saved.id}`);
+    } catch (e) {
+      setLaunchProblem(e instanceof ApiClientError ? launchMessage(e) : "Something went wrong. Please try again.");
+    }
   }
 
   const fieldError = (path: string) => fieldErrors.find((f) => f.path === path)?.message;
-  const previewDoc = `<!doctype html><html><body style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#222;padding:16px">${composeEmailHtml({ body: html, signature, companyName: me.data?.tenant.name ?? "", postalAddress: me.data?.tenant.postalAddress ?? "", unsubscribeFooter: me.data?.tenant.requireUnsubscribeLink ?? true }, sample)}</body></html>`;
+  const composedHtml = composeEmailHtml({ body: html, signature, ...footerFor({ name: me.data?.tenant.name ?? "", postalAddress: me.data?.tenant.postalAddress ?? "" }) }, sample);
+  // A plain-text campaign is sent as text only, so that is what the preview shows: the same message with the formatting gone.
+  const previewDoc = plainText
+    ? `<!doctype html><html><body style="margin:0;padding:16px;background:#fff"><pre style="font-family:Consolas,monospace;font-size:13px;line-height:1.5;color:#222;white-space:pre-wrap;margin:0">${escapeHtml(textFromHtml(composedHtml))}</pre></body></html>`
+    : `<!doctype html><html><body style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#222;padding:16px">${composedHtml}</body></html>`;
 
   return (
     <>
@@ -230,7 +261,7 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
           <>
             <Link to="/campaigns"><Button>Cancel</Button></Link>
             <Button disabled={saving} onClick={onSaveDraft}>{saving ? "Saving…" : "Save draft"}</Button>
-            <Button variant="primary" disabled={problems.length > 0 || saving} onClick={() => { setAck1(false); setAck2(false); setLaunchOpen(true); }}>Review and launch</Button>
+            <Button variant="primary" disabled={problems.length > 0 || saving} onClick={() => { setAck1(false); setAck2(false); setLaunchProblem(null); setLaunchOpen(true); }}>Review and launch</Button>
           </>
         }
       />
@@ -403,6 +434,13 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
                   />
                   {fieldError("signature") && <p className="mt-1 text-xs text-rose-600">{fieldError("signature")}</p>}
                 </div>
+                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 p-3 text-sm dark:border-slate-800">
+                  <input type="checkbox" checked={plainText} onChange={(e) => setPlainText(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-slate-300" />
+                  <span>
+                    <span className="font-medium">Send as plain text</span>
+                    <span className="mt-0.5 block text-xs text-slate-500">Sends the message with no formatting (no bold, lists or colours), which reads like a personal email and is less likely to land in Gmail's Promotions tab. Links stay, shown as text followed by the address. The unsubscribe link is still included.</span>
+                  </span>
+                </label>
               </div>
             ) : (
               <div className="space-y-3 p-5">
@@ -416,7 +454,7 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
                   <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 border-b border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-800/50">
                     <dt className="text-slate-500">From</dt><dd>{senderEmail ? (me.data?.user.displayName.trim() ? `${me.data.user.displayName.trim()} <${senderEmail}>` : senderEmail) : <span className="text-slate-400">(no sender connected)</span>}</dd>
                     <dt className="text-slate-500">To</dt><dd>{sample.email ?? ""}</dd>
-                    <dt className="text-slate-500">Subject</dt><dd className="font-medium">{renderTemplate(subject || "(no subject)", sample, false)}</dd>
+                    <dt className="text-slate-500">Subject</dt><dd className="font-medium">{renderTemplate(subject || "(no subject)", sample, false, undefined, me.data?.tenant.name ?? "")}</dd>
                   </dl>
                   <iframe title="Rendered email preview" sandbox="" srcDoc={previewDoc} className="h-80 w-full rounded-b-lg bg-white" />
                 </div>
@@ -461,12 +499,32 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
                 ) : testAddresses.length === 0 ? (
                   <p className="mt-1 text-sm text-slate-500">No test addresses yet. {isAdmin ? <Link to="/settings" className="font-medium text-brand-600 hover:underline">Add one in Settings</Link> : "Ask an Administrator to add one in Settings."}</p>
                 ) : (
-                  <ul className="mt-1 space-y-0.5 text-sm text-slate-600 dark:text-slate-300">{testAddresses.map((a) => <li key={a} className="truncate">{a}</li>)}</ul>
+                  <fieldset className="mt-1">
+                    <legend className="sr-only">Send the test to</legend>
+                    <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
+                      <span>{testTo.length} of {testAddresses.length} selected</span>
+                      <span className="flex gap-3">
+                        <button type="button" className="font-medium text-brand-600 hover:underline disabled:opacity-40" disabled={testTo.length === testAddresses.length} onClick={() => setUnticked([])}>Select all</button>
+                        <button type="button" className="font-medium text-brand-600 hover:underline disabled:opacity-40" disabled={testTo.length === 0} onClick={() => setUnticked(testAddresses)}>Clear</button>
+                      </span>
+                    </div>
+                    <ul className="max-h-44 space-y-0.5 overflow-y-auto text-sm text-slate-600 dark:text-slate-300">
+                      {testAddresses.map((a) => (
+                        <li key={a}>
+                          <label className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 hover:bg-slate-50 dark:hover:bg-slate-800">
+                            <input type="checkbox" checked={!unticked.includes(a)} onChange={() => toggleTest(a)} className="h-4 w-4 rounded border-slate-300" />
+                            <span className="truncate">{a}</span>
+                          </label>
+                        </li>
+                      ))}
+                    </ul>
+                    {testTo.length === 0 && <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">Choose at least one address to send the test to.</p>}
+                  </fieldset>
                 )}
-                <p className="mt-2 text-xs text-slate-500">Only the addresses on the test-send allowlist are ever mailed. Your changes are saved as a draft first, and merge fields are filled in with sample data.</p>
+                <p className="mt-2 text-xs text-slate-500">Choose which of the allowlisted addresses get the test. Only addresses on the test-send allowlist are ever mailed. Your changes are saved as a draft first, and merge fields are filled in with sample data.</p>
               </div>
               {testProblem && <p role="alert" className="text-xs text-rose-600">{testProblem}</p>}
-              <Button className="w-full" disabled={!canTest || sendTest.isPending || saving} onClick={() => void onSendTest()}>{sendTest.isPending ? "Sending…" : "Send test email"}</Button>
+              <Button className="w-full" disabled={!canTest || sendTest.isPending || saving} onClick={() => void onSendTest()}>{sendTest.isPending ? "Sending…" : testTo.length > 1 ? `Send test email (${testTo.length})` : "Send test email"}</Button>
             </div>
           </Card>
         </div>
@@ -479,11 +537,12 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
         footer={
           <>
             <Button onClick={() => setLaunchOpen(false)}>Go back</Button>
-            <Button variant="primary" disabled={!(ack1 && ack2) || saving} onClick={onConfirmLaunch}>{saving ? "Saving…" : "Save draft (launch not connected)"}</Button>
+            <Button variant="primary" disabled={!(ack1 && ack2) || saving || launch.isPending} onClick={() => void onConfirmLaunch()}>{saving || launch.isPending ? "Launching…" : "Launch Campaign Now"}</Button>
           </>
         }
       >
-        <Notice tone="info">Launching is not connected to the backend yet. Confirming saves this campaign as a draft.</Notice>
+        <Notice tone="info">Launching saves this campaign and starts it immediately, whatever the time of day. Nothing is sent all at once: today’s emails go out a few at a time, up to the daily limit. From tomorrow, sending follows the daily send window until the list is done.</Notice>
+        {launchProblem && <div className="mt-3"><Notice tone="error" title="Could not launch">{launchProblem}</Notice></div>}
         <dl className="mt-4 space-y-2 text-sm">
           {[
             ["Campaign", name],
@@ -498,7 +557,7 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
         <div className="mt-4"><Notice tone="warn">Check Google's current Workspace sending limits. Gmail accepting a message does not guarantee inbox delivery. Content and schedule lock once launched.</Notice></div>
         <div className="mt-4 space-y-2 text-sm">
           <label className="flex gap-2"><input type="checkbox" checked={ack1} onChange={(e) => setAck1(e.target.checked)} className="mt-0.5" />I have previewed the email and sent a test.</label>
-          <label className="flex gap-2"><input type="checkbox" checked={ack2} onChange={(e) => setAck2(e.target.checked)} className="mt-0.5" />The unsubscribe link and sender postal address are present, and I have the right to email these contacts.</label>
+          <label className="flex gap-2"><input type="checkbox" checked={ack2} onChange={(e) => setAck2(e.target.checked)} className="mt-0.5" />{EMAIL_FOOTER_ENABLED ? "The unsubscribe link and sender postal address are present, and I have the right to email these contacts." : "I have the right to email these contacts."}</label>
         </div>
       </Modal>
     </>

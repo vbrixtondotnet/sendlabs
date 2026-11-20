@@ -34,6 +34,14 @@ export interface ContactDto extends ContactFields {
 
 export type RecipientTotals = Record<RecipientStatus, number>;
 
+/** What launching a campaign did: the campaign (now Sending), how many people will be emailed, and how many were left out. */
+export interface LaunchResultDto {
+  campaign: CampaignDto;
+  recipients: number;
+  /** In the audience but not emailed: on the suppression list, or having withdrawn consent. */
+  excluded: number;
+}
+
 export interface CampaignDto {
   id: string;
   name: string;
@@ -44,6 +52,8 @@ export interface CampaignDto {
   signature: string;
   status: CampaignStatus;
   senderAccountId: string | null;
+  /** Sent as plain text only (no HTML part, no formatting). */
+  plainText: boolean;
   /** null = every contact, otherwise the people in that import. */
   recipientImportId: string | null;
   /** When not empty: everyone whose industry is one of these. Never combined with an import. */
@@ -157,11 +167,34 @@ export interface SenderDto {
   /** The address campaigns are sent from: the one Google reported when the account was connected. */
   email: string;
   status: SenderStatus;
+  /** The name recipients see on the From line. Empty when none was set (the sending user's name is used). */
+  senderName: string;
   /** What the tenant allowed, in plain words (e.g. "Send email"). */
   permissions: string[];
   /** Email of the user who connected it. */
   connectedBy: string;
   connectedAt: string;
+}
+
+/** One one-to-one email that was sent. */
+export interface PersonalEmailDto {
+  id: string;
+  to: string;
+  subject: string;
+  body: string;
+  /** Email of the user who sent it. */
+  sentBy: string;
+  createdAt: string;
+}
+
+/** The recent one-to-one emails, and how much of today's allowance is used. */
+export interface PersonalEmailsDto {
+  items: PersonalEmailDto[];
+  /** Sent in the last 24 hours. */
+  sentToday: number;
+  dailyLimit: number;
+  /** Which service sends these: "gmail" (needs a connected account) or "postmark" (set up on the server). */
+  provider: string;
 }
 
 /** A template in My Templates. The body is left out (it is large): fetch one template to get it. */

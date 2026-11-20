@@ -211,3 +211,20 @@ describe("composeEmailHtml: body, then signature, then the standard footer, then
     expect(composeEmailHtml(parts({ postalAddress: "{{firstName}} Road" }), SAMPLE_CONTACT, LINK)).toContain("{{firstName}} Road");
   });
 });
+
+describe("{{senderCompany}}", () => {
+  it("becomes the sending organization's name, not the recipient's company", () => {
+    const out = renderTemplate("At {{senderCompany}} we help {{companyName}}", { companyName: "Example Co" }, true, undefined, "Acme & Sons");
+    expect(out).toBe("At Acme &amp; Sons we help Example Co");
+  });
+
+  it("falls back to 'our company' when the sender has no name, and is a known tag", () => {
+    expect(renderTemplate("At {{senderCompany}}", {}, false)).toBe("At our company");
+    expect(unknownTags("{{senderCompany}}")).toEqual([]);
+  });
+
+  it("is filled in through composeEmailHtml from the company name", () => {
+    const html = composeEmailHtml({ body: "<p>At {{senderCompany}}</p>", signature: "", companyName: "Acme", postalAddress: "", unsubscribeFooter: false }, {});
+    expect(html).toBe("<p>At Acme</p>");
+  });
+});

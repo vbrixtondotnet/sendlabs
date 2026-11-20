@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { AppEnv } from "../app";
 import { sessionsRepo } from "../database/repositories/sessions";
 import { sha256Base64Url } from "../lib/crypto";
+import { authEnabled } from "../lib/auth-enabled";
 import { ApiError } from "../lib/errors";
 import { parseJson } from "../lib/http";
 import { clearSessionCookie, readSessionCookie, setSessionCookie } from "../lib/session";
@@ -13,10 +14,10 @@ export const authRoutes = new Hono<AppEnv>();
 
 /**
  * Email and password in, session cookie out. Fails closed outside the local environment, like every other protected
- * route, until deployment is deliberately enabled.
+ * route, until that deployment is deliberately enabled with AUTH_ENABLED="true".
  */
 authRoutes.post("/login", async (c) => {
-  if (c.env.ENVIRONMENT !== "local") throw new ApiError(503, "AUTH_NOT_CONFIGURED", "Authentication is not configured for this environment");
+  if (!authEnabled(c.env)) throw new ApiError(503, "AUTH_NOT_CONFIGURED", "Authentication is not configured for this environment");
   const body = await parseJson(c, loginSchema);
   c.header("Cache-Control", "no-store");
   try {

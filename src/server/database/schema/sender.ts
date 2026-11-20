@@ -33,6 +33,13 @@ export const senderAccounts = sqliteTable(
     /** Space-separated scopes Google granted. Checked for the permission to send before anything is stored. */
     scopes: text("scopes").notNull(),
 
+    /**
+     * The name recipients see on the From line ("Marketing Admin <sales@acme.com>"). Gmail on the web uses the mailbox's own
+     * name, and mail that carries a different name has been filed under Spam, so an Administrator sets it to match.
+     * Empty means none was set: the sending user's name is used instead.
+     */
+    senderName: text("sender_name").notNull().default(""),
+
     /** The user who connected it. The composite key guarantees they belong to the same tenant. */
     connectedBy: text("connected_by").notNull(),
     connectedAt: integer("connected_at").notNull(),

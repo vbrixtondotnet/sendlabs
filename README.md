@@ -79,7 +79,10 @@ Everything below is scoped to the caller's tenant. All list endpoints take `page
 | `DELETE /api/campaigns/:id` | Delete a Draft only. Archive anything else |
 | `POST /api/campaigns/:id/duplicate` | New Draft with the same content and schedule, no recipients |
 | `POST /api/campaigns/:id/archive` · `/unarchive` | Hide or restore. Refused while Queuing, Queued or Sending |
-| `POST /api/campaigns/:id/pause` · `/resume` · `/cancel` | State changes through the state machine (`409 INVALID_TRANSITION` if illegal). Cancel also cancels unsent recipients atomically. Already-accepted mail cannot be recalled |
+| `POST /api/campaigns/:id/launch` | Launches a Draft (Administrator, Campaign Manager). Checks the subject and message, no unknown merge field, the company postal address, a working sender, and someone to send to (suppressed and withdrawn contacts are left out and counted), then freezes one `Pending` recipient per person in send order, locks the content, and makes the campaign `Sending`. **Sends nothing itself.** Answers `{ campaign, recipients, excluded }`, or `409` (`CAMPAIGN_NOT_DRAFT`, `POSTAL_ADDRESS_REQUIRED`, `NO_RECIPIENTS`, `SENDER_REQUIRED`, `SENDER_RECONNECT`) or `400` for a bad merge field |
+| `POST /api/campaigns/:id/retry-failed` | Puts the recipients that `Failed` back to `Pending` (attempts reset); a `CompletedWithErrors` campaign starts `Sending` again. `409 NOTHING_TO_RETRY` when none failed |
+| `POST /api/campaigns/run-tick` | **Local development only** (`404` anywhere else; Administrator): runs one pass of the sender now, because `vite` does not run the Cron Trigger. `{ "now": <ms> }` pretends it is another time, to try the send window |
+| `POST /api/campaigns/:id/pause` · `/resume` · `/cancel` | State changes through the state machine (**Resume** also restarts a campaign that `Failed` because its sender connection was rejected, once it is reconnected) (`409 INVALID_TRANSITION` if illegal). Cancel also cancels unsent recipients atomically. Already-accepted mail cannot be recalled |
 | `GET /api/campaigns/:id/recipients` | Recipients in send order. Filters: `status`, `q` |
 
 #### CSV import behaviour
@@ -168,8 +171,8 @@ These are `PATCH /api/me` and `POST /api/me/password`; they only ever act on the
 
 Each organization has two options, **both ticked for every organization by default** (new ones and existing ones: `tenants.require_unsubscribe_link` and `tenants.one_click_unsubscribe`, default 1). An Administrator changes them under Settings > Email Service > Unsubscribe and compliance (`PATCH /api/tenant`, `requireUnsubscribeLink` and `oneClickUnsubscribe`, true or false; both are also in `/api/me`). The email-building code applies them, and the editor's preview uses the same code:
 
-- **Require an unsubscribe link in every campaign:** when ON, every email automatically ends with the **standard unsubscribe footer** (below), so no campaign can go out without a working unsubscribe link and nothing has to be checked or refused. The footer cannot be edited or removed. Turn the option off and the footer is not added (the organization then takes responsibility for its own link).
-- **Add one-click List-Unsubscribe headers:** every email carries `List-Unsubscribe: <address>` and `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058), so mail apps can show their own Unsubscribe button. The address is the recipient's own one-click endpoint (`POST /api/unsubscribe/:token`, see "Unsubscribing" below). `buildMime` refuses anything that is not a plain http(s) address. Turn the option off and neither header is added.
+- **Unsubscribe link in every campaign (always on, not a setting any more):** every email automatically ends with the **standard unsubscribe footer** (below), so no campaign can go out without a working unsubscribe link and nothing has to be checked or refused. The footer cannot be edited or removed. Turn the option off and the footer is not added (the organization then takes responsibility for its own link).
+- **One-click List-Unsubscribe headers (always on, not a setting any more; Gmail and Yahoo require them from bulk senders):** every email carries `List-Unsubscribe: <address>` and `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058), so mail apps can show their own Unsubscribe button. The address is the recipient's own one-click endpoint (`POST /api/unsubscribe/:token`, see "Unsubscribing" below). `buildMime` refuses anything that is not a plain http(s) address. Turn the option off and neither header is added.
 - **Postal address in every footer:** the company's postal address from Company Details is added as the last thing in every email (HTML and plain text), after the body, the signature and the standard footer. It replaces the placeholder address the starting body used to carry. With no address nothing is added, and the editor will not let a campaign launch until the company has one (an Administrator is told where to add it; others are told to ask one).
 
 Test sends already go through all three, so they are what a real send will be. The bulk sender, when built, must build each message with `composeEmailHtml`, a signed token per recipient and `buildMime` the same way (see "Unsubscribing").
@@ -180,7 +183,7 @@ A campaign's **Message** section has two parts you write, and an email is always
 
 1. **Email body**: just the message (the starting body is only the greeting and the pitch). Written in a rich-text editor (see below).
 2. **Email signature**: written in a rich-text editor too, and added automatically right after the body (see below).
-3. **The standard footer**: added automatically after the signature. It is the same for every email, **not editable**, and not a campaign field at all (an earlier editable Footer field was removed, and `campaigns.footer` dropped):
+3. **The standard footer** (on: `EMAIL_FOOTER_ENABLED = true` in `src/shared/merge.ts`. Setting it to `false` leaves out the footer, the postal address and the launch check for an address, and skips the tests that cover them. The `List-Unsubscribe` headers are separate and always sent): added automatically after the signature. It is the same for every email, **not editable**, and not a campaign field at all (an earlier editable Footer field was removed, and `campaigns.footer` dropped):
 
    ```html
    <hr/>
@@ -211,7 +214,7 @@ Every email's unsubscribe link, and every `List-Unsubscribe` header, carries a *
 - **Every bad link gets the same answer:** unknown, tampered, wrong key, junk, too long, a deleted company: `404 UNSUBSCRIBE_INVALID` ("This unsubscribe link is not valid"), so nothing can be learned by guessing.
 - **Test emails:** each recipient of a test gets their own link too, but it is a **test token**: it opens the real page, which says "This is a test email" and offers nothing to press; the endpoint changes nothing, so the allowlist address is never suppressed.
 - **Settings > Email Service > Suppression list** now shows the real list.
-- **Still to do:** the bulk sender must check the suppression list when it selects recipients and again just before each send (D-07), and must mint a live (non-test) token per recipient with `createUnsubscribeToken` and `unsubscribeLinks`. Until launch is built nothing sends to real recipients, so nothing can yet be sent to a suppressed address.
+- **Done at launch and at send:** the sender leaves suppressed and withdrawn contacts out when it freezes the recipient list, checks the suppression list again just before each send (someone who unsubscribed after launch is `Skipped`, reason `Suppressed`), and mints a live (non-test) token for each recipient with `createUnsubscribeToken`, so every email has that person's own link and `List-Unsubscribe` headers.
 
 #### Email Templates (built)
 
@@ -341,7 +344,7 @@ The seed script imports `public/sample-contacts.csv` through the real import end
 | Imports (CSV): upload, map, review, confirm, history, rejected-rows download | **Live**. The browser previews, the server imports and answers with the real counts |
 | Campaign recipients (all contacts, a saved import, or upload a CSV there) | **Live and saved with the draft**. A CSV chosen in the editor is validated and mapped there, then imported with the **Import N contacts and use them** button. The recipient list itself is built at launch, which is not built yet |
 | Settings > Email Service > Test-send allowlist, and the editor's **Send test email** | **Live**. See "Test sends" below |
-| Launch, retry failed | Not built. The launch dialog saves a draft and says so |
+| Launch, retry failed, resume | **Live.** The launch dialog saves the draft and launches it; the details page shows the pace, **Retry N failed**, and what to do when sending stopped. See *Sending a launched campaign* |
 | Header: tenant name and signed-in user | **Live** (`/api/me`) |
 | Settings > Email Service: Connect Gmail, reconnect, disconnect | **Live**, once the Google credentials are supplied. Until then it says it is not set up. Not yet tried against real Google |
 | Campaign editor sender | **Live**: shows the tenant's connected address and blocks launching without one |
@@ -575,6 +578,7 @@ The columns of `template.csv`, in order, and where each is used:
 The supported merge fields are exactly: `{{firstName}}`, `{{lastName}}`, `{{title}}`, `{{companyName}}`, `{{industry}}`, `{{city}}`, `{{state}}`, `{{country}}`, `{{website}}`, plus `{{unsubscribeUrl}}`. Values are HTML-escaped. Unknown tags block launch. The CSV carries no consent column, so imported contacts start with consent "Unknown" (see D-26).
 
 ### 7.2 Email and Gmail
+- **Swappable provider.** Sending code (the test send now, the campaign sender later) talks only to the `EmailProvider` interface in `src/server/services/email-provider.ts`: it builds a provider-neutral `OutgoingEmail` and calls `channel.send`. Everything Gmail-specific (OAuth tokens, the MIME message, Gmail error codes) lives in `src/server/services/providers/gmail.ts`. `EMAIL_PROVIDER` (default `gmail`) picks the provider in `src/server/services/email-providers.ts`. **To move to SendGrid or Mailgun:** write one adapter that implements `EmailProvider` (map `OutgoingEmail` to the vendor API, and its errors to `EmailSendError`), add one `case` for it, set `EMAIL_PROVIDER`. Routes, composing code and the UI do not change. Every feature that sends (a campaign's test send, **One-to-one email**, the diagnostic) takes its provider from the one helper `emailProviderForRequest`, so they always use the same one: Gmail through Google OAuth by default. A `postmark` adapter also exists (`EMAIL_PROVIDER=postmark`, with `POSTMARK_SERVER_TOKEN` and `POSTMARK_FROM`); it is not in use. The per-tenant "connect Gmail" screens are Gmail's own; a vendor that uses one API key would add its own settings.
 - **Auth: each tenant connects its own Google account through OAuth** (see **Connecting Gmail**; this replaces the earlier service-account plan, D-05). Sending will use the stored refresh token to mint a short-lived access token, then call `messages.send` as that account. The token is decrypted only at that moment and only for the tenant being sent for.
 - If Google rejects the token (revoked, expired in Testing mode, password changed), the account is marked `NeedsReconnect`, the campaign pauses, and an Administrator is told to reconnect.
 - Domain-wide delegation is not an option here: it only works inside one Workspace organization, and every tenant is a different one.
@@ -599,6 +603,20 @@ The supported merge fields are exactly: `{{firstName}}`, `{{lastName}}`, `{{titl
 - Logs carry metadata only (campaign ID, recipient-job ID, attempt number, correlation ID). Never log bodies, tokens or unnecessary personal data.
 - Track consent and source per contact. Honor suppression **at selection time and again immediately before send**.
 - Define retention and deletion for uploaded CSV files, contacts, campaign content and logs. Check anti-spam and privacy laws for sender and recipient jurisdictions (CAN-SPAM, GDPR, CASL and so on). This is a legal review item, not only an engineering one.
+
+### Sending a launched campaign (how it is built)
+
+Launch and the sender are built **without Cloudflare Queues**: launch freezes the recipients, and a **Cron Trigger every minute** (`wrangler.jsonc`, `triggers.crons`) calls `runCampaignTick` (`src/server/services/campaign-sender.ts`). Each pass serves up to 5 `Sending` campaigns, and for each one:
+
+1. Does nothing outside the campaign's daily send window (in its timezone) or once today's `daily_limit` is used (counted from recipients accepted since local midnight).
+2. Spreads the rest of today's allowance over the minutes left in the window (`remaining / minutes left`, at most 8 per pass), so mail goes out steadily instead of in one burst. A missed pass is never made up in a burst.
+3. Claims recipients one conditional statement at a time (`Pending -> Queued -> Processing` with a 2-minute lease, in send order), so two overlapping passes can never send the same person twice. A send that died mid-way returns to the pool when its lease expires.
+4. Checks the suppression list again, builds that person's own email (`buildCampaignEmail`, the same function a test send uses), sends it through the provider (Gmail by default), and records `Accepted`, `Failed` or `Skipped`. "Accepted" means the provider took it, not that it reached an inbox.
+5. Handles trouble gently: a rate limit backs the campaign off for 15 minutes; a temporary failure is retried (3 attempts, then `Failed`); a rejected sender connection stops the campaign as `Failed` without writing anyone off (reconnect, then **Resume**); an address that cannot be used is `Skipped` (`InvalidEmail`).
+6. Marks the campaign `Completed`, or `CompletedWithErrors` when some `Failed`, once nobody is left to send.
+
+Run locally: `npm run dev:api` plus `npm run dev` as before, then either `wrangler dev --test-scheduled` and open `http://localhost:8787/__scheduled`, or press the pass by hand with `POST /api/campaigns/run-tick` (local only). Not promised: exactly-once delivery. If a provider accepts a message and the Worker dies before recording it, the retry could send it twice.
+
 
 ### 7.5 Daily drip sending (one import, about 8K+ contacts, max 500 per day)
 
@@ -897,6 +915,22 @@ npx wrangler secret put GOOGLE_CLIENT_SECRET --env staging
 npx wrangler secret put TOKEN_ENCRYPTION_KEY --env staging
 npx wrangler secret put UNSUBSCRIBE_SIGNING_KEY --env staging
 ```
+
+### 13.5b Production at https://sendrix.app (deployed)
+
+The production Worker is `sendrix-production`, served at **https://sendrix.app** (a Cloudflare custom domain), with the D1 database `sendrix-db-production` (APAC) and the sender running every minute (Cron). It serves the built app and `/api` from one address. Redeploy with:
+
+```
+npm run build                                   # typechecks, then builds the app into dist/
+npx wrangler d1 migrations apply sendrix-db-production --remote --env production   # only when there are new migrations
+npx wrangler deploy --env production
+```
+
+- **Sign-in is opened on purpose** by `AUTH_ENABLED="true"` in the production vars (`wrangler.jsonc`). Without it a deployment answers 503 to every protected route. The `DEV_ACTOR_EMAIL` shortcut never works outside local development.
+- **Secrets** (set once, never in the repo): `npx wrangler secret put GOOGLE_CLIENT_ID --env production`, the same for `GOOGLE_CLIENT_SECRET`, and `TOKEN_ENCRYPTION_KEY` (generate with `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`). Changing the encryption key later makes every stored Gmail connection unreadable: reconnect them.
+- **Google:** add `https://sendrix.app/api/sender/gmail/callback` as an authorized redirect URI on the OAuth client, and publish the consent screen out of "Testing" so refresh tokens do not expire after about 7 days.
+- **First user:** the database starts empty. Create the first organization and Administrator with `scripts/provision-production.ts` (see its header), then run the SQL it writes with `wrangler d1 execute sendrix-db-production --remote --env production --file <file>`.
+- **Unsubscribe links** use `APP_BASE_URL` (https://sendrix.app) unless `UNSUBSCRIBE_BASE_URL` is set.
 
 ### 13.6 Migrations, staging and production
 

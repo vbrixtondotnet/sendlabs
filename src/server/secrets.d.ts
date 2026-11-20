@@ -14,6 +14,32 @@ interface Env {
   /** SECRET. 32 random bytes, base64. Encrypts the stored Gmail refresh tokens. Generate: `openssl rand -base64 32`. */
   TOKEN_ENCRYPTION_KEY?: string;
   /**
+   * Turns on the temporary Gmail classification test (`POST /api/sender/diagnostic`): "true" to enable. Off (404) when
+   * unset, so a deployed app cannot be made to send test mail by mistake.
+   */
+  ENABLE_EMAIL_DIAGNOSTICS?: string;
+  /**
+   * The public HTTPS address the unsubscribe links in campaign emails point at, e.g. https://sabertoothsoftwarelabs.net. Used
+   * for those links only: APP_BASE_URL still drives sign-in and the same-site check, so the app can keep running on localhost.
+   * Unset or invalid, the links use APP_BASE_URL. Whatever it is, /unsubscribe/* and /api/unsubscribe/* must reach this app.
+   */
+  UNSUBSCRIBE_BASE_URL?: string;
+  /**
+   * "true" opens sign-in and the protected API for a deployment outside local development. Anything else (or nothing) keeps it
+   * closed. Set in wrangler.jsonc vars for an environment that should be usable; see src/server/lib/auth-enabled.ts.
+   */
+  AUTH_ENABLED?: string;
+  /** SECRET. Postmark Server API token (used when the provider is "postmark"). Put it in `.dev.vars`, never in the code. */
+  POSTMARK_SERVER_TOKEN?: string;
+  /** The From address for Postmark. It must be a confirmed Sender Signature, or on a verified domain, in Postmark. */
+  POSTMARK_FROM?: string;
+  /** Optional display name on Postmark's From line. */
+  POSTMARK_FROM_NAME?: string;
+  /** Optional Postmark message stream. Default "outbound" (transactional). */
+  POSTMARK_MESSAGE_STREAM?: string;
+  /** Which service delivers email: "gmail" (the default). See services/email-providers.ts for how to add another. */
+  EMAIL_PROVIDER?: string;
+  /**
    * Local development shortcut only: when set (in `.dev.vars`), a request with no session runs as this user, so the API
    * can be tried without signing in. Unset by default, so locally you sign in through the login page. Ignored outside
    * the local environment.

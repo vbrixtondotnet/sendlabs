@@ -1,4 +1,4 @@
-import { count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 import type { Page, SuppressionDto } from "../../../shared/api";
 import { iso, offsetOf, pageOf } from "../../lib/http";
 import type { Database } from "../client";
@@ -8,6 +8,12 @@ import { suppressions } from "../schema";
 export function suppressionsRepo(db: Database, tenantId: string) {
   const mine = eq(suppressions.tenantId, tenantId);
   return {
+    /** Whether this address (already normalized) asked not to be emailed, or was added to the list. */
+    async has(normalizedEmail: string): Promise<boolean> {
+      const [row] = await db.select({ id: suppressions.id }).from(suppressions).where(and(mine, eq(suppressions.normalizedEmail, normalizedEmail))).limit(1);
+      return !!row;
+    },
+
     /** Newest first. */
     async list(page: number, pageSize: number): Promise<Page<SuppressionDto>> {
       const [rows, totals] = await Promise.all([

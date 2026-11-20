@@ -8,7 +8,7 @@
 
 <p>These are common challenges among growing digital marketing agencies, and they're exactly where we can help.</p>
 
-<p>At <strong>Sabertooth Software Labs</strong>, we help digital marketing agencies modernize their operations through custom-built software, business process automation, system integrations, and AI-driven solutions.</p>
+<p>At <strong>{{senderCompany}}</strong>, we help digital marketing agencies modernize their operations through custom-built software, business process automation, system integrations, and AI-driven solutions.</p>
 
 <p>We develop solutions designed around how your agency actually operates, helping you:</p>
 
@@ -32,7 +32,7 @@
 
 <p>We understand that your agency cannot simply pause client campaigns and ongoing projects while transitioning to new technology. That's why we take a gradual, well-planned modernization approach that allows your team to continue serving clients while your internal systems and workflows evolve.</p>
 
-<p><strong>Why Work With Sabertooth Software Labs?</strong></p>
+<p><strong>Why Work With {{senderCompany}}?</strong></p>
 
 <p><strong>1. You Own Your Source Code. No Vendor Lock-in.</strong></p>
 

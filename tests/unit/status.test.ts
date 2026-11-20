@@ -51,8 +51,8 @@ describe("campaign state machine", () => {
     }
   });
 
-  it("resume is only possible from Paused, pause never from Paused", () => {
-    expect(CAMPAIGN_ACTIONS.resume.from).toEqual(["Paused"]);
+  it("resume is possible from Paused, and from Failed once its cause (a broken sender connection) is fixed; pause never from Paused", () => {
+    expect(CAMPAIGN_ACTIONS.resume.from).toEqual(["Paused", "Failed"]);
     expect(CAMPAIGN_ACTIONS.pause.from).not.toContain("Paused");
   });
 

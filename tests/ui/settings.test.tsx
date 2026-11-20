@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { EMAIL_FOOTER_ENABLED, LIST_UNSUBSCRIBE_HEADERS_ENABLED } from "../../src/shared/merge";
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { Settings } from "../../src/client/pages/Settings";
@@ -354,6 +355,45 @@ describe("Company Details tab", () => {
     type("Name", "Other");
     fireEvent.click(save());
     expect(await screen.findByText("Something went wrong on our side")).toBeTruthy();
+  });
+});
+
+describe("Sender name (Email Service tab)", () => {
+  /** A server that remembers the saved name, like the real one. */
+  const server = (start = ""): Handler => {
+    let name = start;
+    return ({ method, path, body }) => {
+      if (method === "GET" && path === "/api/sender") return { json: senderStatus(senderDto({ senderName: name })) };
+      if (method === "PATCH" && path === "/api/sender") { name = body.senderName; return { json: senderStatus(senderDto({ senderName: name })) }; }
+      if (method === "GET" && path === "/api/me") return { json: meDto() };
+      if (method === "GET" && path === "/api/test-recipients") return { json: { items: [] } };
+      if (method === "GET" && path === "/api/suppressions") return { json: page([]) };
+      return undefined;
+    };
+  };
+  const box = () => screen.findByLabelText("Sender name") as Promise<HTMLInputElement>;
+  const saveBtn = () => within(screen.getByLabelText("Sender name").closest("form")!).getByRole("button", { name: "Save" }) as HTMLButtonElement;
+
+  it("shows the saved name, explains why it should match the mailbox, and has nothing to save until it is changed", async () => {
+    stubApi(server("Marketing Admin"));
+    openEmailService();
+    expect((await box()).value).toBe("Marketing Admin");
+    expect(screen.getByText(/same name this mailbox uses in Gmail/)).toBeTruthy();
+    expect(saveBtn().disabled).toBe(true);
+  });
+
+  it("saves a new name, sending it trimmed, and then has nothing left to save", async () => {
+    const calls = stubApi(server());
+    openEmailService();
+    const input = await box();
+    fireEvent.change(input, { target: { value: "  Marketing Admin " } });
+    expect(saveBtn().disabled).toBe(false);
+    fireEvent.click(saveBtn());
+    expect(await screen.findByText("Sender name saved")).toBeTruthy();
+    expect(calls.filter((c) => c.method === "PATCH")).toHaveLength(1);
+    expect(calls.find((c) => c.method === "PATCH")).toMatchObject({ path: "/api/sender", body: { senderName: "Marketing Admin" } });
+    await waitFor(() => expect(saveBtn().disabled).toBe(true));
+    expect(((await box()) as HTMLInputElement).value).toBe("Marketing Admin");
   });
 });
 
@@ -789,87 +829,76 @@ describe("Unsubscribe and compliance (Email Service tab)", () => {
     const calls = stubApi(handler);
     openEmailService();
     await screen.findByText("Unsubscribe and compliance");
-    await screen.findByLabelText("Require an unsubscribe link in every campaign");
+    await screen.findByLabelText(/Unsubscribe link in every campaign/);
     return calls;
   };
-  const requireBox = () => screen.getByLabelText("Require an unsubscribe link in every campaign") as HTMLInputElement;
-  const oneClickBox = () => screen.getByLabelText("Add one-click List-Unsubscribe headers") as HTMLInputElement;
+  const requireBox = () => screen.getByLabelText(/Unsubscribe link in every campaign/) as HTMLInputElement;
+  const oneClickBox = () => screen.getByLabelText(/One-click unsubscribe \(List-Unsubscribe headers\)/) as HTMLInputElement;
   /** The card itself: the Data retention card has a Save button too. */
   const card = () => screen.getByText("Unsubscribe and compliance").closest(".rounded-xl") as HTMLElement;
-  const save = () => within(card()).getByRole("button", { name: "Save" }) as HTMLButtonElement;
-  const patches = (calls: Call[]) => calls.filter((c) => c.method === "PATCH");
 
-  it("has both options ticked by default", async () => {
-    await open();
+  it.runIf(EMAIL_FOOTER_ENABLED && LIST_UNSUBSCRIBE_HEADERS_ENABLED)("shows both protections as ticked, locked and always on, with no way to turn them off or save", async () => {
+    const calls = await open();
+    for (const box of [requireBox(), oneClickBox()]) {
+      expect(box.checked).toBe(true);
+      expect(box.disabled).toBe(true);
+    }
+    expect(within(card()).getAllByText("Always on")).toHaveLength(2);
+    expect(within(card()).queryByRole("button", { name: "Save" })).toBeNull();
+    expect(calls.filter((c) => c.method === "PATCH")).toHaveLength(0);
+  });
+
+  it.runIf(!EMAIL_FOOTER_ENABLED && LIST_UNSUBSCRIBE_HEADERS_ENABLED)("shows the footer as off for now and the one-click headers as always on, with nothing to save and no postal address note", async () => {
+    const calls = await open();
+    expect(requireBox().checked).toBe(false);
+    expect(requireBox().disabled).toBe(true);
+    expect(oneClickBox().checked).toBe(true);
+    expect(within(card()).getByText("Off for now")).toBeTruthy();
+    expect(within(card()).getAllByText("Always on")).toHaveLength(1);
+    expect(within(card()).getByText(/switched off for now/)).toBeTruthy();
+    expect(within(card()).queryByText(/Company Details/)).toBeNull(); // the note about where the footer address comes from is gone
+    expect(within(card()).queryByRole("button", { name: "Save" })).toBeNull();
+    expect(calls.filter((c) => c.method === "PATCH")).toHaveLength(0);
+  });
+
+  it.runIf(EMAIL_FOOTER_ENABLED && LIST_UNSUBSCRIBE_HEADERS_ENABLED)("shows them as always on even when the stored setting says off", async () => {
+    await open(complianceServer({ tenant: { requireUnsubscribeLink: false, oneClickUnsubscribe: false } }));
     expect(requireBox().checked).toBe(true);
     expect(oneClickBox().checked).toBe(true);
-    expect(save().disabled).toBe(true); // nothing to save yet
   });
 
-  it("shows what is saved when one is off", async () => {
-    await open(complianceServer({ tenant: { requireUnsubscribeLink: false } }));
-    expect(requireBox().checked).toBe(false);
-    expect(oneClickBox().checked).toBe(true);
-  });
-
-  it("saves a change for real, sending only what changed, and then has nothing left to save", async () => {
+  it.runIf(EMAIL_FOOTER_ENABLED && !LIST_UNSUBSCRIBE_HEADERS_ENABLED)("shows the footer link as always on and the one-click headers as off for now, with nothing to save", async () => {
     const calls = await open();
-    fireEvent.click(oneClickBox());
-    expect(save().disabled).toBe(false);
-    fireEvent.click(save());
-    expect(await screen.findByText("Unsubscribe settings updated")).toBeTruthy();
-    expect(patches(calls)).toHaveLength(1);
-    expect(patches(calls)[0]!.path).toBe("/api/tenant");
-    expect(patches(calls)[0]!.body).toEqual({ oneClickUnsubscribe: false });
+    expect(requireBox().checked).toBe(true);
     expect(oneClickBox().checked).toBe(false);
-    expect(requireBox().checked).toBe(true);
-    expect(save().disabled).toBe(true);
+    expect(oneClickBox().disabled).toBe(true);
+    expect(within(card()).getByText("Always on")).toBeTruthy();
+    expect(within(card()).getByText("Off for now")).toBeTruthy();
+    expect(within(card()).getByText(/sent without these headers, like a one-to-one email/)).toBeTruthy();
+    expect(within(card()).queryByRole("button", { name: "Save" })).toBeNull();
+    expect(calls.filter((c) => c.method === "PATCH")).toHaveLength(0);
   });
 
-  it("sends both when both changed, and can turn one back on", async () => {
-    const calls = await open();
-    fireEvent.click(requireBox());
-    fireEvent.click(oneClickBox());
-    fireEvent.click(save());
-    await screen.findByText("Unsubscribe settings updated");
-    expect(patches(calls)[0]!.body).toEqual({ requireUnsubscribeLink: false, oneClickUnsubscribe: false });
-    fireEvent.click(requireBox());
-    fireEvent.click(save());
-    await waitFor(() => expect(patches(calls)).toHaveLength(2));
-    expect(patches(calls)[1]!.body).toEqual({ requireUnsubscribeLink: true });
-  });
-
-  it("ticking and unticking back is not a change", async () => {
+  it.runIf(LIST_UNSUBSCRIBE_HEADERS_ENABLED)("explains that Gmail and Yahoo require one-click unsubscribe, and that it suppresses straight away", async () => {
     await open();
-    fireEvent.click(requireBox());
-    expect(save().disabled).toBe(false);
-    fireEvent.click(requireBox());
-    expect(save().disabled).toBe(true);
+    expect(within(card()).getByText(/Gmail and Yahoo require one-click unsubscribe/)).toBeTruthy();
+    expect(within(card()).getByText(/added to your suppression list straight away/)).toBeTruthy();
   });
 
-  it("shows the server's reason if saving fails, and keeps what was ticked", async () => {
-    await open(complianceServer({ reply: fail(500, "INTERNAL_ERROR", "Something went wrong") }));
-    fireEvent.click(requireBox());
-    fireEvent.click(save());
-    expect(await screen.findByText("Something went wrong")).toBeTruthy();
-    expect(requireBox().checked).toBe(false);
-    expect(screen.queryByText("Unsubscribe settings updated")).toBeNull();
-  });
-
-  it("says where the postal address in the footer comes from, and shows it", async () => {
+  it.runIf(EMAIL_FOOTER_ENABLED)("says where the postal address in the footer comes from, and shows it", async () => {
     await open(complianceServer({ tenant: { postalAddress: "Acme Inc.\n1 Road" } }));
     expect(within(card()).getByText("Company Details")).toBeTruthy();
     expect(within(card()).getByText(/Acme Inc\./).textContent).toBe("Acme Inc.\n1 Road");
     expect(screen.queryByText(/not set yet/)).toBeNull();
   });
 
-  it("says the unsubscribe footer is automatic and cannot be edited", async () => {
+  it.runIf(EMAIL_FOOTER_ENABLED)("says the unsubscribe footer is automatic and cannot be edited", async () => {
     await open();
-    expect(within(card()).getByText(/every email automatically ends with the standard unsubscribe footer/)).toBeTruthy();
+    expect(within(card()).getByText(/Every email automatically ends with the standard unsubscribe footer/)).toBeTruthy();
     expect(within(card()).getByText(/Nobody can edit or remove it/)).toBeTruthy();
   });
 
-  it("warns that campaigns cannot launch while the company has no postal address", async () => {
+  it.runIf(EMAIL_FOOTER_ENABLED)("warns that campaigns cannot launch while the company has no postal address", async () => {
     await open(complianceServer({ tenant: { postalAddress: "" } }));
     expect(screen.getByText(/not set yet, so campaigns cannot be launched/)).toBeTruthy();
   });
@@ -884,7 +913,7 @@ describe("Unsubscribe and compliance (Email Service tab)", () => {
     );
     openEmailService();
     expect(await screen.findByText("boom")).toBeTruthy();
-    expect(screen.queryByLabelText("Require an unsubscribe link in every campaign")).toBeNull();
+    expect(screen.queryByLabelText(/Unsubscribe link in every campaign/)).toBeNull();
   });
 });
 

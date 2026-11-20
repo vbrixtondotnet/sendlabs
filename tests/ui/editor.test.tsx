@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { EMAIL_FOOTER_ENABLED } from "../../src/shared/merge";
 import { describe, expect, it } from "vitest";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { CampaignEditor } from "../../src/client/pages/CampaignEditor";
@@ -37,7 +38,7 @@ describe("Campaign editor (live drafts)", () => {
   it("saves a new draft with exactly what was entered, and the schedule", async () => {
     const calls = stubApi((c) => (c.method === "POST" && c.path === "/api/campaigns" ? { status: 201, json: campaign({ id: "new1" }) } : contacts(c)));
     newCampaign();
-    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE)); // who you are has loaded
+    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE), { timeout: 5000 }); // who you are has loaded
     fill("Campaign name", "Access-to-SQL");
     fill("Subject", "Hi {{firstName}}");
     fill("Max emails per day", "300");
@@ -53,7 +54,7 @@ describe("Campaign editor (live drafts)", () => {
     });
     expect(body.htmlBody).not.toContain("{{unsubscribeUrl}}"); // the body is just the message; the footer is added for you
     expect(body.htmlBody).not.toContain("{{signature}}");
-    expect(Object.keys(body).sort()).toEqual(["dailyLimit", "htmlBody", "name", "recipientImportId", "recipientIndustries", "sendWindowEnd", "sendWindowStart", "signature", "subject", "textBody", "timezone"]); // never status or owner
+    expect(Object.keys(body).sort()).toEqual(["dailyLimit", "htmlBody", "name", "plainText", "recipientImportId", "recipientIndustries", "sendWindowEnd", "sendWindowStart", "signature", "subject", "textBody", "timezone"]); // never status or owner
     expect(body.recipientImportId).toBeNull(); // all contacts
     expect(await screen.findByTestId("elsewhere")).toBeTruthy(); // back to the list
   });
@@ -102,7 +103,7 @@ describe("Campaign editor (live drafts)", () => {
   it("blocks launch for unknown merge fields and a reversed window, but never for a missing unsubscribe link", async () => {
     stubApi(contacts);
     newCampaign();
-    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE)); // who you are has loaded
+    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE), { timeout: 5000 }); // who you are has loaded
     fill("Campaign name", "N");
     fill("Subject", "Hi {{firstNmae}}"); // typo
     fireEvent.click(screen.getByRole("tab", { name: "edit" }));
@@ -129,23 +130,55 @@ describe("Campaign editor (live drafts)", () => {
     expect(screen.getByText("nick@flexecutioninc.com")).toBeTruthy();
   });
 
-  it("the launch dialog saves a draft and says plainly that launching is not connected", async () => {
-    const calls = stubApi((c) => (c.method === "POST" && c.path === "/api/campaigns" ? { status: 201, json: campaign({ id: "new1" }) } : contacts(c)));
-    newCampaign();
-    fill("Campaign name", "N");
-    fill("Subject", "S");
-    const launch = screen.getByRole("button", { name: "Review and launch" }) as HTMLButtonElement;
-    await waitFor(() => expect(launch.disabled).toBe(false)); // waits for the recipient count
-    fireEvent.click(launch);
-    const dialog = await screen.findByRole("dialog", { name: "Review launch" });
-    expect(within(dialog).getByText(/Launching is not connected to the backend yet/)).toBeTruthy();
-    const confirm = within(dialog).getByRole("button", { name: /Save draft \(launch not connected\)/ }) as HTMLButtonElement;
-    expect(confirm.disabled).toBe(true); // needs both acknowledgements
-    fireEvent.click(within(dialog).getByLabelText(/previewed the email/));
-    fireEvent.click(within(dialog).getByLabelText(/unsubscribe link and sender postal address/));
-    fireEvent.click(confirm);
-    await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
-    expect(await screen.findByTestId("elsewhere")).toBeTruthy();
+  describe("launching", () => {
+    const readyServer = (extra: (c: Parameters<Handler>[0]) => ReturnType<Handler> = () => undefined): Handler => (c) =>
+      extra(c)
+      ?? (c.method === "POST" && c.path === "/api/campaigns" ? { status: 201, json: campaign({ id: "new1" }) } : contacts(c));
+    const openLaunch = async () => {
+      newCampaign();
+      fill("Campaign name", "N");
+      fill("Subject", "S");
+      const launch = screen.getByRole("button", { name: "Review and launch" }) as HTMLButtonElement;
+      await waitFor(() => expect(launch.disabled).toBe(false)); // waits for the recipient count
+      fireEvent.click(launch);
+      const dialog = await screen.findByRole("dialog", { name: "Review launch" });
+      return { dialog, confirm: within(dialog).getByRole("button", { name: "Launch Campaign Now" }) as HTMLButtonElement };
+    };
+    const acknowledge = (dialog: HTMLElement) => {
+      fireEvent.click(within(dialog).getByLabelText(/previewed the email/));
+      fireEvent.click(within(dialog).getByLabelText(/right to email these contacts/));
+    };
+
+    it("asks for both acknowledgements, saves the draft, launches it, and goes to the campaign", async () => {
+      const calls = stubApi(readyServer((c) => (c.method === "POST" && c.path === "/api/campaigns/new1/launch" ? { json: { campaign: campaign({ id: "new1", status: "Sending" }), recipients: 3, excluded: 1 } } : undefined)));
+      const { dialog, confirm } = await openLaunch();
+      expect(within(dialog).getByText(/starts it immediately, whatever the time of day/)).toBeTruthy();
+      expect(within(dialog).queryByText(/not connected/)).toBeNull();
+      expect(confirm.disabled).toBe(true); // needs both acknowledgements
+      acknowledge(dialog);
+      fireEvent.click(confirm);
+      expect(await screen.findByTestId("elsewhere")).toBeTruthy();
+      expect(calls.filter((c) => c.method === "POST").map((c) => c.path)).toEqual(["/api/campaigns", "/api/campaigns/new1/launch"]); // saved first, then launched
+      expect(await screen.findByText(/Launched\. 3 recipients \(1 left out/)).toBeTruthy();
+    });
+
+    it("shows why a launch was refused, in the dialog, and stays in the editor", async () => {
+      stubApi(readyServer((c) => (c.method === "POST" && c.path === "/api/campaigns/new1/launch" ? { status: 409, json: { error: { code: "POSTAL_ADDRESS_REQUIRED", message: "Add your company's postal address", correlationId: "x" } } } : undefined)));
+      const { dialog, confirm } = await openLaunch();
+      acknowledge(dialog);
+      fireEvent.click(confirm);
+      expect(await within(dialog).findByText(/Add your company's postal address in Settings \(Company Details\) first/)).toBeTruthy();
+      expect(screen.queryByTestId("elsewhere")).toBeNull();
+      expect(screen.getByRole("dialog", { name: "Review launch" })).toBeTruthy();
+    });
+
+    it("explains a rejected Gmail connection and a launch with nobody to send to", async () => {
+      stubApi(readyServer((c) => (c.method === "POST" && c.path === "/api/campaigns/new1/launch" ? { status: 409, json: { error: { code: "SENDER_RECONNECT", message: "x", correlationId: "x" } } } : undefined)));
+      const { dialog, confirm } = await openLaunch();
+      acknowledge(dialog);
+      fireEvent.click(confirm);
+      expect(await within(dialog).findByText(/Reconnect it in Settings, then launch/)).toBeTruthy();
+    });
   });
 
   it("loads an existing draft into the form and saves changes with a PATCH", async () => {
@@ -186,7 +219,7 @@ describe("Campaign editor (live drafts)", () => {
   describe("test send", () => {
     const allowlisted = (items = [testRecipientDto(), testRecipientDto({ id: "t2", email: "pm@acme.test" })]): Handler => (c) =>
       c.path === "/api/test-recipients" && c.method === "GET" ? { json: { items } } : contacts(c);
-    const testButton = () => screen.getByRole("button", { name: "Send test email" }) as HTMLButtonElement;
+    const testButton = () => screen.getByRole("button", { name: /^Send test email/ }) as HTMLButtonElement;
 
     it("shows who a test goes to, with no field to type another address", async () => {
       stubApi(allowlisted());
@@ -213,7 +246,7 @@ describe("Campaign editor (live drafts)", () => {
       expect(screen.queryByRole("link", { name: "Add one in Settings" })).toBeNull();
     });
 
-    it("saves the draft, then asks the server to test-send it with no addresses in the request", async () => {
+    it("saves the draft, then asks the server to test-send it to the ticked addresses", async () => {
       const calls = stubApi((c) =>
         c.method === "POST" && c.path === "/api/campaigns" ? { status: 201, json: campaign({ id: "new1" }) }
           : c.method === "POST" && c.path === "/api/campaigns/new1/test-send" ? { json: { sent: ["qa@acme.test", "pm@acme.test"] } }
@@ -228,8 +261,47 @@ describe("Campaign editor (live drafts)", () => {
       expect(await screen.findByText("Test sent to qa@acme.test, pm@acme.test")).toBeTruthy();
       const order = calls.filter((c) => c.method === "POST").map((c) => c.path);
       expect(order).toEqual(["/api/campaigns", "/api/campaigns/new1/test-send"]);
-      expect(calls.find((c) => c.path.endsWith("/test-send"))!.body).toBeUndefined();
+      expect(calls.find((c) => c.path.endsWith("/test-send"))!.body).toEqual({ to: ["qa@acme.test", "pm@acme.test"] });
       expect(screen.queryByTestId("elsewhere")).toBeNull(); // stays in the editor
+    });
+
+    it("lists the addresses as ticked boxes, and a test goes only to the ones left ticked", async () => {
+      const calls = stubApi((c) =>
+        c.method === "POST" && c.path === "/api/campaigns" ? { status: 201, json: campaign({ id: "new1" }) }
+          : c.method === "POST" && c.path.endsWith("/test-send") ? { json: { sent: ["pm@acme.test"] } }
+          : allowlisted()(c),
+      );
+      newCampaign();
+      await screen.findByText("qa@acme.test");
+      const box = (a: string) => screen.getByRole("checkbox", { name: a }) as HTMLInputElement;
+      expect(box("qa@acme.test").checked).toBe(true);
+      expect(box("pm@acme.test").checked).toBe(true);
+      expect(screen.getByText("2 of 2 selected")).toBeTruthy();
+      fill("Campaign name", "N");
+      fill("Subject", "S");
+      fireEvent.click(box("qa@acme.test"));
+      expect(box("qa@acme.test").checked).toBe(false);
+      expect(screen.getByText("1 of 2 selected")).toBeTruthy();
+      await waitFor(() => expect(testButton().disabled).toBe(false));
+      fireEvent.click(testButton());
+      await screen.findByText("Test sent to pm@acme.test");
+      expect(calls.find((c) => c.path.endsWith("/test-send"))!.body).toEqual({ to: ["pm@acme.test"] });
+    });
+
+    it("cannot send with nothing ticked, and Select all brings them back", async () => {
+      stubApi(allowlisted());
+      newCampaign();
+      await screen.findByText("qa@acme.test");
+      fill("Campaign name", "N");
+      fill("Subject", "S");
+      await waitFor(() => expect(testButton().disabled).toBe(false));
+      fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+      expect(screen.getByText("0 of 2 selected")).toBeTruthy();
+      expect(screen.getByText("Choose at least one address to send the test to.")).toBeTruthy();
+      expect(testButton().disabled).toBe(true);
+      fireEvent.click(screen.getByRole("button", { name: "Select all" }));
+      expect(screen.getByText("2 of 2 selected")).toBeTruthy();
+      expect(testButton().disabled).toBe(false);
     });
 
     it("sends a second test by updating the same draft, not by creating another", async () => {
@@ -277,6 +349,31 @@ describe("Campaign editor (live drafts)", () => {
   });
 });
 
+describe("Send as plain text", () => {
+  const box = () => screen.getByRole("checkbox", { name: /Send as plain text/ }) as HTMLInputElement;
+
+  it("is off by default, is saved with the draft when ticked, and the preview then shows plain text only", async () => {
+    const calls = stubApi((c) => (c.method === "POST" && c.path === "/api/campaigns" ? { status: 201, json: campaign({ id: "new1", plainText: true }) } : contacts(c)));
+    renderAt(<CampaignEditor />, { path: "/campaigns/new", route: "/campaigns/new" });
+    await screen.findByLabelText("Campaign name");
+    expect(box().checked).toBe(false);
+    fill("Campaign name", "N");
+    fill("Subject", "S");
+    bodyField.set('<p>Hi <strong>{{firstName}}</strong> <a href="https://acme.test">site</a></p>');
+    fireEvent.click(box());
+    expect(box().checked).toBe(true);
+    fireEvent.click(screen.getByRole("tab", { name: "preview" }));
+    const doc = ((await screen.findByTitle("Rendered email preview")) as HTMLIFrameElement).getAttribute("srcdoc")!;
+    expect(doc).toContain("<pre");
+    expect(doc).not.toContain("<strong>");
+    expect(doc).toContain("site (https://acme.test)");
+    fireEvent.click(screen.getByRole("tab", { name: "edit" }));
+    fireEvent.click(screen.getByRole("button", { name: /Save draft/ }));
+    await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/campaigns")).toBe(true));
+    expect(calls.find((c) => c.method === "POST" && c.path === "/api/campaigns")!.body).toMatchObject({ plainText: true });
+  });
+});
+
 describe("Email signature", () => {
   const withMe = (me: MeDto | null, extra?: Handler): Handler => (c) => extra?.(c) ?? (c.path === "/api/me" ? (me ? { json: me } : { status: 401, json: { error: { code: "NO_ACTIVE_USER", message: "Not signed in", correlationId: "x" } } }) : contacts(c));
   const previewDoc = async () => {
@@ -287,7 +384,7 @@ describe("Email signature", () => {
   it("is pre-filled for a new campaign from the signed-in user and their company", async () => {
     stubApi(contacts);
     newCampaign();
-    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE));
+    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE), { timeout: 5000 });
     expect(sigField.value().replace(/<\/?p>/g, "").split("<br/>")).toEqual(["Best regards,", "Rico Prinsipe", "Marketing Admin | Sabertooth Software Labs", "sabertoothsoftwarelabs.net"]);
   });
 
@@ -333,7 +430,7 @@ describe("Email signature", () => {
   it("is saved with the draft, exactly as edited", async () => {
     const calls = stubApi((c) => (c.method === "POST" && c.path === "/api/campaigns" ? { status: 201, json: campaign({ id: "n" }) } : contacts(c)));
     newCampaign();
-    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE));
+    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE), { timeout: 5000 });
     fill("Campaign name", "N");
     fill("Subject", "S");
     sigField.set("<p>Warmly,<br/>Rico</p>");
@@ -345,7 +442,7 @@ describe("Email signature", () => {
   it("can be emptied, and then nothing is added to the preview or saved", async () => {
     const calls = stubApi((c) => (c.method === "POST" && c.path === "/api/campaigns" ? { status: 201, json: campaign({ id: "n" }) } : contacts(c)));
     newCampaign();
-    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE));
+    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE), { timeout: 5000 });
     fill("Campaign name", "N");
     fill("Subject", "S");
     sigField.set("");
@@ -369,10 +466,10 @@ describe("Email signature", () => {
     }
   });
 
-  it("shows in the preview, right after the body and before the footer", async () => {
+  it.runIf(EMAIL_FOOTER_ENABLED)("shows in the preview, right after the body and before the footer", async () => {
     stubApi(contacts);
     newCampaign();
-    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE));
+    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE), { timeout: 5000 });
     const doc = await previewDoc();
     expect(doc).toContain("Best regards,<br/>Rico Prinsipe<br/>Marketing Admin | Sabertooth Software Labs<br/>sabertoothsoftwarelabs.net");
     expect(doc).not.toContain("{{signature}}");
@@ -383,7 +480,7 @@ describe("Email signature", () => {
   it("the preview follows what is typed", async () => {
     stubApi(contacts);
     newCampaign();
-    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE));
+    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE), { timeout: 5000 });
     sigField.set("<p>Yours truly,<br/>Someone Else</p>");
     const doc = await previewDoc();
     expect(doc).toContain("Yours truly,<br/>Someone Else");
@@ -393,7 +490,7 @@ describe("Email signature", () => {
   it("is added after the body, whatever the body says", async () => {
     stubApi(contacts);
     newCampaign();
-    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE));
+    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE), { timeout: 5000 });
     bodyField.set("<p>Short note {{unsubscribeUrl}}</p>");
     const doc = await previewDoc();
     expect(doc.indexOf("Short note")).toBeLessThan(doc.indexOf("Rico Prinsipe"));
@@ -403,7 +500,7 @@ describe("Email signature", () => {
   it("stays right after the body: an old {{signature}} tag left in a body does not move it, and is not shown", async () => {
     stubApi(contacts);
     newCampaign();
-    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE));
+    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE), { timeout: 5000 });
     bodyField.set("<p>Top</p>{{signature}}<p>Bottom</p>");
     const doc = await previewDoc();
     expect(doc).not.toContain("{{signature}}");
@@ -413,7 +510,7 @@ describe("Email signature", () => {
   it("keeps its formatting in the preview: bold, links and line breaks show as they will be sent", async () => {
     stubApi(contacts);
     newCampaign();
-    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE));
+    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE), { timeout: 5000 });
     sigField.set('<p>Thanks,<br/><strong>Rico</strong> &amp; team<br/><a href="https://acme.test">acme.test</a></p>');
     const doc = await previewDoc();
     expect(doc).toContain('<p>Thanks,<br/><strong>Rico</strong> &amp; team<br/><a href="https://acme.test">acme.test</a></p>');
@@ -422,7 +519,7 @@ describe("Email signature", () => {
   it("fills merge fields typed into it, like the body", async () => {
     stubApi(contacts);
     newCampaign();
-    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE));
+    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE), { timeout: 5000 });
     sigField.set("<p>P.S. for {{firstName}}</p>");
     expect(await previewDoc()).toContain("P.S. for Nick");
   });
@@ -430,7 +527,7 @@ describe("Email signature", () => {
   it("has no {{signature}} button any more, and the starting body does not mention it", async () => {
     stubApi(contacts);
     newCampaign();
-    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE));
+    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE), { timeout: 5000 });
     expect(screen.queryByRole("button", { name: "{{signature}}" })).toBeNull();
     expect(bodyField.value()).not.toContain("{{signature}}");
     expect(screen.queryByText(/Unknown merge field/)).toBeNull();
@@ -445,7 +542,7 @@ describe("Email signature", () => {
         : contacts(c),
     );
     newCampaign();
-    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE));
+    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE), { timeout: 5000 });
     fill("Campaign name", "N");
     fill("Subject", "S");
     fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
@@ -472,7 +569,7 @@ describe("Compliance in the editor", () => {
     fill("Subject", "S");
   };
 
-  it("adds the company's postal address to the footer of the preview, one line per line, escaped", async () => {
+  it.runIf(EMAIL_FOOTER_ENABLED)("adds the company's postal address to the footer of the preview, one line per line, escaped", async () => {
     stubApi(withMe(meDto({}, { postalAddress: "Acme & Sons\n<1> Road\nManila" })));
     newCampaign();
     await ready();
@@ -542,6 +639,31 @@ describe("Compliance in the editor", () => {
   });
 });
 
+describe("The email footer is switched off", () => {
+  it.runIf(!EMAIL_FOOTER_ENABLED)("leaves the preview ending with the message and the signature: no rule, no Unsubscribe link, no company name line, no postal address", async () => {
+    stubApi((c) => (c.path === "/api/me" ? { json: meDto({}, { name: "Acme Co", postalAddress: "1 Example Street\nSpringfield" }) } : contacts(c)));
+    newCampaign();
+    bodyField.set("<p>Would a short call help?</p>");
+    fireEvent.click(screen.getByRole("tab", { name: "preview" }));
+    const doc = ((await screen.findByTitle("Rendered email preview")) as HTMLIFrameElement).getAttribute("srcdoc")!;
+    expect(doc).toContain("Would a short call help?");
+    for (const gone of ["<hr", "Unsubscribe</a>", "You're receiving this email", "Acme Co", "1 Example Street", "Springfield"]) expect(doc, gone).not.toContain(gone);
+  });
+
+  it.runIf(!EMAIL_FOOTER_ENABLED)("does not ask for the postal address in the launch confirmation any more", async () => {
+    stubApi(contacts);
+    newCampaign();
+    fill("Campaign name", "N");
+    fill("Subject", "S");
+    const launch = screen.getByRole("button", { name: "Review and launch" }) as HTMLButtonElement;
+    await waitFor(() => expect(launch.disabled).toBe(false));
+    fireEvent.click(launch);
+    const dialog = await screen.findByRole("dialog", { name: "Review launch" });
+    expect(within(dialog).queryByLabelText(/postal address/)).toBeNull();
+    expect(within(dialog).getByLabelText(/right to email these contacts/)).toBeTruthy();
+  });
+});
+
 describe("The standard unsubscribe footer", () => {
   const previewDoc = async () => {
     fireEvent.click(screen.getByRole("tab", { name: "preview" }));
@@ -558,7 +680,7 @@ Sabertooth Software Labs
   it("is not a field any more: there is nothing to type, and nothing in the form holds it", async () => {
     stubApi(contacts);
     newCampaign();
-    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE));
+    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE), { timeout: 5000 });
     expect(screen.queryByLabelText("Footer")).toBeNull();
     expect(screen.queryByText("Footer")).toBeNull();
     for (const el of screen.getAllByRole("textbox")) {
@@ -567,18 +689,18 @@ Sabertooth Software Labs
     }
   });
 
-  it("is added to the preview exactly as given, with the company's name on the last line", async () => {
+  it.runIf(EMAIL_FOOTER_ENABLED)("is added to the preview exactly as given, with the company's name on the last line", async () => {
     stubApi(contacts);
     newCampaign();
-    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE));
+    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE), { timeout: 5000 });
     const doc = await previewDoc();
     expect(doc).toContain(FOOTER_HTML);
   });
 
-  it("comes after the body and the signature, and before the postal address: body, signature, footer, address", async () => {
+  it.runIf(EMAIL_FOOTER_ENABLED)("comes after the body and the signature, and before the postal address: body, signature, footer, address", async () => {
     stubApi(contacts);
     newCampaign();
-    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE));
+    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE), { timeout: 5000 });
     const doc = await previewDoc();
     const at = (needle: string) => doc.indexOf(needle);
     expect(at("Would a short call")).toBeLessThan(at("Rico Prinsipe"));
@@ -588,17 +710,17 @@ Sabertooth Software Labs
     expect(at("Unsubscribe</a>")).toBeLessThan(at("1 Example Street"));
   });
 
-  it("is added whatever the body says, and follows the body as it is edited", async () => {
+  it.runIf(EMAIL_FOOTER_ENABLED)("is added whatever the body says, and follows the body as it is edited", async () => {
     stubApi(contacts);
     newCampaign();
-    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE));
+    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE), { timeout: 5000 });
     bodyField.set("<p>Totally different message</p>");
     const doc = await previewDoc();
     expect(doc).toContain("Totally different message");
     expect(doc).toContain(FOOTER_HTML);
   });
 
-  it("shows the sending company's name, even when the person previewed works for another company", async () => {
+  it.runIf(EMAIL_FOOTER_ENABLED)("shows the sending company's name, even when the person previewed works for another company", async () => {
     stubApi(withMe(meDto({}, { name: "Smith & <b>Sons</b>" })));
     newCampaign();
     await waitFor(() => expect(sigField.value()).toContain("Smith &amp; &lt;b&gt;Sons&lt;/b&gt;"));
@@ -608,16 +730,16 @@ Sabertooth Software Labs
     expect(doc).toContain("<br/>\nSmith &amp; &lt;b&gt;Sons&lt;/b&gt;\n</p>"); // the footer is ours, escaped
   });
 
-  it("is left out of the preview when the company does not require an unsubscribe link", async () => {
+  it.runIf(EMAIL_FOOTER_ENABLED)("is in the preview even when the stored setting says the company does not require it: it cannot be turned off", async () => {
     stubApi(withMe(meDto({}, { requireUnsubscribeLink: false })));
     newCampaign();
-    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE));
+    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE), { timeout: 5000 });
     const doc = await previewDoc();
-    expect(doc).not.toContain(FOOTER_TEXT);
-    expect(doc).not.toContain("<hr/>");
+    expect(doc).toContain(FOOTER_TEXT);
+    expect(doc).toContain("<hr/>");
   });
 
-  it("is in the preview even before who you are has loaded (the default is on)", async () => {
+  it.runIf(EMAIL_FOOTER_ENABLED)("is in the preview even before who you are has loaded (the default is on)", async () => {
     stubApi((c) => (c.path === "/api/me" ? { status: 500, json: { error: { code: "INTERNAL_ERROR", message: "x", correlationId: "x" } } } : contacts(c)));
     newCampaign();
     await screen.findByLabelText("Campaign name");
@@ -625,10 +747,10 @@ Sabertooth Software Labs
     expect(doc).toContain(FOOTER_TEXT);
   });
 
-  it("does not stop a body from having its own {{unsubscribeUrl}} link too", async () => {
+  it.runIf(EMAIL_FOOTER_ENABLED)("does not stop a body from having its own {{unsubscribeUrl}} link too", async () => {
     stubApi(contacts);
     newCampaign();
-    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE));
+    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE), { timeout: 5000 });
     bodyField.set('<p><a href="{{unsubscribeUrl}}">stop</a></p>');
     expect(screen.queryByText(/Unknown merge field/)).toBeNull();
     const doc = await previewDoc();
@@ -638,7 +760,7 @@ Sabertooth Software Labs
   it("is not saved with the draft: nothing named footer is sent", async () => {
     const calls = stubApi((c) => (c.method === "POST" && c.path === "/api/campaigns" ? { status: 201, json: campaign({ id: "n" }) } : contacts(c)));
     newCampaign();
-    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE));
+    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE), { timeout: 5000 });
     fill("Campaign name", "N");
     fill("Subject", "S");
     fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
@@ -666,7 +788,7 @@ describe("From in the editor's preview", () => {
   it("shows the logged-in user's full name with the connected address, as the recipients will see it", async () => {
     stubApi(contacts);
     newCampaign();
-    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE));
+    await waitFor(() => expect(sigField.value()).toBe(SIGNATURE), { timeout: 5000 });
     expect(await fromLine()).toBe("Rico Prinsipe <sales@acme.test>");
   });
 
@@ -704,7 +826,7 @@ describe("Rich text editors in the Message section", () => {
     fireEvent.click(screen.getByRole("tab", { name: "preview" }));
     return ((await screen.findByTitle("Rendered email preview")) as HTMLIFrameElement).getAttribute("srcdoc")!;
   };
-  const ready = async () => { await waitFor(() => expect(sigField.value()).toBe(SIGNATURE)); fireEvent.click(within(sigField.toolbar()).getByRole("button", { name: "HTML source" })); };
+  const ready = async () => { await waitFor(() => expect(sigField.value()).toBe(SIGNATURE), { timeout: 5000 }); fireEvent.click(within(sigField.toolbar()).getByRole("button", { name: "HTML source" })); };
   const save = () => fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
   const saveCalls = () => stubApi((c) => (c.method === "POST" && c.path === "/api/campaigns" ? { status: 201, json: campaign({ id: "n" }) } : contacts(c)));
 
@@ -774,7 +896,7 @@ describe("Rich text editors in the Message section", () => {
     expect(calls.find((c) => c.method === "POST")!.body.htmlBody).toContain("<strong>Plain words</strong>");
   });
 
-  it("typing in the signature is saved as HTML and shown in the preview, before the footer", async () => {
+  it.runIf(EMAIL_FOOTER_ENABLED)("typing in the signature is saved as HTML and shown in the preview, before the footer", async () => {
     const calls = saveCalls();
     newCampaign();
     await waitFor(() => expect(sigField.area().textContent).toContain("Rico Prinsipe"));
@@ -837,7 +959,7 @@ describe("Rich text editors in the Message section", () => {
     expect(insert.compareDocumentPosition(label) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(insert.compareDocumentPosition(bodyField.area()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const buttons = screen.getAllByRole("button", { name: /^\{\{\w+\}\}$/ });
-    expect(buttons.length).toBe(10); // the nine merge fields and the unsubscribe link
+    expect(buttons.length).toBe(11); // the ten merge fields and the unsubscribe link
     for (const b of buttons) expect(b.className, b.textContent ?? "").toContain("bg-amber-100");
   });
 

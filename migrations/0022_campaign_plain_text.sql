@@ -1,0 +1,1 @@
+ALTER TABLE `campaigns` ADD `plain_text` integer DEFAULT false NOT NULL;

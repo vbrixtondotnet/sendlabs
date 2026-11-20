@@ -6,6 +6,7 @@ import { errorResponse, formatIssues } from "./lib/http";
 import { requireActor, type Actor } from "./middleware/auth";
 import { requestContext } from "./middleware/request-context";
 import { campaignRoutes } from "./routes/campaigns";
+import { personalEmailRoutes } from "./routes/personal-emails";
 import { contactRoutes } from "./routes/contacts";
 import { healthRoutes } from "./routes/health";
 import { importRoutes } from "./routes/imports";
@@ -25,7 +26,7 @@ import { ZodError } from "zod";
 
 export type AppEnv = {
   Bindings: Env;
-  Variables: { correlationId: string; actor: Actor; db: Database; google: GoogleOAuth };
+  Variables: { correlationId: string; actor: Actor; db: Database; google: GoogleOAuth; fetch: typeof fetch };
 };
 
 const MAX_JSON_BYTES = 1024 * 1024;
@@ -36,7 +37,7 @@ const MAX_UPLOAD_BYTES = MAX_FILE_BYTES + 256 * 1024;
  * Built by a factory so tests can mount it with their own bindings, and with a stand-in for Google
  * (`google`), so the whole Gmail connection can be tested without talking to the real service.
  */
-export function createApp(options: { google?: GoogleOAuth } = {}) {
+export function createApp(options: { google?: GoogleOAuth; fetch?: typeof fetch } = {}) {
   const app = new Hono<AppEnv>();
   const google = options.google ?? new GoogleOAuth();
 
@@ -70,6 +71,7 @@ export function createApp(options: { google?: GoogleOAuth } = {}) {
   app.use("/api/*", async (c, next) => {
     c.set("db", createDb(c.env.DB));
     c.set("google", google);
+    c.set("fetch", options.fetch ?? ((...a) => fetch(...a)));
     await next();
   });
 
@@ -92,6 +94,7 @@ export function createApp(options: { google?: GoogleOAuth } = {}) {
   api.route("/email-templates", emailTemplateRoutes);
   api.route("/contacts", contactRoutes);
   api.route("/campaigns", campaignRoutes);
+  api.route("/personal-emails", personalEmailRoutes);
   api.route("/imports", importRoutes);
   app.route("/api", api);
 

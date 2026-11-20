@@ -235,6 +235,50 @@ describe("where signing in is allowed", () => {
     expect(r.headers.get("set-cookie")).toBeNull();
   });
 
+  describe("when a deployment is opened with AUTH_ENABLED", () => {
+    const open = (extra: Record<string, string> = {}) => h.withEnv({ ENVIRONMENT: "production", AUTH_ENABLED: "true", APP_BASE_URL: "https://sendrix.app", ...extra });
+
+    it("signs in with email and password, and sets a Secure, HttpOnly session cookie", async () => {
+      const r = await open().api("POST", "/api/auth/login", { email: EMAIL, password: PASSWORD }, { origin: "https://sendrix.app" });
+      expect(r.status).toBe(200);
+      const cookie = r.headers.get("set-cookie") ?? "";
+      expect(cookie).toMatch(/sendrix_session=/);
+      expect(cookie).toMatch(/HttpOnly/i);
+      expect(cookie).toMatch(/Secure/i);
+      expect(cookie).toMatch(/SameSite=Lax/i);
+    });
+
+    it("answers a request with that session as the signed-in user, and with nobody as 401, never 503", async () => {
+      const r = await open().api("POST", "/api/auth/login", { email: EMAIL, password: PASSWORD }, { origin: "https://sendrix.app" });
+      const session = /sendrix_session=([^;]+)/.exec(r.headers.get("set-cookie") ?? "")![1]!;
+      const me = await open().api("GET", "/api/me", undefined, { cookie: `sendrix_session=${session}` });
+      expect(me.status).toBe(200);
+      expect(me.json.user.email).toBe(EMAIL);
+      expect((await open().api("GET", "/api/me")).status).toBe(401);
+      expect((await open().api("GET", "/api/contacts")).status).toBe(401);
+    });
+
+    it("never runs a request as the DEV_ACTOR_EMAIL shortcut user, even though that user exists", async () => {
+      const r = await open({ DEV_ACTOR_EMAIL: EMAIL }).api("GET", "/api/me");
+      expect(r.status).toBe(401);
+      expect((await open({ DEV_ACTOR_EMAIL: EMAIL }).api("GET", "/api/contacts")).status).toBe(401);
+    });
+
+    it("still refuses a wrong password, a cross-site attempt, and the diagnostic and run-tick routes", async () => {
+      expect((await open().api("POST", "/api/auth/login", { email: EMAIL, password: "wrong-password" }, { origin: "https://sendrix.app" })).status).toBe(401);
+      expect((await open().api("POST", "/api/auth/login", { email: EMAIL, password: PASSWORD }, { origin: "https://evil.test" })).status).toBe(403);
+      expect((await open({ DEV_ACTOR_EMAIL: EMAIL }).api("POST", "/api/campaigns/run-tick")).status).toBeGreaterThanOrEqual(401); // local only
+    });
+
+    it("stays closed for any other value of the setting", async () => {
+      for (const v of ["", "TRUE", "1", "yes"]) {
+        const r = await h.withEnv({ ENVIRONMENT: "production", AUTH_ENABLED: v }).api("POST", "/api/auth/login", { email: EMAIL, password: PASSWORD });
+        expect(r.status, JSON.stringify(v)).toBe(503);
+        expect(r.headers.get("set-cookie")).toBeNull();
+      }
+    });
+  });
+
   it("refuses a cross-site sign-in attempt", async () => {
     const r = await login(EMAIL, PASSWORD, { origin: "https://evil.test" });
     expect(r.status).toBe(403);

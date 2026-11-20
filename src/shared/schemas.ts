@@ -1,4 +1,5 @@
 /** Request validation shared by the API (authoritative) and the UI (early feedback). */
+import { findPlaceholders, placeholderMessage } from "./personal-email-hints";
 import { z } from "zod";
 import { FIELDS } from "./csv";
 import { isValidEmail, normalizeEmail } from "./email";
@@ -117,6 +118,8 @@ const campaignFields = {
   sendWindowStart: timeOfDay,
   sendWindowEnd: timeOfDay,
   timezone,
+  /** Send as plain text only: no HTML part, so no formatting. */
+  plainText: z.boolean(),
   /** null = every contact. Otherwise the id of a Completed import. */
   recipientImportId: z.string().min(1).max(64).nullable(),
   /** Empty = not used. Otherwise everyone whose industry is one of these. Cannot be combined with an import. */
@@ -135,6 +138,7 @@ export const campaignCreateSchema = z
     sendWindowStart: timeOfDay.default("09:00"),
     sendWindowEnd: timeOfDay.default("17:00"),
     timezone: timezone.default("America/Los_Angeles"),
+    plainText: campaignFields.plainText.default(false),
     recipientImportId: campaignFields.recipientImportId.default(null),
     recipientIndustries: campaignFields.recipientIndustries.default([]),
   })
@@ -223,9 +227,40 @@ export const invitationCreateSchema = z.strictObject({
 });
 export type InvitationCreate = z.infer<typeof invitationCreateSchema>;
 
+/** The name shown on the From line of every email. Letters, spaces and ordinary punctuation; may be left empty. */
+export const SENDER_NAME_MAX = 100;
+export const senderNameSchema = z.strictObject({
+  senderName: z
+    .string()
+    .trim()
+    .max(SENDER_NAME_MAX, `Use at most ${SENDER_NAME_MAX} characters`)
+    .refine((v) => !/[<>"\\\x00-\x1f\x7f]/.test(v), "Use letters, numbers and ordinary punctuation only"),
+});
+
+/**
+ * One-to-one email: a message a person writes to one person. Plain text, no merge fields, no footer. It is kept to a small
+ * number a day on purpose: this is not a way to send to a list (campaigns are, with unsubscribe handling and suppression).
+ */
+export const PERSONAL_EMAILS_PER_DAY = 25;
+/** A one-to-one email is sent as written, so a merge tag such as {{companyName}} left in it would reach the person as it is. */
+function noPlaceholders(value: string, ctx: z.RefinementCtx) {
+  const tags = findPlaceholders(value);
+  if (tags.length > 0) ctx.addIssue({ code: "custom", message: placeholderMessage(tags) });
+}
+export const personalEmailCreateSchema = z.strictObject({
+  to: email,
+  replyTo: email.optional(),
+  subject: text(300).min(1, "Subject is required").superRefine(noPlaceholders),
+  body: z.string().trim().min(1, "Write a message").max(20_000, "Use at most 20,000 characters").superRefine(noPlaceholders),
+});
+export type PersonalEmailCreate = z.infer<typeof personalEmailCreateSchema>;
+
 /** Adding an address to the test-send allowlist. */
 export const testRecipientCreateSchema = z.strictObject({ email });
 export type TestRecipientCreate = z.infer<typeof testRecipientCreateSchema>;
+/** Which allowlisted addresses a test goes to. Left out, a test goes to all of them. Every address must be on the allowlist. */
+export const testSendSchema = z.strictObject({ to: z.array(email).min(1, "Choose at least one address").max(20) });
+export type TestSendInput = z.infer<typeof testSendSchema>;
 /** Test sends fan out to everyone on the list, so the list is kept small. */
 export const MAX_TEST_RECIPIENTS = 20;
 

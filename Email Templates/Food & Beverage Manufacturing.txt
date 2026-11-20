@@ -8,7 +8,7 @@
 
 <p>These are common challenges among growing food and beverage manufacturers, and they're exactly where we can help.</p>
 
-<p>At <strong>Sabertooth Software Labs</strong>, we help food and beverage manufacturers modernize their operations through custom-built manufacturing ERP solutions, business process automation, system integrations, and AI-driven software solutions.</p>
+<p>At <strong>{{senderCompany}}</strong>, we help food and beverage manufacturers modernize their operations through custom-built manufacturing ERP solutions, business process automation, system integrations, and AI-driven software solutions.</p>
 
 <p>We develop solutions designed around how your manufacturing business actually operates, helping you:</p>
 
@@ -36,7 +36,7 @@
 
 <p>That's why we take a gradual, well-planned modernization approach that allows your business to transition from existing processes and legacy systems into modern solutions while keeping your day-to-day operations running.</p>
 
-<p><strong>Why Work With Sabertooth Software Labs?</strong></p>
+<p><strong>Why Work With {{senderCompany}}?</strong></p>
 
 <p><strong>1. You Own Your Source Code. No Vendor Lock-in.</strong></p>
 

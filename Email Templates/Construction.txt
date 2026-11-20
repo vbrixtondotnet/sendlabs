@@ -8,7 +8,7 @@
 
 <p>These are common challenges among growing construction companies, and they're exactly where we can help.</p>
 
-<p>At <strong>Sabertooth Software Labs</strong>, we help construction companies modernize their operations through custom-built construction management systems, business process automation, and AI-driven software solutions.</p>
+<p>At <strong>{{senderCompany}}</strong>, we help construction companies modernize their operations through custom-built construction management systems, business process automation, and AI-driven software solutions.</p>
 
 <p>We develop solutions designed around how your construction business actually operates, helping you:</p>
 
@@ -26,7 +26,7 @@
 
 <p>We understand that you cannot simply stop managing active projects while transitioning to new technology. That's why we take a gradual, well-planned modernization approach that allows your team to continue working while your business processes and systems evolve.</p>
 
-<p><strong>Why Work With Sabertooth Software Labs?</strong></p>
+<p><strong>Why Work With {{senderCompany}}?</strong></p>
 
 <p><strong>1. You Own Your Source Code. No Vendor Lock-in.</strong></p>
 

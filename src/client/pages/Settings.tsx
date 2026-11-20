@@ -6,8 +6,9 @@ import { Badge, Button, Card, CardHeader, Empty, ErrorNotice, Field, LoadingRows
 import { useRole } from "@/hooks/useRole";
 import { useToast } from "@/hooks/useToast";
 import { goTo } from "@/lib/navigate";
+import { EMAIL_FOOTER_ENABLED, LIST_UNSUBSCRIBE_HEADERS_ENABLED } from "@/lib/merge";
 import { ApiClientError } from "@/services/http";
-import { useConnectGmail, useDisconnectSender, useSender } from "@/services/sender";
+import { useConnectGmail, useDisconnectSender, useSender, useSetSenderName } from "@/services/sender";
 import { useMe, useUpdateTenant } from "@/services/me";
 import { useSuppressions } from "@/services/suppressions";
 import { useAddTestRecipient, useRemoveTestRecipient, useTestRecipients } from "@/services/testRecipients";
@@ -80,6 +81,39 @@ function useConnectResult() {
   }, []);
 
   return { error: result && !result.ok && !dismissed ? result.reason : null, dismiss: () => setDismissed(true) };
+}
+
+/** The name on the From line. It should match the name the mailbox uses in Gmail: mail under a different name was filed as Spam. */
+function SenderNameForm({ current }: { current: string }) {
+  const { toast } = useToast();
+  const save = useSetSenderName();
+  const [value, setValue] = useState(current);
+  const changed = value.trim() !== current;
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!changed || save.isPending) return;
+    try {
+      const saved = await save.mutateAsync(value.trim());
+      setValue(saved.sender?.senderName ?? "");
+      toast("Sender name saved");
+    } catch {
+      /* shown below */
+    }
+  }
+
+  return (
+    <form onSubmit={(e) => void submit(e)} className="space-y-2 border-t border-slate-100 px-5 py-4 dark:border-slate-800">
+      <Field label="Sender name" htmlFor="sender-name">
+        <div className="flex gap-2">
+          <TextInput id="sender-name" value={value} maxLength={100} placeholder="e.g. Marketing Admin" onChange={(e) => setValue(e.target.value)} />
+          <Button type="submit" variant="primary" disabled={!changed || save.isPending}>{save.isPending ? "Saving…" : "Save"}</Button>
+        </div>
+      </Field>
+      <p className="text-xs text-slate-500">The name recipients see on the From line. Use the same name this mailbox uses in Gmail: mail sent under a different name has been filed under Spam. Left empty, the name of the user who sends is used.</p>
+      {save.isError && <p role="alert" className="text-xs text-rose-600">{save.error instanceof ApiClientError ? save.error.fieldErrors.find((f) => f.path === "senderName")?.message ?? save.error.message : "Something went wrong. Please try again."}</p>}
+    </form>
+  );
 }
 
 function SenderSection() {
@@ -172,6 +206,7 @@ function SenderSection() {
                 <div key={k} className="flex justify-between gap-4 px-5 py-2.5"><dt className="text-slate-500">{k}</dt><dd className="text-right font-medium">{v}</dd></div>
               ))}
             </dl>
+            <SenderNameForm current={connectedSender.senderName} />
             {connectError && <div className="px-5 pb-3"><Notice tone="error">{connectError.message}</Notice></div>}
             <div className="flex flex-wrap gap-2 border-t border-slate-200 px-5 py-3.5 dark:border-slate-800">
               {connectButton("Reconnect", connectedSender.status === "Connected" ? "secondary" : "primary")}
@@ -330,62 +365,27 @@ function SuppressionCard() {
 
 /**
  * The organization's unsubscribe rules, both on for every organization to begin with. Sending applies them: when the
- * first is on, every email gets the standard unsubscribe footer automatically, and the second adds the one-click
+ * first is on, every email gets the standard unsubscribe footer automatically, and the second adds (while LIST_UNSUBSCRIBE_HEADERS_ENABLED) the one-click
  * List-Unsubscribe headers to every email. The postal address in every footer is the one from Company Details.
  */
 function ComplianceCard() {
-  const { toast } = useToast();
   const me = useMe();
-  const update = useUpdateTenant();
-  const [requireLink, setRequireLink] = useState(true);
-  const [oneClick, setOneClick] = useState(true);
-  const [seeded, setSeeded] = useState(false);
   const tenant = me.data?.tenant;
-
-  // Fill the form once, when the company has loaded. Later refreshes must not overwrite what is being ticked.
-  useEffect(() => {
-    if (tenant && !seeded) {
-      setRequireLink(tenant.requireUnsubscribeLink);
-      setOneClick(tenant.oneClickUnsubscribe);
-      setSeeded(true);
-    }
-  }, [tenant, seeded]);
-
   if (me.isError) return <ErrorNotice error={me.error} onRetry={() => void me.refetch()} />;
-  if (!tenant || !seeded) return <Card><LoadingRows rows={2} cols={1} /></Card>;
-
-  const requireChanged = requireLink !== tenant.requireUnsubscribeLink;
-  const oneClickChanged = oneClick !== tenant.oneClickUnsubscribe;
-  const changed = requireChanged || oneClickChanged;
-
-  async function save() {
-    if (!changed || update.isPending) return;
-    update.reset();
-    try {
-      const saved = await update.mutateAsync({ ...(requireChanged ? { requireUnsubscribeLink: requireLink } : {}), ...(oneClickChanged ? { oneClickUnsubscribe: oneClick } : {}) });
-      setRequireLink(saved.requireUnsubscribeLink);
-      setOneClick(saved.oneClickUnsubscribe);
-      toast("Unsubscribe settings updated");
-    } catch {
-      /* shown below */
-    }
-  }
+  if (!tenant) return <Card><LoadingRows rows={2} cols={1} /></Card>;
 
   return (
     <Card>
       <CardHeader title="Unsubscribe and compliance" subtitle="Applied to every campaign your organization sends." />
       <div className="space-y-4 p-5">
-        <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={requireLink} onChange={(e) => setRequireLink(e.target.checked)} className="mt-0.5" />Require an unsubscribe link in every campaign</label>
-        <p className="-mt-2 pl-6 text-xs text-slate-500">When on, every email automatically ends with the standard unsubscribe footer. Nobody can edit or remove it.</p>
-        <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={oneClick} onChange={(e) => setOneClick(e.target.checked)} className="mt-0.5" />Add one-click List-Unsubscribe headers</label>
-        <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600 dark:bg-slate-800/50 dark:text-slate-300">
+        <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={EMAIL_FOOTER_ENABLED} disabled readOnly className="mt-0.5" />Unsubscribe link in every campaign {EMAIL_FOOTER_ENABLED ? <Badge tone="green">Always on</Badge> : <Badge tone="amber">Off for now</Badge>}</label>
+        <p className="-mt-2 pl-6 text-xs text-slate-500">{EMAIL_FOOTER_ENABLED ? "Every email automatically ends with the standard unsubscribe footer. Nobody can edit or remove it." : "The footer at the end of each email (the unsubscribe link, your company name and your postal address) is switched off for now. Recipients can still unsubscribe with the one-click button their mail app shows."}</p>
+        <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={LIST_UNSUBSCRIBE_HEADERS_ENABLED} disabled readOnly className="mt-0.5" />One-click unsubscribe (List-Unsubscribe headers) {LIST_UNSUBSCRIBE_HEADERS_ENABLED ? <Badge tone="green">Always on</Badge> : <Badge tone="amber">Off for now</Badge>}</label>
+        <p className="-mt-2 pl-6 text-xs text-slate-500">{LIST_UNSUBSCRIBE_HEADERS_ENABLED ? "Gmail and Yahoo require one-click unsubscribe from senders of marketing email, so it cannot be turned off. A recipient who uses it is added to your suppression list straight away and is never emailed again." : "Campaign emails are sent without these headers, like a one-to-one email, so Gmail is less likely to file them under Promotions. Recipients can still unsubscribe with the link in the footer, and are then added to your suppression list and never emailed again."}</p>
+        {EMAIL_FOOTER_ENABLED && <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600 dark:bg-slate-800/50 dark:text-slate-300">
           The footer of every email shows your company's postal address from <strong>Company Details</strong>:{" "}
           {tenant.postalAddress ? <span className="whitespace-pre-line font-medium">{tenant.postalAddress}</span> : <span className="text-amber-700 dark:text-amber-400">not set yet, so campaigns cannot be launched until you add it.</span>}
-        </p>
-        {update.isError && <Notice tone="error">{update.error instanceof ApiClientError ? update.error.message : "Something went wrong. Please try again."}</Notice>}
-      </div>
-      <div className="flex justify-end border-t border-slate-200 px-5 py-3.5 dark:border-slate-800">
-        <Button variant="primary" disabled={!changed || update.isPending} onClick={() => void save()}>{update.isPending ? "Saving…" : "Save"}</Button>
+        </p>}
       </div>
     </Card>
   );

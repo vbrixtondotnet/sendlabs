@@ -157,6 +157,7 @@ async function toDto(db: Database, tenantId: string, row: SenderAccountRow): Pro
     provider: row.provider,
     email: row.email,
     status: row.status,
+    senderName: row.senderName,
     permissions: permissionsOf(row.scopes),
     connectedBy: emails.get(row.connectedBy) ?? "",
     connectedAt: new Date(row.connectedAt).toISOString(),

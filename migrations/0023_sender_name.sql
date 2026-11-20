@@ -1,0 +1,1 @@
+ALTER TABLE `sender_accounts` ADD `sender_name` text DEFAULT '' NOT NULL;

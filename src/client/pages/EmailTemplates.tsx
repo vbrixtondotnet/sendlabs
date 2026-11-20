@@ -4,12 +4,13 @@ import { Badge, Button, Card, Empty, ErrorNotice, Field, LoadingRows, Modal, Not
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { RowActions, type RowAction } from "@/components/RowActions";
 import { useRole } from "@/hooks/useRole";
+import { useMe } from "@/services/me";
 import { useToast } from "@/hooks/useToast";
 import { MERGE_FIELDS, SAMPLE_CONTACT, UNSUBSCRIBE_TAG, composeEmailHtml, isBlankHtml, unknownTags } from "@/lib/merge";
 import { ApiClientError } from "@/services/http";
 import {
   useAddAvailableTemplate, useAvailableTemplate, useAvailableTemplates, useCreateAvailableTemplate, useCreateEmailTemplate, useEmailTemplate, useEmailTemplates,
-  useRemoveAvailableTemplate, useRemoveEmailTemplate, useUpdateAvailableTemplate,
+  useRemoveAvailableTemplate, useRemoveEmailTemplate, useUpdateAvailableTemplate, useUpdateEmailTemplate,
 } from "@/services/emailTemplates";
 
 const PAGE_SIZE = 10;
@@ -215,6 +216,29 @@ function EditAvailableModal({ template, onClose }: { template: AvailableTemplate
   );
 }
 
+function EditMineModal({ template, onClose }: { template: EmailTemplateSummaryDto; onClose: () => void }) {
+  const { toast } = useToast();
+  const full = useEmailTemplate(template.id);
+  const update = useUpdateEmailTemplate();
+  if (full.isPending || full.isError) {
+    return (
+      <Modal open title={`Edit ${template.name}`} onClose={onClose} wide footer={<Button onClick={onClose}>Close</Button>}>
+        {full.isError ? <ErrorNotice error={full.error} onRetry={() => void full.refetch()} /> : <LoadingRows rows={4} cols={1} />}
+      </Modal>
+    );
+  }
+  return (
+    <TemplateFormModal
+      title={`Edit ${template.name}`}
+      submitLabel="Save changes"
+      initial={{ name: full.data.name, html: full.data.htmlBody }}
+      note={template.systemKey ? "This changes only your copy. The version in Available Templates stays as it is." : "This changes the template campaigns offer. Campaigns already written keep their message."}
+      onSubmit={async (input) => { const saved = await update.mutateAsync({ id: template.id, ...input }); toast(`Template "${saved.name}" saved`); }}
+      onClose={onClose}
+    />
+  );
+}
+
 function MyTemplatesTab({ onPreview }: { onPreview: (t: Target) => void }) {
   const { isAdmin } = useRole();
   const { toast } = useToast();
@@ -222,6 +246,7 @@ function MyTemplatesTab({ onPreview }: { onPreview: (t: Target) => void }) {
   const remove = useRemoveEmailTemplate();
   const create = useCreateEmailTemplate();
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<EmailTemplateSummaryDto | null>(null);
   const [removing, setRemoving] = useState<EmailTemplateSummaryDto | null>(null);
   const items = list.data?.items ?? [];
   const paged = usePaged(items);
@@ -266,6 +291,7 @@ function MyTemplatesTab({ onPreview }: { onPreview: (t: Target) => void }) {
                       label={`Actions for ${t.name}`}
                       actions={[
                         { label: "Preview", icon: "preview", ariaLabel: `Preview ${t.name}`, onSelect: () => onPreview({ kind: "mine", id: t.id, name: t.name }) },
+                        ...(isAdmin ? [{ label: "Edit", icon: "edit", ariaLabel: `Edit ${t.name}`, onSelect: () => setEditing(t) }] : []),
                         ...(isAdmin ? [{ label: "Remove", icon: "delete", ariaLabel: `Remove ${t.name} from My Templates`, danger: true, onSelect: () => setRemoving(t) }] : []),
                       ] as RowAction[]}
                     />
@@ -286,6 +312,7 @@ function MyTemplatesTab({ onPreview }: { onPreview: (t: Target) => void }) {
           onClose={() => setAdding(false)}
         />
       )}
+      {isAdmin && editing && <EditMineModal template={editing} onClose={() => setEditing(null)} />}
       <Modal
         open={removing !== null}
         title="Remove template?"
@@ -311,8 +338,12 @@ function PreviewModal({ target, onClose }: { target: Target | null; onClose: () 
   const mine = useEmailTemplate(target?.kind === "mine" ? target.id : null);
   const available = useAvailableTemplate(target?.kind === "available" ? target.id : null);
   const full = target?.kind === "available" ? available : mine;
+  // {{senderCompany}} shows the organization's own name; a SuperAdministrator belongs to none, so it sees the placeholder wording.
+  const me = useMe();
+  const { isSuperAdmin } = useRole();
+  const sender = isSuperAdmin ? "" : me.data?.tenant.name ?? "";
   const doc = full.data
-    ? `<!doctype html><html><body style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#222;padding:16px">${composeEmailHtml({ body: full.data.htmlBody, signature: "", companyName: "", postalAddress: "", unsubscribeFooter: false }, SAMPLE_CONTACT)}</body></html>`
+    ? `<!doctype html><html><body style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#222;padding:16px">${composeEmailHtml({ body: full.data.htmlBody, signature: "", companyName: sender, postalAddress: "", unsubscribeFooter: false }, SAMPLE_CONTACT)}</body></html>`
     : "";
   return (
     <Modal open={target !== null} title={target?.name ?? "Template"} onClose={onClose} wide footer={<Button onClick={onClose}>Close</Button>}>

@@ -1,12 +1,17 @@
 import type { ContactFields } from "./types";
 
 /** The only placeholders that are ever substituted. No arbitrary template code runs. Shared by the editor preview and test sends. */
+export type MergeContext = Partial<ContactFields> & {
+  /** The sending organization's name (the tenant's company name), not the recipient's company. */
+  senderCompany?: string;
+};
+
 export interface MergeField {
   tag: string;
   label: string;
-  /** Used when the contact's value is blank. */
+  /** Used when the value is blank. */
   fallback: string;
-  value: (c: Partial<ContactFields>) => string;
+  value: (c: MergeContext) => string;
 }
 
 export const MERGE_FIELDS: MergeField[] = [
@@ -19,6 +24,7 @@ export const MERGE_FIELDS: MergeField[] = [
   { tag: "{{state}}", label: "State", fallback: "", value: (c) => c.state ?? "" },
   { tag: "{{country}}", label: "Country", fallback: "", value: (c) => c.country ?? "" },
   { tag: "{{website}}", label: "Website", fallback: "", value: (c) => c.website ?? "" },
+  { tag: "{{senderCompany}}", label: "My company", fallback: "our company", value: (c) => c.senderCompany ?? "" },
 ];
 
 export const UNSUBSCRIBE_TAG = "{{unsubscribeUrl}}";
@@ -34,12 +40,14 @@ export const escapeHtml = (s: string) =>
 
 /**
  * Substitute the fixed placeholder set. HTML bodies escape values. Subjects are plain text. `unsubscribeUrl` is where
- * `{{unsubscribeUrl}}` points: the recipient's own link when sending, a placeholder in the editor's preview.
+ * `{{unsubscribeUrl}}` points: the recipient's own link when sending, a placeholder in the editor's preview. `senderCompany` is
+ * what `{{senderCompany}}` becomes: the sending organization's name.
  */
-export function renderTemplate(template: string, contact: Partial<ContactFields>, asHtml: boolean, unsubscribeUrl: string = PREVIEW_UNSUBSCRIBE_URL): string {
+export function renderTemplate(template: string, contact: Partial<ContactFields>, asHtml: boolean, unsubscribeUrl: string = PREVIEW_UNSUBSCRIBE_URL, senderCompany: string = ""): string {
   let out = template;
+  const context: MergeContext = { ...contact, senderCompany: senderCompany.replace(/\s+/g, " ").trim() };
   for (const f of MERGE_FIELDS) {
-    const v = f.value(contact).trim() || f.fallback;
+    const v = f.value(context).trim() || f.fallback;
     out = out.split(f.tag).join(asHtml ? escapeHtml(v) : v);
   }
   return out.split(UNSUBSCRIBE_TAG).join(asHtml ? escapeHtml(unsubscribeUrl) : unsubscribeUrl);
@@ -106,8 +114,33 @@ export function postalFooterHtml(address: string): string {
 }
 
 /**
- * The standard footer every email gets, below the signature. It is fixed: nobody edits it. `{{unsubscribeUrl}}` becomes
- * the recipient's own unsubscribe link. The last line is the SENDING company's name (not the recipient's company, which
+ * Whether campaign emails end with the standard footer: a rule, the recipient's unsubscribe link, the company name and the
+ * postal address, in the email and in the editor's preview. It is ON. It was switched off for a while at the owner's request and
+ * restored; set it to `false` to leave all of it out again (the launch check for a postal address and the footer tests follow this switch). The
+ * The `List-Unsubscribe` and one-click headers are a separate switch (`LIST_UNSUBSCRIBE_HEADERS_ENABLED`). Sending marketing email without a visible
+ * unsubscribe link and a postal address is against CAN-SPAM and similar laws, and Gmail and Yahoo expect the link.
+ */
+export const EMAIL_FOOTER_ENABLED = true;
+
+/**
+ * Whether campaign emails (and their test sends) carry the `List-Unsubscribe` and one-click headers. It is OFF, at the
+ * owner's request: those headers make Gmail file the mail under Promotions, and one-to-one emails, which never carry them,
+ * reach the Primary inbox. The visible unsubscribe link in the footer still works. Set it to `true` to send the headers
+ * again (Gmail and Yahoo expect them from bulk senders; the tests that cover them follow this switch).
+ */
+export const LIST_UNSUBSCRIBE_HEADERS_ENABLED = false;
+
+/** What `composeEmailHtml` is given for the footer, following the switch above. */
+export const footerFor = (tenant: { name: string; postalAddress: string }) => ({
+  companyName: tenant.name,
+  postalAddress: EMAIL_FOOTER_ENABLED ? tenant.postalAddress : "",
+  unsubscribeFooter: EMAIL_FOOTER_ENABLED,
+});
+
+/**
+ * The standard footer every email gets, below the signature: a rule, the recipient's own unsubscribe link, and the sending
+ * company's name, opening with a sentence that says why the person received the email. It is fixed: nobody edits it.
+ * `{{unsubscribeUrl}}` becomes the recipient's own unsubscribe link. The last line is the SENDING company's name (not the recipient's company, which
  * is what the `{{companyName}}` merge field means in a body).
  */
 export function unsubscribeFooterHtml(companyName: string): string {
@@ -146,7 +179,7 @@ export interface EmailParts {
  */
 export function composeEmailHtml(parts: EmailParts, contact: Partial<ContactFields>, unsubscribeUrl: string = PREVIEW_UNSUBSCRIBE_URL): string {
   const message = [applySignature(parts.body, parts.signature), parts.unsubscribeFooter ? unsubscribeFooterHtml(parts.companyName) : ""].filter(Boolean).join("\n");
-  const html = renderTemplate(message, contact, true, unsubscribeUrl);
+  const html = renderTemplate(message, contact, true, unsubscribeUrl, parts.companyName);
   const address = postalFooterHtml(parts.postalAddress);
   return address ? `${html}\n${address}` : html;
 }
@@ -154,4 +187,23 @@ export function composeEmailHtml(parts: EmailParts, contact: Partial<ContactFiel
 /** The same starting signature as HTML, which is what the signature editor holds. */
 export function defaultSignatureHtml(who: { name: string; position: string }, tenant: { name: string; website: string }): string {
   return textToHtml(defaultSignature(who, tenant));
+}
+
+/** Plain text for the text part when the campaign has none: tags dropped, links kept, entities for the few that matter. */
+export function textFromHtml(html: string): string {
+  return html
+    .replace(/<(style|script)[\s\S]*?<\/\1>/gi, "")
+    .replace(/<a\s[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, "$2 ($1)")
+    .replace(/<li[^>]*>/gi, "- ")
+    .replace(/<br\s*\/?>|<\/(p|div|h[1-6]|li|tr|blockquote)>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }

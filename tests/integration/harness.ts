@@ -18,6 +18,13 @@ export type EnvOverride = {
   GOOGLE_CLIENT_SECRET?: string;
   TOKEN_ENCRYPTION_KEY?: string;
   APP_BASE_URL?: string;
+  ENABLE_EMAIL_DIAGNOSTICS?: string;
+  UNSUBSCRIBE_BASE_URL?: string;
+  AUTH_ENABLED?: string;
+  EMAIL_PROVIDER?: string;
+  POSTMARK_SERVER_TOKEN?: string;
+  POSTMARK_FROM?: string;
+  POSTMARK_FROM_NAME?: string;
 };
 
 /** Google credentials for tests. Fake values, and a throwaway 32-byte key, so the Gmail connection is "configured". */
@@ -27,6 +34,14 @@ const TEST_GOOGLE_ENV: EnvOverride = {
   GOOGLE_CLIENT_SECRET: "test-client-secret",
   TOKEN_ENCRYPTION_KEY: TEST_KEY,
   APP_BASE_URL: "http://localhost:5173",
+  // A developer's own .dev.vars (Postmark, diagnostics) must never change what the tests see: these are off unless a test turns them on.
+  EMAIL_PROVIDER: "",
+  UNSUBSCRIBE_BASE_URL: "",
+  AUTH_ENABLED: "",
+  POSTMARK_SERVER_TOKEN: "",
+  POSTMARK_FROM: "",
+  POSTMARK_FROM_NAME: "",
+  ENABLE_EMAIL_DIAGNOSTICS: "",
 };
 
 export interface Caller {
@@ -80,12 +95,12 @@ export async function applyMigrations(d1: D1Database, only?: (name: string) => b
   }
 }
 
-export async function startHarness(options: { google?: GoogleOAuth } = {}): Promise<Harness> {
+export async function startHarness(options: { google?: GoogleOAuth; fetch?: typeof fetch } = {}): Promise<Harness> {
   const proxy: PlatformProxy<Env> = await getPlatformProxy<Env>({ persist: false });
   const env = proxy.env;
   await applyMigrations(env.DB);
 
-  const app = createApp(options.google ? { google: options.google } : {});
+  const app = createApp({ ...(options.google ? { google: options.google } : {}), ...(options.fetch ? { fetch: options.fetch } : {}) });
   const reply = async (res: Response): Promise<Reply> => {
     const text = await res.text();
     let json: any = null;

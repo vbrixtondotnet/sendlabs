@@ -11,7 +11,7 @@ import { useDebounced } from "@/hooks/useDebounced";
 import { useRole } from "@/hooks/useRole";
 import { useToast } from "@/hooks/useToast";
 import { ApiClientError } from "@/services/http";
-import { useCampaign, useCampaignAction, useRecipients } from "@/services/campaigns";
+import { useCampaign, useCampaignAction, useRecipients, useRetryFailed } from "@/services/campaigns";
 
 const STATUS_ORDER: RecipientStatus[] = ["Accepted", "Processing", "Queued", "Pending", "Failed", "Skipped", "Cancelled"];
 const PAGE_SIZE = 12;
@@ -39,6 +39,7 @@ function Details({ campaign }: { campaign: CampaignDto }) {
   const { canEdit } = useRole();
   const { toast } = useToast();
   const act = useCampaignAction();
+  const retry = useRetryFailed();
   const [status, setStatus] = useState<RecipientStatus | "">("");
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
@@ -53,6 +54,15 @@ function Details({ campaign }: { campaign: CampaignDto }) {
   const awaiting = t.Pending + t.Queued + t.Processing;
   const daysLeft = Math.ceil(t.Pending / campaign.dailyLimit);
   const can = (a: keyof typeof CAMPAIGN_ACTIONS) => (CAMPAIGN_ACTIONS[a].from as readonly string[]).includes(campaign.status);
+
+  async function retryFailed() {
+    try {
+      await retry.mutateAsync(campaign.id);
+      toast("The failed emails will be sent again", "info");
+    } catch (e) {
+      toast(e instanceof ApiClientError ? e.message : "Something went wrong", "error");
+    }
+  }
 
   async function run(action: keyof typeof CAMPAIGN_ACTIONS, message: string) {
     try {
@@ -75,6 +85,7 @@ function Details({ campaign }: { campaign: CampaignDto }) {
             {canEdit && campaign.status === "Draft" && <Link to={`/campaigns/${campaign.id}/edit`}><Button variant="primary">Edit draft</Button></Link>}
             {canEdit && can("pause") && <Button disabled={act.isPending} onClick={() => run("pause", "Campaign paused")}>Pause</Button>}
             {canEdit && can("resume") && <Button variant="primary" disabled={act.isPending} onClick={() => run("resume", "Campaign resumed")}>Resume</Button>}
+            {canEdit && t.Failed > 0 && ["CompletedWithErrors", "Sending", "Paused", "Failed"].includes(campaign.status) && <Button disabled={retry.isPending} onClick={() => void retryFailed()}>{retry.isPending ? "Retrying…" : `Retry ${fmt(t.Failed)} failed`}</Button>}
             {canEdit && can("cancel") && <Button variant="danger" onClick={() => setConfirmCancel(true)}>Cancel campaign</Button>}
           </>
         }
@@ -87,7 +98,10 @@ function Details({ campaign }: { campaign: CampaignDto }) {
 
       {campaign.status === "Paused" && <div className="mb-4"><Notice tone="warn">Paused. No further messages will be queued until you resume.</Notice></div>}
       {campaign.status === "Cancelled" && <div className="mb-4"><Notice>Cancelled. Unsent recipients were marked Cancelled. Messages already accepted cannot be recalled.</Notice></div>}
-      {campaign.status === "Draft" && <div className="mb-4"><Notice>This campaign is a draft. Launching is not connected yet, so no recipients exist.</Notice></div>}
+      {campaign.status === "Draft" && <div className="mb-4"><Notice>This campaign is a draft, so it has no recipients yet. Edit it and launch it to start sending.</Notice></div>}
+      {campaign.status === "Sending" && <div className="mb-4"><Notice tone="info">Sending. Emails go out a few at a time during the daily window ({campaign.sendWindowStart} to {campaign.sendWindowEnd} {campaign.timezone}), up to {fmt(campaign.dailyLimit)} a day.</Notice></div>}
+      {campaign.status === "Failed" && <div className="mb-4"><Notice tone="error" title="Sending stopped">The email connection was rejected or is not set up. Fix it in Settings (reconnect Gmail), then press Resume. No recipient was lost.</Notice></div>}
+      {campaign.status === "CompletedWithErrors" && <div className="mb-4"><Notice tone="warn">Finished, but {fmt(t.Failed)} email{t.Failed === 1 ? "" : "s"} failed. You can retry them.</Notice></div>}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <StatCard label="Recipients" value={fmt(total)} />

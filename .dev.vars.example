@@ -9,3 +9,23 @@ GOOGLE_CLIENT_SECRET=your-client-secret
 # 32 random bytes, base64. Encrypts the stored Gmail refresh tokens. Generate one with:  openssl rand -base64 32
 # Losing or changing this key makes every stored token unreadable, so every tenant would have to reconnect.
 TOKEN_ENCRYPTION_KEY=generate-with-openssl-rand-base64-32
+
+# Which service delivers email. Only "gmail" exists today (the default). To add SendGrid or Mailgun, write an adapter in
+# src/server/services/providers/ and register it in src/server/services/email-providers.ts, then set this to its id.
+# EMAIL_PROVIDER=gmail
+
+# TEMPORARY: turns on POST /api/sender/diagnostic (sends one plain "Quick question" email to an allowlisted address and
+# returns its raw headers) for the Gmail classification investigation. Leave unset everywhere else.
+# ENABLE_EMAIL_DIAGNOSTICS=true
+
+# Email can use Postmark instead of Gmail (EMAIL_PROVIDER=postmark). POSTMARK_FROM must be a confirmed Sender Signature (or on a verified
+# domain) in Postmark. Get the Server API token from Postmark, Servers, API Tokens. Never commit the real token.
+# EMAIL_PROVIDER=postmark   # applies to one-to-one email AND campaign test sends; the default is gmail
+# POSTMARK_SERVER_TOKEN=your-server-api-token
+# POSTMARK_FROM=you@yourcompany.com
+# POSTMARK_FROM_NAME=Your Company
+# POSTMARK_MESSAGE_STREAM=outbound
+
+# The public HTTPS address the unsubscribe links in campaign emails point at (Gmail only shows its Unsubscribe button for a public
+# HTTPS address). APP_BASE_URL stays http://localhost:5173 for sign-in. /unsubscribe/* and /api/unsubscribe/* must reach this app.
+# UNSUBSCRIBE_BASE_URL=https://sabertoothsoftwarelabs.net

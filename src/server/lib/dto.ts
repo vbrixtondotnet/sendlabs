@@ -44,6 +44,7 @@ export function toCampaignSummaryDto(r: CampaignSummaryRow, totals: RecipientTot
     subject: r.subject,
     status: r.status,
     senderAccountId: r.senderAccountId,
+    plainText: r.plainText,
     recipientImportId: r.recipientImportId,
     recipientIndustries: r.recipientIndustries,
     createdBy: createdByEmail,

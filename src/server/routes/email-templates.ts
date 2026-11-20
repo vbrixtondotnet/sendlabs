@@ -16,7 +16,7 @@ const MAX_SYSTEM_TEMPLATES = 200;
  * Email templates, in two lists:
  *  - Available Templates: made by the system and shared by every organization. Administrators and Campaign Managers can read
  *    them (an Administrator can copy one into My Templates). Only a SuperAdministrator creates, edits and deletes them.
- *  - My Templates: the organization's own. Administrators add (a copy of an available one, or a new one) and remove.
+ *  - My Templates: the organization's own. Administrators add (a copy of an available one, or a new one), edit and remove.
  *    Campaign Managers can read them. Viewers have no access to Email Templates at all, and a SuperAdministrator, who
  *    belongs to no organization, has no My Templates.
  */
@@ -110,6 +110,15 @@ emailTemplateRoutes.post("/", requireAccess("Administrator"), async (c) => {
   const created = await repo.create({ ...input, createdBy: userId });
   if (!created) throw taken();
   return c.json(created, 201);
+});
+
+/** Edits one of My Templates (a copy of an Available Template or one the organization wrote). Never changes the system version. */
+emailTemplateRoutes.put("/:id", requireAccess("Administrator"), async (c) => {
+  const input = await templateInput(c);
+  const result = await emailTemplatesRepo(c.get("db"), c.get("actor").tenantId).update(c.req.param("id"), input);
+  if (result === "missing") throw notFound("Template");
+  if (result === "name-taken") throw taken();
+  return c.json(result);
 });
 
 emailTemplateRoutes.delete("/:id", requireAccess("Administrator"), async (c) => {

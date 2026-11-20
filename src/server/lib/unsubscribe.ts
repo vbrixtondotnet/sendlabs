@@ -63,6 +63,32 @@ export async function readUnsubscribeToken(keyB64: string, token: string): Promi
 }
 
 /**
+ * What the unsubscribe links need: the key that signs them, and the address they point at. That address is
+ * `UNSUBSCRIBE_BASE_URL` when it is set to a good address, otherwise `APP_BASE_URL`. They are separate so the app can run on
+ * `http://localhost:5173` (sign-in, the same-site check) while the links in email point at the public HTTPS address: Gmail only
+ * shows its own "Unsubscribe" button for a public HTTPS address. A setting that is not an http(s) address (and https unless it is
+ * localhost) is ignored, never used.
+ */
+export function unsubscribeConfig(
+  env: { UNSUBSCRIBE_BASE_URL?: string | undefined },
+  cfg: { encryptionKey: string; appBaseUrl: string } | null,
+): { encryptionKey: string; appBaseUrl: string } | null {
+  if (!cfg) return null;
+  const raw = env.UNSUBSCRIBE_BASE_URL?.trim();
+  if (raw) {
+    try {
+      const url = new URL(raw);
+      const local = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+      if (url.protocol === "https:" || (url.protocol === "http:" && local)) return { encryptionKey: cfg.encryptionKey, appBaseUrl: url.origin };
+    } catch {
+      /* not an address: fall back below */
+    }
+    console.error(JSON.stringify({ level: "error", event: "unsubscribe_base_url_invalid" }));
+  }
+  return { encryptionKey: cfg.encryptionKey, appBaseUrl: cfg.appBaseUrl };
+}
+
+/**
  * The two addresses for one recipient: the PAGE a person opens from the link in the email body, and the endpoint a mail
  * app POSTs to for one-click unsubscribe (the `List-Unsubscribe` header). Both carry the same token.
  */

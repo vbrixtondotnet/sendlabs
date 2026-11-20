@@ -14,6 +14,15 @@ export function useConnectGmail() {
   return useMutation({ mutationFn: () => api<{ url: string }>("POST", "/api/sender/gmail/connect") });
 }
 
+/** Administrators only: the name recipients see on the From line. */
+export function useSetSenderName() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (senderName: string) => api<SenderStatusDto>("PATCH", "/api/sender", { senderName }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+  });
+}
+
 export function useDisconnectSender() {
   const qc = useQueryClient();
   return useMutation({

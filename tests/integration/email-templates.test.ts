@@ -169,6 +169,46 @@ describe("a SuperAdministrator managing the Available Templates", () => {
   });
 });
 
+describe("editing My Templates", () => {
+  const put = (id: string, body: unknown, who: Caller = h) => who.api("PUT", `/api/email-templates/${id}`, body);
+
+  it("changes only the organization's copy: the Available Template and other organizations' copies stay as they were", async () => {
+    const original = (await h.api("GET", "/api/email-templates/available/construction")).json;
+    const mine = (await addAvailable("construction")).json;
+    const theirs = (await addAvailable("construction", h.as(GLOBEX))).json;
+    const r = await put(mine.id, { name: "Our Construction", htmlBody: "<p>Our own {{firstName}}</p>" });
+    expect(r.status).toBe(200);
+    expect(r.json).toMatchObject({ id: mine.id, name: "Our Construction", htmlBody: "<p>Our own {{firstName}}</p>", systemKey: "construction" });
+    expect((await h.api("GET", "/api/email-templates/available/construction")).json).toEqual(original);
+    expect((await h.as(GLOBEX).api("GET", `/api/email-templates/${theirs.id}`)).json).toMatchObject({ name: original.name, htmlBody: original.htmlBody });
+    expect((await h.api("GET", `/api/email-templates/${mine.id}`)).json.htmlBody).toBe("<p>Our own {{firstName}}</p>");
+    expect((await addAvailable("construction")).json.id).toBe(mine.id); // still counts as added
+    // Leave the organizations as they were for the tests that add this template themselves.
+    await h.api("DELETE", `/api/email-templates/${mine.id}`);
+    await h.as(GLOBEX).api("DELETE", `/api/email-templates/${theirs.id}`);
+  });
+
+  it("is for Administrators only, and an organization cannot edit another's template", async () => {
+    const mine = (await create({ name: "Edit me", htmlBody: BODY })).json;
+    for (const who of [await member("campaign-manager"), await member("viewer"), h.as(SUPER)]) {
+      expect((await put(mine.id, { name: "X", htmlBody: BODY }, who)).status).toBe(403);
+    }
+    expect((await put(mine.id, { name: "X", htmlBody: BODY }, h.as(GLOBEX))).status).toBe(404);
+    expect((await h.anonymous.api("PUT", `/api/email-templates/${mine.id}`, { name: "X", htmlBody: BODY })).status).toBe(401);
+    expect((await h.api("GET", `/api/email-templates/${mine.id}`)).json.name).toBe("Edit me");
+  });
+
+  it("validates like creating: a taken name (ignoring case), a blank name, an unknown merge field, a missing template", async () => {
+    await create({ name: "Taken Name", htmlBody: BODY });
+    const mine = (await create({ name: "Mine To Edit", htmlBody: BODY })).json;
+    expect((await put(mine.id, { name: "taken name", htmlBody: BODY })).status).toBe(409);
+    expect((await put(mine.id, { name: "Mine To Edit", htmlBody: "<p>Same name is fine</p>" })).status).toBe(200);
+    expect((await put(mine.id, { name: "   ", htmlBody: BODY })).status).toBe(400);
+    expect((await put(mine.id, { name: "Ok", htmlBody: "<p>{{frstName}}</p>" })).status).toBe(400);
+    expect((await put("nope", { name: "Ok", htmlBody: BODY })).status).toBe(404);
+  });
+});
+
 describe("who has access", () => {
   it("gives a Viewer no access at all: the lists, one template, adding and removing all answer 403", async () => {
     const viewer = await member("viewer");
