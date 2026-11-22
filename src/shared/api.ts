@@ -176,25 +176,27 @@ export interface SenderDto {
   connectedAt: string;
 }
 
-/** One one-to-one email that was sent. */
-export interface PersonalEmailDto {
+/** One person found by the people search (Apollo). Nothing is stored: results are shown, not saved. */
+export interface PersonDto {
   id: string;
-  to: string;
-  subject: string;
-  body: string;
-  /** Email of the user who sent it. */
-  sentBy: string;
-  createdAt: string;
+  firstName: string;
+  lastName: string;
+  title: string;
+  companyName: string;
+  email: string;
+  /** Employees at the person's company. */
+  employees: number;
+  industry: string;
+  linkedinUrl: string;
+  website: string;
+  city: string;
+  state: string;
+  country: string;
 }
 
-/** The recent one-to-one emails, and how much of today's allowance is used. */
-export interface PersonalEmailsDto {
-  items: PersonalEmailDto[];
-  /** Sent in the last 24 hours. */
-  sentToday: number;
-  dailyLimit: number;
-  /** Which service sends these: "gmail" (needs a connected account) or "postmark" (set up on the server). */
-  provider: string;
+export interface PeopleSearchDto extends Page<PersonDto> {
+  /** Where the results come from: "mock" is made-up sample data (Apollo is not connected yet). */
+  source: "mock" | "apollo";
 }
 
 /** A template in My Templates. The body is left out (it is large): fetch one template to get it. */

@@ -36,7 +36,8 @@ if (!source || !url) {
 
 /** Tables the migrations already fill with reference data: their rows are updated from the source rather than inserted. */
 const REFERENCE_TABLES = new Set(["access", "system_templates"]);
-const SKIP_SOURCE_TABLES = /^(sqlite_|_cf_|d1_migrations|__drizzle)/;
+/** Dropped features: their data is left behind on purpose (the one-to-one email log). */
+const SKIP_SOURCE_TABLES = /^(sqlite_|_cf_|d1_migrations|__drizzle|personal_emails$)/;
 const CHUNK = 200;
 
 // --- the source -----------------------------------------------------------------------------------------------------------

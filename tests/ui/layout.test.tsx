@@ -26,7 +26,7 @@ describe("the Settings menu is for Administrators only", () => {
     stubApi(({ path }) => (path === "/api/me" ? { json: me({ access: "Administrator" }) } : undefined));
     open();
     await screen.findByText("Sabertooth Software Labs");
-    expect(links()).toEqual(expect.arrayContaining(["Overview", "Imports", "Contacts", "Campaigns", "Settings"]));
+    expect(links()).toEqual(expect.arrayContaining(["Overview", "Imports", "Contacts", "People", "Campaigns", "Settings"]));
     expect(screen.getByRole("link", { name: "Settings" }).getAttribute("href")).toBe("/settings");
     expect(screen.getByText("Settings are a preview")).toBeTruthy();
   });

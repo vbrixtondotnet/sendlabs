@@ -1,10 +1,10 @@
 /** Request validation shared by the API (authoritative) and the UI (early feedback). */
-import { findPlaceholders, placeholderMessage } from "./personal-email-hints";
 import { z } from "zod";
 import { FIELDS } from "./csv";
 import { isValidEmail, normalizeEmail } from "./email";
 import { isBlankHtml } from "./merge";
 import { PASSWORD_MAX_LENGTH } from "./password-rules";
+import { PEOPLE_COMPANY_SIZES, PEOPLE_INDUSTRIES, PEOPLE_MAX_TITLES } from "./people";
 import { ACCESS_LEVELS, CAMPAIGN_STATUSES, CONSENT_STATUSES, IMPORT_ROW_OUTCOMES, RECIPIENT_STATUSES, type AccessId } from "./types";
 
 /* ------------------------------ primitives ------------------------------ */
@@ -237,23 +237,19 @@ export const senderNameSchema = z.strictObject({
     .refine((v) => !/[<>"\\\x00-\x1f\x7f]/.test(v), "Use letters, numbers and ordinary punctuation only"),
 });
 
-/**
- * One-to-one email: a message a person writes to one person. Plain text, no merge fields, no footer. It is kept to a small
- * number a day on purpose: this is not a way to send to a list (campaigns are, with unsubscribe handling and suppression).
- */
-export const PERSONAL_EMAILS_PER_DAY = 25;
-/** A one-to-one email is sent as written, so a merge tag such as {{companyName}} left in it would reach the person as it is. */
-function noPlaceholders(value: string, ctx: z.RefinementCtx) {
-  const tags = findPlaceholders(value);
-  if (tags.length > 0) ctx.addIssue({ code: "custom", message: placeholderMessage(tags) });
-}
-export const personalEmailCreateSchema = z.strictObject({
-  to: email,
-  replyTo: email.optional(),
-  subject: text(300).min(1, "Subject is required").superRefine(noPlaceholders),
-  body: z.string().trim().min(1, "Write a message").max(20_000, "Use at most 20,000 characters").superRefine(noPlaceholders),
+/* ------------------------------ people search ------------------------------ */
+
+/** "a,b,c" in the query string -> a list of trimmed, non-empty values. */
+const csvList = (max: number) =>
+  z.preprocess((v) => (typeof v === "string" ? v.split(",").map((s) => s.trim()).filter(Boolean) : v), z.array(z.string().max(100)).max(max).default([]));
+
+export const peopleSearchQuery = pageQuery.extend({
+  countries: csvList(60),
+  industry: optionalQuery(z.enum(PEOPLE_INDUSTRIES)),
+  companySize: optionalQuery(z.enum(PEOPLE_COMPANY_SIZES.map((s) => s.value) as [string, ...string[]])),
+  titles: csvList(PEOPLE_MAX_TITLES),
 });
-export type PersonalEmailCreate = z.infer<typeof personalEmailCreateSchema>;
+export type PeopleSearchQuery = z.infer<typeof peopleSearchQuery>;
 
 /** Adding an address to the test-send allowlist. */
 export const testRecipientCreateSchema = z.strictObject({ email });

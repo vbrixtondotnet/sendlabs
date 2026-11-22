@@ -2,12 +2,12 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { Overview } from "@/pages/Overview";
 import { Imports } from "@/pages/Imports";
+import { People } from "@/pages/People";
 import { Contacts } from "@/pages/Contacts";
 import { Campaigns } from "@/pages/Campaigns";
 import { CampaignEditor } from "@/pages/CampaignEditor";
 import { CampaignDetails } from "@/pages/CampaignDetails";
 import { Settings } from "@/pages/Settings";
-import { PersonalEmail } from "@/pages/PersonalEmail";
 import { EmailTemplates } from "@/pages/EmailTemplates";
 import { AcceptInvitation } from "@/pages/AcceptInvitation";
 import { Login } from "@/pages/Login";
@@ -24,12 +24,12 @@ export function App() {
         <Route index element={<Overview />} />
         <Route path="imports" element={<Imports />} />
         <Route path="contacts" element={<Contacts />} />
+        <Route path="people" element={<People />} />
         <Route path="campaigns" element={<Campaigns />} />
         <Route path="campaigns/new" element={<CampaignEditor />} />
         <Route path="campaigns/:id/edit" element={<CampaignEditor />} />
         <Route path="campaigns/:id" element={<CampaignDetails />} />
         <Route path="templates" element={<EmailTemplates />} />
-        <Route path="personal" element={<PersonalEmail />} />
         <Route path="settings" element={<Settings />} />
         <Route path="account" element={<MySettings />} />
         <Route path="*" element={<Navigate to="/" replace />} />
