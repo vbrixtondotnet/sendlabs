@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { PEOPLE_COMPANY_SIZES, PEOPLE_COUNTRIES, PEOPLE_INDUSTRIES, PEOPLE_MAX_TITLES } from "@shared/people";
-import { Button, Card, Empty, ErrorNotice, Field, LoadingRows, Notice, PageHeader, Pagination, Select, Table, Td, Th, fmt } from "@/components/ui";
+import { Button, Card, Empty, ErrorNotice, Field, LoadingRows, PageHeader, Pagination, Select, Td, Th, fmt } from "@/components/ui";
 import { MultiSelect } from "@/components/MultiSelect";
 import { usePeopleSearch, type PeopleFilters } from "@/services/people";
 
-const PAGE_SIZE = 15;
+const PAGE_SIZE = 25;
 const NONE: PeopleFilters = { countries: [], industry: "", companySize: "", titles: [] };
 
 /** Job titles: type one and press Enter (or comma) to add it; each shows as a removable chip. */
@@ -63,15 +63,10 @@ export function People() {
   };
 
   return (
-    <>
+    <div className="flex h-[calc(100vh-8rem)] min-h-[28rem] flex-col">
       <PageHeader title="People" description="Find people to reach out to, by country, industry, company size and job title." />
-      <div className="mb-4">
-        <Notice tone="info" title="Sample data">
-          Apollo is not connected yet, so these results are made-up examples. The filters and the table work the same way they will with real data.
-        </Notice>
-      </div>
-      <Card>
-        <form onSubmit={search} className="space-y-4 border-b border-slate-200 p-4 dark:border-slate-800" aria-label="Search people">
+      <Card className="flex min-h-0 flex-1 flex-col">
+        <form onSubmit={search} className="shrink-0 space-y-4 border-b border-slate-200 p-4 dark:border-slate-800" aria-label="Search people">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <MultiSelect label="Country" options={PEOPLE_COUNTRIES} value={draft.countries} onChange={(countries) => setDraft({ ...draft, countries })} placeholder="Search countries..." />
             <Field label="Industry" htmlFor="people-industry">
@@ -97,12 +92,14 @@ export function People() {
         {list.isError ? (
           <div className="p-4"><ErrorNotice error={list.error} onRetry={() => void list.refetch()} /></div>
         ) : list.isPending ? (
-          <LoadingRows cols={11} />
+          <div className="min-h-0 flex-1 overflow-y-auto"><LoadingRows cols={12} /></div>
         ) : (
           <>
-            <p className="px-4 pt-3 text-sm text-slate-600 dark:text-slate-400" role="status">{fmt(total)} {total === 1 ? "person" : "people"} found</p>
-            <Table>
-              <thead>
+            <p className="shrink-0 px-4 pt-3 text-sm text-slate-600 dark:text-slate-400" role="status">{fmt(total)} {total === 1 ? "person" : "people"} found</p>
+            {/* The table scrolls on its own (both ways) with the header row pinned, like Apollo; the page and the filters stay put. */}
+            <div className="min-h-0 flex-1 overflow-auto" tabIndex={0} aria-label="People results">
+            <table className="w-full min-w-[1400px] text-left text-sm">
+              <thead className="sticky top-0 z-10">
                 <tr>
                   <Th>First Name</Th><Th>Last Name</Th><Th>Title</Th><Th>Company Name</Th><Th>Email</Th><Th># Employees</Th>
                   <Th>Industry</Th><Th>Person Linkedin Url</Th><Th>Website</Th><Th>City</Th><Th>State</Th><Th>Country</Th>
@@ -126,12 +123,13 @@ export function People() {
                   </tr>
                 ))}
               </tbody>
-            </Table>
+            </table>
+            </div>
             {list.data.items.length === 0 && <Empty>No people match these filters. Try removing one.</Empty>}
-            {total > 0 && <Pagination page={page} pageCount={pageCount} total={total} pageSize={PAGE_SIZE} onPage={setPage} />}
+            {total > 0 && <div className="shrink-0"><Pagination page={page} pageCount={pageCount} total={total} pageSize={PAGE_SIZE} onPage={setPage} /></div>}
           </>
         )}
       </Card>
-    </>
+    </div>
   );
 }

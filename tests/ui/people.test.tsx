@@ -14,10 +14,10 @@ const base: Handler = ({ path }) => (path === "/api/people" ? reply([person(), p
 const lastSearch = (calls: ReturnType<typeof stubApi>) => [...calls].reverse().find((c) => c.path === "/api/people");
 
 describe("People page", () => {
-  it("shows the sample-data notice and the requested columns, with the rows", async () => {
+  it("shows the requested columns (and no sample-data warning), with the rows", async () => {
     stubApi(base);
     renderAt(<People />);
-    expect(screen.getByText("Sample data")).toBeTruthy();
+    expect(screen.queryByText("Sample data")).toBeNull();
     expect(await screen.findByText("ava.smith@summitgroup.example")).toBeTruthy();
     const headers = screen.getAllByRole("columnheader").map((h) => h.textContent);
     expect(headers).toEqual(["First Name", "Last Name", "Title", "Company Name", "Email", "# Employees", "Industry", "Person Linkedin Url", "Website", "City", "State", "Country"]);
