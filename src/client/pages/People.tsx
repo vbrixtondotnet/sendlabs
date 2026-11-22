@@ -98,11 +98,11 @@ export function People() {
             <p className="shrink-0 px-4 pt-3 text-sm text-slate-600 dark:text-slate-400" role="status">{fmt(total)} {total === 1 ? "person" : "people"} found</p>
             {/* The table scrolls on its own (both ways) with the header row pinned, like Apollo; the page and the filters stay put. */}
             <div className="min-h-0 flex-1 overflow-auto" tabIndex={0} aria-label="People results">
-            <table className="w-full min-w-[1400px] text-left text-sm">
+            <table className="w-full min-w-[1250px] text-left text-sm">
               <thead className="sticky top-0 z-10">
                 <tr>
                   <Th>First Name</Th><Th>Last Name</Th><Th>Title</Th><Th>Company Name</Th><Th>Email</Th><Th># Employees</Th>
-                  <Th>Industry</Th><Th>Person Linkedin Url</Th><Th>Website</Th><Th>City</Th><Th>State</Th><Th>Country</Th>
+                  <Th>Industry</Th><Th>Website</Th><Th>City</Th><Th>State</Th><Th>Country</Th>
                 </tr>
               </thead>
               <tbody>
@@ -115,7 +115,6 @@ export function People() {
                     <Td className="text-slate-600 dark:text-slate-300">{p.email}</Td>
                     <Td className="tabular-nums">{fmt(p.employees)}</Td>
                     <Td>{p.industry}</Td>
-                    <Td><a className="text-brand-600 hover:underline dark:text-brand-400" href={p.linkedinUrl} target="_blank" rel="noopener noreferrer">LinkedIn</a></Td>
                     <Td><a className="text-brand-600 hover:underline dark:text-brand-400" href={p.website} target="_blank" rel="noopener noreferrer">{p.website.replace(/^https?:\/\//, "")}</a></Td>
                     <Td>{dash(p.city)}</Td>
                     <Td>{dash(p.state)}</Td>

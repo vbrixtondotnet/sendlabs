@@ -20,10 +20,10 @@ describe("People page", () => {
     expect(screen.queryByText("Sample data")).toBeNull();
     expect(await screen.findByText("ava.smith@summitgroup.example")).toBeTruthy();
     const headers = screen.getAllByRole("columnheader").map((h) => h.textContent);
-    expect(headers).toEqual(["First Name", "Last Name", "Title", "Company Name", "Email", "# Employees", "Industry", "Person Linkedin Url", "Website", "City", "State", "Country"]);
+    expect(headers).toEqual(["First Name", "Last Name", "Title", "Company Name", "Email", "# Employees", "Industry", "Website", "City", "State", "Country"]);
     const row = screen.getByText("ava.smith@summitgroup.example").closest("tr")!;
     expect(within(row).getByText("1,400")).toBeTruthy();
-    expect(within(row).getByRole("link", { name: "LinkedIn" }).getAttribute("href")).toBe("https://www.linkedin.com/in/ava-smith-1");
+    expect(within(row).queryByRole("link", { name: "LinkedIn" })).toBeNull();
     expect(screen.getByText("2 people found")).toBeTruthy();
   });
 
