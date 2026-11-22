@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { PEOPLE_COMPANY_SIZES, PEOPLE_COUNTRIES, PEOPLE_INDUSTRIES, PEOPLE_MAX_TITLES } from "@shared/people";
-import { Button, Card, Empty, ErrorNotice, Field, LoadingRows, PageHeader, Pagination, Select, Td, Th, fmt } from "@/components/ui";
+import { Button, Card, Empty, ErrorNotice, Field, LoadingRows, Notice, PageHeader, Pagination, Select, Td, Th, fmt } from "@/components/ui";
 import { MultiSelect } from "@/components/MultiSelect";
+import { useToast } from "@/hooks/useToast";
 import { usePeopleSearch, type PeopleFilters } from "@/services/people";
 
 const PAGE_SIZE = 25;
@@ -47,6 +48,7 @@ export function People() {
   const [draft, setDraft] = useState<PeopleFilters>(NONE);
   const [applied, setApplied] = useState<PeopleFilters>(NONE);
   const [page, setPage] = useState(1);
+  const { toast } = useToast();
   const list = usePeopleSearch(applied, page, PAGE_SIZE);
   const total = list.data?.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -65,6 +67,11 @@ export function People() {
   return (
     <div className="flex h-[calc(100vh-8rem)] min-h-[28rem] flex-col">
       <PageHeader title="People" description="Find people to reach out to, by country, industry, company size and job title." />
+      <div className="mb-4 shrink-0">
+        <Notice tone="info" title="Reveal a person's email address">
+          Email addresses are hidden until you reveal them. Click <strong>Add Contact</strong> next to a person to reveal their email address for <strong>1 credit</strong>.
+        </Notice>
+      </div>
       <Card className="flex min-h-0 flex-1 flex-col">
         <form onSubmit={search} className="shrink-0 space-y-4 border-b border-slate-200 p-4 dark:border-slate-800" aria-label="Search people">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -112,7 +119,11 @@ export function People() {
                     <Td className="font-medium">{p.lastName}</Td>
                     <Td className="max-w-[14rem] truncate">{p.title}</Td>
                     <Td className="whitespace-nowrap">{p.companyName}</Td>
-                    <Td className="text-slate-600 dark:text-slate-300">{p.email}</Td>
+                    <Td>
+                      <Button variant="primary" className="whitespace-nowrap !px-3 !py-1" onClick={() => toast(`Adding ${p.firstName} ${p.lastName} will be available once Apollo is connected.`, "info")}>
+                        Add Contact
+                      </Button>
+                    </Td>
                     <Td className="tabular-nums">{fmt(p.employees)}</Td>
                     <Td>{p.industry}</Td>
                     <Td><a className="text-brand-600 hover:underline dark:text-brand-400" href={p.website} target="_blank" rel="noopener noreferrer">{p.website.replace(/^https?:\/\//, "")}</a></Td>

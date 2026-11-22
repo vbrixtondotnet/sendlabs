@@ -18,13 +18,18 @@ describe("People page", () => {
     stubApi(base);
     renderAt(<People />);
     expect(screen.queryByText("Sample data")).toBeNull();
-    expect(await screen.findByText("ava.smith@summitgroup.example")).toBeTruthy();
+    expect(await screen.findByText("Ava")).toBeTruthy();
     const headers = screen.getAllByRole("columnheader").map((h) => h.textContent);
     expect(headers).toEqual(["First Name", "Last Name", "Title", "Company Name", "Email", "# Employees", "Industry", "Website", "City", "State", "Country"]);
-    const row = screen.getByText("ava.smith@summitgroup.example").closest("tr")!;
+    const row = screen.getByText("Ava").closest("tr")!;
     expect(within(row).getByText("1,400")).toBeTruthy();
     expect(within(row).queryByRole("link", { name: "LinkedIn" })).toBeNull();
     expect(screen.getByText("2 people found")).toBeTruthy();
+    // The email is hidden: a button reveals it (for a credit) instead of the address.
+    expect(within(row).getByRole("button", { name: "Add Contact" })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Add Contact" })).toHaveLength(2);
+    expect(document.body.textContent).not.toContain("ava.smith@summitgroup.example");
+    expect(screen.getByText("1 credit")).toBeTruthy();
   });
 
   it("picks several countries from a searchable dropdown", async () => {
@@ -74,7 +79,7 @@ describe("People page", () => {
   it("shows a dash for a missing city or state", async () => {
     stubApi(({ path }) => (path === "/api/people" ? reply([person({ city: "", state: "" })]) : undefined));
     renderAt(<People />);
-    const row = (await screen.findByText("ava.smith@summitgroup.example")).closest("tr")!;
+    const row = (await screen.findByText("Ava")).closest("tr")!;
     expect(within(row).getAllByText("-")).toHaveLength(2);
   });
 
