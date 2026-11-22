@@ -128,7 +128,7 @@ export function People() {
                     <Td className="max-w-[14rem] truncate">{p.title}</Td>
                     <Td className="whitespace-nowrap">{p.companyName}</Td>
                     <Td>
-                      <Button variant="primary" className="whitespace-nowrap !px-3 !py-1" onClick={() => toast(`Adding ${p.firstName} ${p.lastName} will be available once Apollo is connected.`, "info")}>
+                      <Button variant="primary" className="cursor-pointer whitespace-nowrap !px-3 !py-1" onClick={() => toast(`Adding ${p.firstName} ${p.lastName} will be available once Apollo is connected.`, "info")}>
                         Add Contact
                       </Button>
                     </Td>

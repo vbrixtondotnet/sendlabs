@@ -26,7 +26,7 @@ describe("the Settings menu is for Administrators only", () => {
     stubApi(({ path }) => (path === "/api/me" ? { json: me({ access: "Administrator" }) } : undefined));
     open();
     await screen.findByText("Sabertooth Software Labs");
-    expect(links()).toEqual(expect.arrayContaining(["Overview", "Imports", "Contacts", "People", "Campaigns", "Settings"]));
+    expect(links()).toEqual(expect.arrayContaining(["Overview", "Imports", "Contacts", "Search People", "Campaigns", "Settings"]));
     expect(screen.getByRole("link", { name: "Settings" }).getAttribute("href")).toBe("/settings");
     expect(screen.getByText("Settings are a preview")).toBeTruthy();
   });
@@ -45,6 +45,21 @@ describe("the Settings menu is for Administrators only", () => {
     vi.stubGlobal("fetch", () => new Promise(() => undefined)); // never answers: who is signed in stays unknown
     open();
     expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
+  });
+});
+
+describe("the credits badge (mockup)", () => {
+  it("shows 100 Credits at the top right for a tenant user", async () => {
+    stubApi(({ path }) => (path === "/api/me" ? { json: me() } : undefined));
+    open();
+    expect(await screen.findByText("100 Credits")).toBeTruthy();
+  });
+
+  it("is not shown to a SuperAdministrator, who belongs to no tenant", async () => {
+    stubApi(({ path }) => (path === "/api/me" ? { json: me({ access: "SuperAdministrator" }) } : path.startsWith("/api/email-templates") ? { json: { items: [] } } : undefined));
+    open();
+    await screen.findByText("Sabertooth Software Labs");
+    expect(screen.queryByText("100 Credits")).toBeNull();
   });
 });
 

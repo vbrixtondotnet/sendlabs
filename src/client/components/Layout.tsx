@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
+import { CreditsBadge } from "@/components/CreditsBadge";
 import { Logo } from "@/components/Logo";
 import { UserMenu } from "@/components/UserMenu";
 import { ApiClientError } from "@/services/http";
@@ -9,7 +10,7 @@ const NAV: { to: string; label: string; icon: ReactNode; end?: boolean }[] = [
   { to: "/", label: "Overview", end: true, icon: <path d="M3 12l9-8 9 8M5 10v10h5v-6h4v6h5V10" /> },
   { to: "/imports", label: "Imports", icon: <path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v3h16v-3" /> },
   { to: "/contacts", label: "Contacts", icon: <path d="M16 11a4 4 0 10-8 0 4 4 0 008 0zM4 21c0-4 4-6 8-6s8 2 8 6" /> },
-  { to: "/people", label: "People", icon: <path d="M9 11a3 3 0 100-6 3 3 0 000 6zM3 20c0-3.5 3-5 6-5s6 1.5 6 5M17 11a2.5 2.5 0 100-5M17 15c2.5 0 4 1.3 4 4" /> },
+  { to: "/people", label: "Search People", icon: <path d="M9 11a3 3 0 100-6 3 3 0 000 6zM3 20c0-3.5 3-5 6-5s6 1.5 6 5M17 11a2.5 2.5 0 100-5M17 15c2.5 0 4 1.3 4 4" /> },
   { to: "/campaigns", label: "Campaigns", icon: <path d="M3 7l9 6 9-6M3 7v10h18V7H3z" /> },
   { to: "/templates", label: "Email Templates", icon: <path d="M6 3h9l4 4v14H6V3zM14 3v5h5M9 12h7M9 16h7" /> },
   { to: "/settings", label: "Settings", icon: <path d="M12 15a3 3 0 100-6 3 3 0 000 6zM19 12l2-1-2-4-2 1-2-1-1-2h-4l-1 2-2 1-2-1-2 4 2 1v2l-2 1 2 4 2-1 2 1 1 2h4l1-2 2-1 2 1 2-4-2-1v-2z" /> },
@@ -96,6 +97,7 @@ export function Layout() {
             <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">Not signed in</span>
           ) : null}
           <div className="ml-auto flex items-center gap-2">
+            {me.data && !isSuperAdmin && <CreditsBadge />}
             {me.data && <UserMenu user={me.data.user} />}
           </div>
         </header>
