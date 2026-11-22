@@ -5,7 +5,7 @@ import { MultiSelect } from "@/components/MultiSelect";
 import { useToast } from "@/hooks/useToast";
 import { usePeopleSearch, type PeopleFilters } from "@/services/people";
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 50;
 const NONE: PeopleFilters = { countries: [], industry: "", companySize: "", titles: [] };
 
 /** Job titles: type one and press Enter (or comma) to add it; each shows as a removable chip. */
@@ -65,37 +65,45 @@ export function People() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] min-h-[28rem] flex-col">
-      <PageHeader title="People" description="Find people to reach out to, by country, industry, company size and job title." />
-      <div className="mb-4 shrink-0">
-        <Notice tone="info" title="Reveal a person's email address">
-          Email addresses are hidden until you reveal them. Click <strong>Add Contact</strong> next to a person to reveal their email address for <strong>1 credit</strong>.
-        </Notice>
+    // Filters on the left, results on the right (like Apollo). On a large screen the page is exactly as tall as the window, so only
+    // the filters and the table scroll, each on its own; on a small one the two stack and the page scrolls normally.
+    <div className="flex flex-col lg:h-[calc(100vh-6.5rem)]">
+      <div className="shrink-0 [&>div]:!mb-3">
+        <PageHeader title="People" description="Find people to reach out to, by country, industry, company size and job title." />
       </div>
-      <Card className="flex min-h-0 flex-1 flex-col">
-        <form onSubmit={search} className="shrink-0 space-y-4 border-b border-slate-200 p-4 dark:border-slate-800" aria-label="Search people">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <MultiSelect label="Country" options={PEOPLE_COUNTRIES} value={draft.countries} onChange={(countries) => setDraft({ ...draft, countries })} placeholder="Search countries..." />
-            <Field label="Industry" htmlFor="people-industry">
-              <Select id="people-industry" value={draft.industry} onChange={(e) => setDraft({ ...draft, industry: e.target.value })}>
-                <option value="">Any industry</option>
-                {PEOPLE_INDUSTRIES.map((i) => <option key={i}>{i}</option>)}
-              </Select>
-            </Field>
-            <Field label="Company size" htmlFor="people-size">
-              <Select id="people-size" value={draft.companySize} onChange={(e) => setDraft({ ...draft, companySize: e.target.value })}>
-                <option value="">Any size</option>
-                {PEOPLE_COMPANY_SIZES.map((s) => <option key={s.value} value={s.value}>{s.label} employees</option>)}
-              </Select>
-            </Field>
-            <TitlesInput value={draft.titles} onChange={(titles) => setDraft({ ...draft, titles })} />
-          </div>
-          <div className="flex gap-2">
-            <Button type="submit" variant="primary">Search</Button>
-            <Button type="button" variant="secondary" onClick={reset}>Reset</Button>
-          </div>
-        </form>
+      <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row">
+        <aside className="shrink-0 lg:w-72 lg:overflow-y-auto" aria-label="Filters">
+          <Card>
+            <form onSubmit={search} className="space-y-4 p-4" aria-label="Search people">
+              <MultiSelect label="Country" options={PEOPLE_COUNTRIES} value={draft.countries} onChange={(countries) => setDraft({ ...draft, countries })} placeholder="Search countries..." />
+              <Field label="Industry" htmlFor="people-industry">
+                <Select id="people-industry" value={draft.industry} onChange={(e) => setDraft({ ...draft, industry: e.target.value })}>
+                  <option value="">Any industry</option>
+                  {PEOPLE_INDUSTRIES.map((i) => <option key={i}>{i}</option>)}
+                </Select>
+              </Field>
+              <Field label="Company size" htmlFor="people-size">
+                <Select id="people-size" value={draft.companySize} onChange={(e) => setDraft({ ...draft, companySize: e.target.value })}>
+                  <option value="">Any size</option>
+                  {PEOPLE_COMPANY_SIZES.map((s) => <option key={s.value} value={s.value}>{s.label} employees</option>)}
+                </Select>
+              </Field>
+              <TitlesInput value={draft.titles} onChange={(titles) => setDraft({ ...draft, titles })} />
+              <div className="flex gap-2">
+                <Button type="submit" variant="primary" className="flex-1">Search</Button>
+                <Button type="button" variant="secondary" onClick={reset}>Reset</Button>
+              </div>
+            </form>
+          </Card>
+        </aside>
 
+        <section className="flex min-h-[28rem] min-w-0 flex-1 flex-col gap-3 lg:min-h-0" aria-label="Results">
+          <div className="shrink-0">
+            <Notice tone="info" title="Reveal a person's email address">
+              Email addresses are hidden until you reveal them. Click <strong>Add Contact</strong> next to a person to reveal their email address for <strong>1 credit</strong>.
+            </Notice>
+          </div>
+          <Card className="flex min-h-0 flex-1 flex-col">
         {list.isError ? (
           <div className="p-4"><ErrorNotice error={list.error} onRetry={() => void list.refetch()} /></div>
         ) : list.isPending ? (
@@ -114,7 +122,7 @@ export function People() {
               </thead>
               <tbody>
                 {list.data.items.map((p) => (
-                  <tr key={p.id}>
+                  <tr key={p.id} className="[&>td]:!py-1.5">
                     <Td className="font-medium">{p.firstName}</Td>
                     <Td className="font-medium">{p.lastName}</Td>
                     <Td className="max-w-[14rem] truncate">{p.title}</Td>
@@ -139,7 +147,9 @@ export function People() {
             {total > 0 && <div className="shrink-0"><Pagination page={page} pageCount={pageCount} total={total} pageSize={PAGE_SIZE} onPage={setPage} /></div>}
           </>
         )}
-      </Card>
+          </Card>
+        </section>
+      </div>
     </div>
   );
 }
