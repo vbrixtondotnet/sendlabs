@@ -1,5 +1,5 @@
 {
-  // Sendrix Worker: the API, the daily sender (Cron) and, once deployed, the built app (static assets).
+  // Sendrix Worker: the API, the daily sender (Cron) and, once deployed, the built app (static assets). The database is PostgreSQL.
   // R2 and Queues are not used. Staging and production declare their own bindings, since environments inherit none.
   "name": "sendrix",
   "main": "src/server/index.ts",
@@ -19,19 +19,15 @@
   // http://localhost:8787/__scheduled, or use POST /api/campaigns/run-tick (local only).
   "triggers": { "crons": ["* * * * *"] },
 
-  // Top level = local development. Wrangler simulates D1 on disk under .wrangler/, so the
-  // database_id below is a placeholder and is never sent anywhere.
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "sendrix-db-local",
-      "database_id": "00000000-0000-0000-0000-000000000000",
-      "migrations_dir": "migrations"
-    }
-  ],
+  // Top level = local development. The database is PostgreSQL on your own machine: the Worker reads its address from
+  // DATABASE_URL in .dev.vars (git-ignored; see .dev.vars.example), so there is no database binding here. The PostgreSQL driver
+  // needs Node compatibility.
+  "compatibility_flags": ["nodejs_compat"],
 
-  // Bindings are NOT inherited by environments, so each one declares its own database.
-  // Replace the placeholder IDs with the values printed by `wrangler d1 create`.
+  // Bindings are NOT inherited by environments, so each one declares its own. In a deployed environment the database is reached
+  // through Cloudflare Hyperdrive (a connection pool in front of PostgreSQL). Create one per environment with
+  //   npx wrangler hyperdrive create <name> --connection-string "postgresql://USER:PASSWORD@HOST:5432/DATABASE"
+  // and put the id it prints in "hyperdrive" below. The connection string itself lives in Hyperdrive, never in this file.
   "env": {
     "staging": {
       "name": "sendrix-staging",
@@ -41,14 +37,8 @@
       // above all /unsubscribe/<token>, load from the same address. Requests under /api/ always go to the Worker; every other
       // address that is not a file falls back to the app (single-page application), where the router takes over.
       "assets": { "directory": "./dist", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*"] },
-      "d1_databases": [
-        {
-          "binding": "DB",
-          "database_name": "sendrix-db-staging",
-          "database_id": "REPLACE_WITH_STAGING_DATABASE_ID",
-          "migrations_dir": "migrations"
-        }
-      ]
+      "compatibility_flags": ["nodejs_compat"],
+      "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "REPLACE_WITH_STAGING_HYPERDRIVE_ID" }]
     },
     "production": {
       "name": "sendrix-production",
@@ -61,14 +51,8 @@
       // above all /unsubscribe/<token>, load from the same address. Requests under /api/ always go to the Worker; every other
       // address that is not a file falls back to the app (single-page application), where the router takes over.
       "assets": { "directory": "./dist", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*"] },
-      "d1_databases": [
-        {
-          "binding": "DB",
-          "database_name": "sendrix-db-production",
-          "database_id": "cdd7cd9a-c008-464f-a61a-9a107021d752",
-          "migrations_dir": "migrations"
-        }
-      ]
+      "compatibility_flags": ["nodejs_compat"],
+      "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "REPLACE_WITH_PRODUCTION_HYPERDRIVE_ID" }]
     }
   }
 }

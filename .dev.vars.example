@@ -1,3 +1,9 @@
+# PostgreSQL. The app database for local development, and a login that may create databases for the tests (each test file gets
+# a copy of its own and drops it). Create both as described in the README ("PostgreSQL"). In staging and production the Worker
+# uses the HYPERDRIVE binding instead, so no URL is set there.
+DATABASE_URL=postgresql://sendrix:your-password@localhost:5432/sendrix
+TEST_DATABASE_URL=postgresql://sendrix:your-password@localhost:5432/sendrix_test
+
 # Local secrets for the Gmail connection. Copy this file to `.dev.vars` (which is git-ignored) and fill it in.
 # Never commit real values. In staging and production use `wrangler secret put <NAME> --env <env>` instead.
 # Setup steps: see "Connecting Gmail" in the README.

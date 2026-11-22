@@ -42,9 +42,9 @@ describe("signing in", () => {
   });
 
   it("reports an account flagged must-change-password, so the app can act on it", async () => {
-    await h.sql("UPDATE users SET must_change_password = 1 WHERE id = ?", h.userId);
+    await h.sql("UPDATE users SET must_change_password = true WHERE id = ?", h.userId);
     expect((await login(EMAIL, PASSWORD)).json.mustChangePassword).toBe(true);
-    await h.sql("UPDATE users SET must_change_password = 0 WHERE id = ?", h.userId);
+    await h.sql("UPDATE users SET must_change_password = false WHERE id = ?", h.userId);
   });
 
   it("the session works, as that user, and only a hash of it is stored", async () => {
@@ -384,8 +384,7 @@ describe("staying signed in (30 days that restart on use)", () => {
 
   it("the renewal itself refuses to revive an expired session or to shorten a live one (guards against racing requests)", async () => {
     const { sessionsRepo } = await import("../../src/server/database/repositories/sessions");
-    const { createDb } = await import("../../src/server/database/client");
-    const repo = sessionsRepo(createDb(h.env.DB));
+    const repo = sessionsRepo(h.db);
     const idOf = async (s: string) => (await h.rows<{ id: string }>("SELECT id FROM sessions WHERE token_hash = ?", await sha256Base64Url(s)))[0]!.id;
 
     const dead = await newSession();

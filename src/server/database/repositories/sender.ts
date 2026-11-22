@@ -54,17 +54,17 @@ export function oauthStatesRepo(db: Database) {
     /** Starts an attempt. Only the latest one per tenant stays valid, and old leftovers are swept away. */
     async start(input: { tenantId: string; userId: string; stateHash: string; codeVerifierEncrypted: string; ttlMs: number }) {
       const now = nowMs();
-      await db.batch([
-        db.delete(oauthStates).where(and(eq(oauthStates.tenantId, input.tenantId), isNull(oauthStates.usedAt))),
-        db.delete(oauthStates).where(lt(oauthStates.expiresAt, now - 60 * 60 * 1000)),
-        db.insert(oauthStates).values({
+      await db.transaction(async (tx) => {
+        await tx.delete(oauthStates).where(and(eq(oauthStates.tenantId, input.tenantId), isNull(oauthStates.usedAt)));
+        await tx.delete(oauthStates).where(lt(oauthStates.expiresAt, now - 60 * 60 * 1000));
+        await tx.insert(oauthStates).values({
           tenantId: input.tenantId,
           userId: input.userId,
           stateHash: input.stateHash,
           codeVerifierEncrypted: input.codeVerifierEncrypted,
           expiresAt: now + input.ttlMs,
-        }),
-      ]);
+        });
+      });
     },
 
     /**

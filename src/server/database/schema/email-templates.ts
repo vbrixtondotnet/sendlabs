@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, foreignKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { check, foreignKey, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core";
 import { createdAt, idColumn, updatedAt } from "./helpers";
 import { tenants } from "./tenants";
 import { users } from "./users";
@@ -9,7 +9,7 @@ import { users } from "./users";
  * template (the Available Templates, kept in builtin-templates.ts until a global SuperAdministrator can manage them) that
  * an Administrator added, or a template the Administrator wrote. Removing a template deletes its row.
  */
-export const emailTemplates = sqliteTable(
+export const emailTemplates = pgTable(
   "email_templates",
   {
     id: idColumn(),

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { check, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core";
 import { createdAt, idColumn, updatedAt } from "./helpers";
 
 /**
@@ -8,7 +8,7 @@ import { createdAt, idColumn, updatedAt } from "./helpers";
  * "My Templates" (`email_templates`), and the copy is independent: later edits or deletion here do not change it.
  * The first nine are seeded by a migration from the files in "Email Templates/" (their ids are stable slugs).
  */
-export const systemTemplates = sqliteTable(
+export const systemTemplates = pgTable(
   "system_templates",
   {
     id: idColumn(),

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { boolean, check, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core";
 import { TENANT_STATUSES } from "../../../shared/types";
 import { createdAt, idColumn, inList, updatedAt } from "./helpers";
 
@@ -8,7 +8,7 @@ import { createdAt, idColumn, inList, updatedAt } from "./helpers";
  * database), so isolation rests on every tenant-owned row carrying a `tenant_id`, on every query filtering
  * by it, and on composite foreign keys that stop a row pointing at another tenant's data.
  */
-export const tenants = sqliteTable(
+export const tenants = pgTable(
   "tenants",
   {
     id: idColumn(),
@@ -20,9 +20,9 @@ export const tenants = sqliteTable(
     /** The organization's website (a domain or URL, as entered), shown in the email signature. Empty until set. */
     website: text("website").notNull().default(""),
     /** Compliance: every campaign must contain an unsubscribe link (`{{unsubscribeUrl}}`). On by default. */
-    requireUnsubscribeLink: integer("require_unsubscribe_link", { mode: "boolean" }).notNull().default(true),
+    requireUnsubscribeLink: boolean("require_unsubscribe_link").notNull().default(true),
     /** Compliance: add the one-click `List-Unsubscribe` headers to every email. On by default. */
-    oneClickUnsubscribe: integer("one_click_unsubscribe", { mode: "boolean" }).notNull().default(true),
+    oneClickUnsubscribe: boolean("one_click_unsubscribe").notNull().default(true),
     status: text("status", { enum: TENANT_STATUSES }).notNull().default("Active"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -33,7 +33,8 @@ export const tenants = sqliteTable(
     uniqueIndex("tenants_name_uq").on(sql`lower(${t.name})`),
     check("tenants_status_chk", inList("status", TENANT_STATUSES)),
     check("tenants_name_chk", sql.raw(`length(trim("name")) > 0`)),
-    check("tenants_slug_chk", sql.raw(`"slug" <> '' AND "slug" NOT GLOB '*[^a-z0-9-]*'`)),
+    // Lower-case letters, digits and hyphens only (SQLite wrote this with GLOB; PostgreSQL uses a regular expression).
+    check("tenants_slug_chk", sql.raw(`"slug" <> '' AND "slug" !~ '[^a-z0-9-]'`)),
   ],
 );
 

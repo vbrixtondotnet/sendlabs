@@ -242,7 +242,7 @@ describe("the unsubscribe settings", () => {
 
   it("are both ON for a new organization, and /api/me says so", async () => {
     const t = await h.addTenant("Compliance Fresh Ltd", "boss@compfresh.test");
-    expect(await rowOf(t.tenantId)).toEqual({ require_unsubscribe_link: 1, one_click_unsubscribe: 1 });
+    expect(await rowOf(t.tenantId)).toEqual({ require_unsubscribe_link: true, one_click_unsubscribe: true });
     expect((await h.as("boss@compfresh.test").api("GET", "/api/me")).json.tenant).toMatchObject({ requireUnsubscribeLink: true, oneClickUnsubscribe: true });
   });
 
@@ -250,20 +250,20 @@ describe("the unsubscribe settings", () => {
     const r = await set({ requireUnsubscribeLink: false });
     expect(r.status).toBe(200);
     expect(r.json).toMatchObject({ id: h.tenantId, requireUnsubscribeLink: false, oneClickUnsubscribe: true });
-    expect((await rowOf(h.tenantId)).require_unsubscribe_link).toBe(0);
+    expect((await rowOf(h.tenantId)).require_unsubscribe_link).toBe(false);
     expect((await (await member("viewer")).api("GET", "/api/me")).json.tenant).toMatchObject({ requireUnsubscribeLink: false, oneClickUnsubscribe: true });
     expect((await set({ oneClickUnsubscribe: false })).json).toMatchObject({ requireUnsubscribeLink: false, oneClickUnsubscribe: false });
     expect((await set({ requireUnsubscribeLink: true, oneClickUnsubscribe: true })).json).toMatchObject({ requireUnsubscribeLink: true, oneClickUnsubscribe: true });
-    expect(await rowOf(h.tenantId)).toEqual({ require_unsubscribe_link: 1, one_click_unsubscribe: 1 });
+    expect(await rowOf(h.tenantId)).toEqual({ require_unsubscribe_link: true, one_click_unsubscribe: true });
   });
 
   it("changing one leaves the other, and the other company details, alone", async () => {
     await set({ name: "Toggle Co", requireUnsubscribeLink: true, oneClickUnsubscribe: true });
     await set({ oneClickUnsubscribe: false });
-    expect(await rowOf(h.tenantId)).toEqual({ require_unsubscribe_link: 1, one_click_unsubscribe: 0 });
+    expect(await rowOf(h.tenantId)).toEqual({ require_unsubscribe_link: true, one_click_unsubscribe: false });
     expect((await nameOf(h.tenantId)).name).toBe("Toggle Co");
     await rename("Toggle Co 2");
-    expect(await rowOf(h.tenantId)).toEqual({ require_unsubscribe_link: 1, one_click_unsubscribe: 0 }); // renaming does not reset them
+    expect(await rowOf(h.tenantId)).toEqual({ require_unsubscribe_link: true, one_click_unsubscribe: false }); // renaming does not reset them
     await set({ oneClickUnsubscribe: true });
   });
 
@@ -272,24 +272,24 @@ describe("the unsubscribe settings", () => {
     for (const body of [{ requireUnsubscribeLink: "yes" }, { requireUnsubscribeLink: 0 }, { requireUnsubscribeLink: null }, { oneClickUnsubscribe: "false" }, { oneClickUnsubscribe: 1 }]) {
       expect((await set(body)).status, JSON.stringify(body)).toBe(400);
     }
-    expect(await rowOf(h.tenantId)).toEqual({ require_unsubscribe_link: 1, one_click_unsubscribe: 1 });
+    expect(await rowOf(h.tenantId)).toEqual({ require_unsubscribe_link: true, one_click_unsubscribe: true });
   });
 
   it("is all or nothing with the other fields", async () => {
     await set({ requireUnsubscribeLink: true });
     const takenName = (await h.rows<{ name: string }>("SELECT t.name FROM tenants t JOIN users u ON u.tenant_id = t.id WHERE u.normalized_email = ?", GLOBEX))[0]!.name;
     expect((await set({ name: takenName, requireUnsubscribeLink: false })).status).toBe(409);
-    expect((await rowOf(h.tenantId)).require_unsubscribe_link).toBe(1);
+    expect((await rowOf(h.tenantId)).require_unsubscribe_link).toBe(true);
   });
 
   it("only Administrators can change them, and only their own organization's", async () => {
     await set({ requireUnsubscribeLink: true });
     expect((await set({ requireUnsubscribeLink: false }, await member("campaign-manager"))).status).toBe(403);
     expect((await set({ requireUnsubscribeLink: false }, await member("viewer"))).status).toBe(403);
-    expect((await rowOf(h.tenantId)).require_unsubscribe_link).toBe(1);
+    expect((await rowOf(h.tenantId)).require_unsubscribe_link).toBe(true);
     await set({ requireUnsubscribeLink: false }, h.as(GLOBEX));
-    expect((await rowOf(h.tenantId)).require_unsubscribe_link).toBe(1);
+    expect((await rowOf(h.tenantId)).require_unsubscribe_link).toBe(true);
     const globex = (await h.rows<{ tenant_id: string }>("SELECT tenant_id FROM users WHERE normalized_email = ?", GLOBEX))[0]!.tenant_id;
-    expect((await rowOf(globex)).require_unsubscribe_link).toBe(0);
+    expect((await rowOf(globex)).require_unsubscribe_link).toBe(false);
   });
 });

@@ -7,7 +7,7 @@ import { conflict, isUniqueViolation, notFound } from "../../lib/errors";
 import { toContactDto } from "../../lib/dto";
 import { likeContains, offsetOf, pageOf } from "../../lib/http";
 import { newId, nowMs } from "../../lib/id";
-import { BULK_ROWS, chunk, runBatched, runBulk } from "../batch";
+import { BULK_ROWS, LOOKUP_CHUNK, chunk } from "../batch";
 import type { Database } from "../client";
 import { campaignRecipients, contacts, importRows } from "../schema";
 
@@ -68,44 +68,50 @@ export function contactsRepo(db: Database, tenantId: string) {
      */
     async insertMany(rows: readonly ValidContact[], sourceImportId: string): Promise<Set<string>> {
       const now = nowMs();
-      const sqlText = `INSERT INTO contacts
-        (id, tenant_id, email, normalized_email, first_name, last_name, title, company_name, employees, industry,
-         linkedin_url, website, city, state, country, annual_revenue, source_import_id, created_at, updated_at)
-        SELECT json_extract(value,'$[0]'), ?4, json_extract(value,'$[1]'), json_extract(value,'$[2]'), json_extract(value,'$[3]'),
-               json_extract(value,'$[4]'), json_extract(value,'$[5]'), json_extract(value,'$[6]'), json_extract(value,'$[7]'),
-               json_extract(value,'$[8]'), json_extract(value,'$[9]'), json_extract(value,'$[10]'), json_extract(value,'$[11]'),
-               json_extract(value,'$[12]'), json_extract(value,'$[13]'), json_extract(value,'$[14]'), ?2, ?3, ?3
-        FROM json_each(?1) WHERE true
-        ON CONFLICT(tenant_id, normalized_email) DO NOTHING
-        RETURNING normalized_email`;
-      const statements = chunk(rows, BULK_ROWS).map((group) =>
-        db.$client.prepare(sqlText).bind(
-          JSON.stringify(
-            group.map((c) => [newId(), c.rawEmail, c.email, c.firstName, c.lastName, c.title, c.companyName, c.employees, c.industry, c.linkedinUrl, c.website, c.city, c.state, c.country, c.annualRevenue]),
-          ),
-          sourceImportId,
-          now,
-          tenantId,
-        ),
-      );
       const created = new Set<string>();
-      for (const result of await runBulk(db, statements)) {
-        for (const r of (result.results ?? []) as { normalized_email: string }[]) created.add(r.normalized_email);
+      for (const group of chunk(rows, BULK_ROWS)) {
+        const inserted = await db
+          .insert(contacts)
+          .values(
+            group.map((c) => ({
+              id: newId(),
+              tenantId,
+              email: c.rawEmail,
+              normalizedEmail: c.email,
+              firstName: c.firstName,
+              lastName: c.lastName,
+              title: c.title,
+              companyName: c.companyName,
+              employees: c.employees,
+              industry: c.industry,
+              linkedinUrl: c.linkedinUrl,
+              website: c.website,
+              city: c.city,
+              state: c.state,
+              country: c.country,
+              annualRevenue: c.annualRevenue,
+              sourceImportId,
+              createdAt: now,
+              updatedAt: now,
+            })),
+          )
+          // The unique index decides: an address this tenant already has is skipped, never overwritten.
+          .onConflictDoNothing({ target: [contacts.tenantId, contacts.normalizedEmail] })
+          .returning({ email: contacts.normalizedEmail });
+        for (const r of inserted) created.add(r.email);
       }
       return created;
     },
 
     /** Maps normalized emails to this tenant's contact ids (for linking import rows). */
     async idsByEmail(emails: readonly string[]): Promise<Map<string, string>> {
-      const statements = chunk(emails, 90).map((group) =>
-        db
+      const map = new Map<string, string>();
+      for (const group of chunk(emails, LOOKUP_CHUNK)) {
+        const found = await db
           .select({ id: contacts.id, email: contacts.normalizedEmail })
           .from(contacts)
-          .where(and(mine, inArray(contacts.normalizedEmail, group))),
-      );
-      const map = new Map<string, string>();
-      for (const result of await runBatched(db, statements)) {
-        for (const r of result as { id: string; email: string }[]) map.set(r.email, r.id);
+          .where(and(mine, inArray(contacts.normalizedEmail, group)));
+        for (const r of found) map.set(r.email, r.id);
       }
       return map;
     },
@@ -176,15 +182,15 @@ export function contactsRepo(db: Database, tenantId: string) {
 
     /**
      * Removes the contact. Recipients and import rows keep their snapshots and lose only the link, which is
-     * cleared first (one atomic batch): the composite foreign keys cannot use ON DELETE SET NULL, since that
+     * cleared first (one transaction): the composite foreign keys cannot use ON DELETE SET NULL, since that
      * would also null the required tenant_id. A full erasure that scrubs those snapshots is a later feature.
      */
     async delete(id: string): Promise<void> {
-      const [, , deleted] = await db.batch([
-        db.update(campaignRecipients).set({ contactId: null }).where(and(eq(campaignRecipients.tenantId, tenantId), eq(campaignRecipients.contactId, id))),
-        db.update(importRows).set({ contactId: null }).where(and(eq(importRows.tenantId, tenantId), eq(importRows.contactId, id))),
-        db.delete(contacts).where(and(mine, eq(contacts.id, id))).returning({ id: contacts.id }),
-      ]);
+      const deleted = await db.transaction(async (tx) => {
+        await tx.update(campaignRecipients).set({ contactId: null }).where(and(eq(campaignRecipients.tenantId, tenantId), eq(campaignRecipients.contactId, id)));
+        await tx.update(importRows).set({ contactId: null }).where(and(eq(importRows.tenantId, tenantId), eq(importRows.contactId, id)));
+        return tx.delete(contacts).where(and(mine, eq(contacts.id, id))).returning({ id: contacts.id });
+      });
       if (deleted.length === 0) throw notFound("Contact");
     },
   };

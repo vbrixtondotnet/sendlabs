@@ -1,10 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { getPlatformProxy } from "wrangler";
-import { createDb } from "../../src/server/database/client";
 import { verifyPassword } from "../../src/server/lib/password";
 import { provisionTenant } from "../../src/server/services/tenants";
 import { ACCESS_LEVELS, SUPER_ADMINISTRATOR } from "../../src/shared/types";
-import { applyMigrations, migrationFiles, startHarness, uniqueEmail, type Harness } from "./harness";
+import { startHarness, uniqueEmail, type Harness } from "./harness";
 
 let h: Harness;
 beforeAll(async () => { h = await startHarness(); });
@@ -73,7 +71,7 @@ describe("users table", () => {
 });
 
 describe("provisioning a tenant with its first administrator", () => {
-  const db = () => createDb(h.env.DB);
+  const db = () => h.db;
   const input = (name: string, email: string, password = "Sup3r-Secret!") => ({ name, admin: { email, displayName: "Ada", password } });
 
   it("creates the tenant and an Administrator whose password is stored hashed", async () => {
@@ -82,7 +80,7 @@ describe("provisioning a tenant with its first administrator", () => {
     expect(r.slug).toBe("initech-llc");
     const [u] = await h.rows<{ password_hash: string; access_id: string; must_change_password: number; tenant_id: string; status: string }>(
       "SELECT password_hash,access_id,must_change_password,tenant_id,status FROM users WHERE id = ?", r.userId);
-    expect(u).toMatchObject({ access_id: "administrator", must_change_password: 1, tenant_id: r.tenantId, status: "Active" });
+    expect(u).toMatchObject({ access_id: "administrator", must_change_password: true, tenant_id: r.tenantId, status: "Active" });
     expect(u!.password_hash).not.toContain("Sup3r-Secret!");
     expect(await verifyPassword("Sup3r-Secret!", u!.password_hash)).toBe(true);
     expect(await verifyPassword("wrong", u!.password_hash)).toBe(false);
@@ -125,48 +123,5 @@ describe("provisioning a tenant with its first administrator", () => {
       await expect(provisionTenant(db(), args), label).rejects.toMatchObject({ status: 400, code: "VALIDATION_ERROR" });
     }
     expect((await h.rows<{ n: number }>("SELECT count(*) AS n FROM tenants"))[0]!.n).toBe(before);
-  });
-});
-
-describe("the migration that introduced tenants", () => {
-  // Everything before 0002: later migrations build on the tables 0002 creates, so they cannot run first.
-  const legacyOnly = (name: string) => name < "0002";
-  const migration0002 = () => migrationFiles().find((f) => f.name.startsWith("0002"))!;
-
-  it("refuses to run while any tenant-owned table holds data, and changes nothing", async () => {
-    const proxy = await getPlatformProxy<Env>({ persist: false });
-    try {
-      const d1 = proxy.env.DB;
-      await applyMigrations(d1, legacyOnly); // the schema as it was before tenants
-      await d1.prepare("INSERT INTO contacts (id,email,normalized_email,created_at,updated_at) VALUES ('c1','a@b.co','a@b.co',1,1)").run();
-
-      await expect(d1.batch(migration0002().statements.map((s) => d1.prepare(s)))).rejects.toThrow(/NOT NULL|constraint/i);
-
-      const contacts = await d1.prepare("SELECT count(*) AS n FROM contacts").first<{ n: number }>();
-      expect(contacts!.n).toBe(1); // the row survived
-      const cols = (await d1.prepare("PRAGMA table_info(contacts)").all<{ name: string }>()).results.map((c) => c.name);
-      expect(cols).not.toContain("tenant_id"); // the table was not rebuilt
-      const tables = (await d1.prepare("SELECT name FROM sqlite_master WHERE type='table'").all<{ name: string }>()).results.map((t) => t.name);
-      expect(tables).not.toContain("tenants");
-      expect(tables).not.toContain("__tenancy_guard"); // the guard cleaned up after itself
-    } finally {
-      await proxy.dispose();
-    }
-  });
-
-  it("runs once the tables are empty, giving contacts a tenant and seeding the access levels", async () => {
-    const proxy = await getPlatformProxy<Env>({ persist: false });
-    try {
-      const d1 = proxy.env.DB;
-      await applyMigrations(d1, legacyOnly);
-      await d1.batch(migration0002().statements.map((s) => d1.prepare(s)));
-
-      const cols = (await d1.prepare("PRAGMA table_info(contacts)").all<{ name: string; notnull: number }>()).results;
-      expect(cols.find((c) => c.name === "tenant_id")).toMatchObject({ notnull: 1 });
-      const levels = (await d1.prepare("SELECT name FROM access ORDER BY sort_order").all<{ name: string }>()).results.map((r) => r.name);
-      expect(levels).toEqual(["Administrator", "Campaign Manager", "Viewer"]);
-    } finally {
-      await proxy.dispose();
-    }
   });
 });

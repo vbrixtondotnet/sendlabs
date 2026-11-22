@@ -1,7 +1,7 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, gt, inArray, sql } from "drizzle-orm";
 import { normalizeEmail } from "../../shared/email";
-import type { Database } from "../database/client";
-import { access, tenants, users } from "../database/schema";
+import type { Database, DbOrTx } from "../database/client";
+import { access, loginAttempts, sessions, tenants, users } from "../database/schema";
 import { randomToken, sha256Base64Url } from "../lib/crypto";
 import { ApiError } from "../lib/errors";
 import { newId, nowMs } from "../lib/id";
@@ -29,28 +29,35 @@ export interface LoginContext {
   ip: string | null;
 }
 
-export async function lockedFor(d1: D1Database, keys: string[], now: number): Promise<number> {
-  const marks = keys.map((_, i) => `?${i + 2}`).join(",");
-  const row = await d1
-    .prepare(`SELECT max(locked_until) AS until FROM login_attempts WHERE locked_until > ?1 AND key IN (${marks})`)
-    .bind(now, ...keys)
-    .first<{ until: number | null }>();
-  return row?.until ? row.until - now : 0;
+/** How long until the soonest of these keys may try again, in ms; 0 when none is locked. */
+export async function lockedFor(db: DbOrTx, keys: string[], now: number): Promise<number> {
+  const [row] = await db
+    .select({ until: sql<number | null>`max(${loginAttempts.lockedUntil})` })
+    .from(loginAttempts)
+    .where(and(gt(loginAttempts.lockedUntil, now), inArray(loginAttempts.key, keys)));
+  return row?.until ? Number(row.until) - now : 0;
 }
 
-/** One atomic upsert: count the failure, start a new window if the last one is over, and lock at the limit. */
-export function recordFailure(d1: D1Database, key: string, max: number, now: number) {
-  const fresh = `(window_start <= ?2 - ?3 OR (locked_until IS NOT NULL AND locked_until <= ?2))`;
-  return d1
-    .prepare(
-      `INSERT INTO login_attempts (key, failures, window_start, locked_until, updated_at) VALUES (?1, 1, ?2, NULL, ?2)
-       ON CONFLICT(key) DO UPDATE SET
-         failures = CASE WHEN ${fresh} THEN 1 ELSE failures + 1 END,
-         window_start = CASE WHEN ${fresh} THEN ?2 ELSE window_start END,
-         locked_until = CASE WHEN (CASE WHEN ${fresh} THEN 1 ELSE failures + 1 END) >= ?4 THEN ?2 + ?5 ELSE NULL END,
-         updated_at = ?2`,
-    )
-    .bind(key, now, LOGIN_WINDOW_MS, max, LOGIN_LOCK_MS);
+/**
+ * One atomic upsert: count the failure, start a new window if the last one is over, and lock at the limit.
+ * (Every number is worked out here and bound as one value, with an explicit type where the database could not tell, so no
+ * arithmetic is left between two untyped parameters.)
+ */
+export async function recordFailure(db: DbOrTx, key: string, max: number, now: number): Promise<void> {
+  const fresh = sql`(${loginAttempts.windowStart} <= ${now - LOGIN_WINDOW_MS} OR (${loginAttempts.lockedUntil} IS NOT NULL AND ${loginAttempts.lockedUntil} <= ${now}))`;
+  const failuresNow = sql`(CASE WHEN ${fresh} THEN 1 ELSE ${loginAttempts.failures} + 1 END)`;
+  await db
+    .insert(loginAttempts)
+    .values({ key, failures: 1, windowStart: now, lockedUntil: null, updatedAt: now })
+    .onConflictDoUpdate({
+      target: loginAttempts.key,
+      set: {
+        failures: failuresNow,
+        windowStart: sql`CASE WHEN ${fresh} THEN ${now}::bigint ELSE ${loginAttempts.windowStart} END`,
+        lockedUntil: sql`CASE WHEN ${failuresNow} >= ${max} THEN ${now + LOGIN_LOCK_MS}::bigint ELSE NULL END`,
+        updatedAt: now,
+      },
+    });
 }
 
 /**
@@ -66,14 +73,13 @@ export async function login(
   ctx: LoginContext,
   input: { email: string; password: string },
 ): Promise<{ sessionToken: string; expiresAt: number; mustChangePassword: boolean }> {
-  const d1 = db.$client;
   const now = nowMs();
   const email = normalizeEmail(input.email);
   const emailKey = `email:${email}`;
   const ipKey = ctx.ip ? `ip:${ctx.ip.slice(0, 64)}` : null;
   const keys = ipKey ? [emailKey, ipKey] : [emailKey];
 
-  const wait = await lockedFor(d1, keys, now);
+  const wait = await lockedFor(db, keys, now);
   if (wait > 0) {
     const seconds = Math.ceil(wait / 1000);
     throw new ApiError(429, "TOO_MANY_ATTEMPTS", `Too many failed attempts. Try again in ${Math.max(1, Math.ceil(seconds / 60))} minute(s).`, { retryAfterSeconds: seconds });
@@ -97,7 +103,10 @@ export async function login(
 
   const ok = await verifyPassword(input.password, user?.passwordHash ?? (await decoyHash()));
   if (!user || !ok) {
-    await d1.batch([recordFailure(d1, emailKey, LOGIN_MAX_FAILURES, now), ...(ipKey ? [recordFailure(d1, ipKey, LOGIN_IP_MAX_FAILURES, now)] : [])]);
+    await db.transaction(async (tx) => {
+      await recordFailure(tx, emailKey, LOGIN_MAX_FAILURES, now);
+      if (ipKey) await recordFailure(tx, ipKey, LOGIN_IP_MAX_FAILURES, now);
+    });
     throw INVALID();
   }
   if (user.status !== "Active") throw new ApiError(403, "USER_DISABLED", "This account is disabled. Ask an Administrator of your organization.");
@@ -105,13 +114,13 @@ export async function login(
 
   const sessionToken = randomToken();
   const expiresAt = now + SESSION_TTL_MS;
-  await d1.batch([
-    d1.prepare(`DELETE FROM login_attempts WHERE key = ?1`).bind(emailKey),
-    d1
-      .prepare(`INSERT INTO sessions (id, tenant_id, user_id, token_hash, expires_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)`)
-      .bind(newId(), user.tenantId, user.id, await sha256Base64Url(sessionToken), expiresAt, now),
-    d1.prepare(`UPDATE users SET last_login_at = ?1 WHERE id = ?2`).bind(now, user.id),
-  ]);
+  const tokenHash = await sha256Base64Url(sessionToken);
+  await db.transaction(async (tx) => {
+    await tx.delete(loginAttempts).where(eq(loginAttempts.key, emailKey));
+    await tx.insert(sessions).values({ id: newId(), tenantId: user.tenantId, userId: user.id, tokenHash, expiresAt, createdAt: now });
+    // Only the sign-in time: a sign-in is not an edit of the user, so updated_at stays as it was.
+    await tx.execute(sql`UPDATE users SET last_login_at = ${now} WHERE id = ${user.id}`);
+  });
   console.log(JSON.stringify({ level: "info", event: "login", tenantId: user.tenantId, userId: user.id }));
   return { sessionToken, expiresAt, mustChangePassword: user.mustChangePassword };
 }

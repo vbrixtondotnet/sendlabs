@@ -35,21 +35,21 @@ export async function describeUnsubscribe(db: Database, key: string, token: stri
 /**
  * Unsubscribes the address from this company: it goes on the suppression list (so it is never emailed again) and the
  * contact, if there is one, is marked as having withdrawn consent. Idempotent: doing it twice is the same as once.
- * One atomic batch. A test link does nothing at all.
+ * One transaction. A test link does nothing at all.
  */
 export async function performUnsubscribe(db: Database, key: string, token: string): Promise<UnsubscribeResultDto> {
   const { who, companyName } = await open(db, key, token);
   if (who.test) return { unsubscribed: false, test: true, companyName };
-  await db.batch([
-    db
+  await db.transaction(async (tx) => {
+    await tx
       .insert(suppressions)
       .values({ tenantId: who.tenantId, email: who.email, normalizedEmail: who.email, reason: "Unsubscribed", campaignId: who.campaignId })
-      .onConflictDoNothing(),
-    db
+      .onConflictDoNothing();
+    await tx
       .update(contacts)
       .set({ consentStatus: "Withdrawn", consentSource: "Unsubscribe link" })
-      .where(and(eq(contacts.tenantId, who.tenantId), eq(contacts.normalizedEmail, who.email))),
-  ]);
+      .where(and(eq(contacts.tenantId, who.tenantId), eq(contacts.normalizedEmail, who.email)));
+  });
   console.log(JSON.stringify({ level: "info", event: "unsubscribed", tenantId: who.tenantId }));
   return { unsubscribed: true, test: false, companyName };
 }

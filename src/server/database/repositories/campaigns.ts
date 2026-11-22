@@ -1,4 +1,4 @@
-import { and, count, desc, eq, exists, getTableColumns, inArray, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, getTableColumns, inArray, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { CampaignDto, CampaignSummaryDto, Page, RecipientDto, RecipientTotals } from "../../../shared/api";
 import type {
   CampaignCreate,
@@ -226,31 +226,22 @@ export function campaignsRepo(db: Database, tenantId: string) {
         ...(action === "resume" ? { completedAt: null } : {}),
       };
 
-      const campaignUpdate = db
-        .update(campaigns)
-        .set(set)
-        .where(and(mine, eq(campaigns.id, id), eq(campaigns.status, row.status)))
-        .returning({ id: campaigns.id });
-
-      if (action === "cancel") {
-        const cancelRecipients = db
-          .update(campaignRecipients)
-          .set({ status: "Cancelled", leaseExpiresAt: null })
-          .where(
-            and(
-              eq(campaignRecipients.tenantId, tenantId),
-              eq(campaignRecipients.campaignId, id),
-              inArray(campaignRecipients.status, [...UNSENT_RECIPIENT_STATUSES]),
-              // Only if the first statement in this batch really cancelled the campaign.
-              exists(db.select({ one: sql`1` }).from(campaigns).where(and(mine, eq(campaigns.id, id), eq(campaigns.status, "Cancelled")))),
-            ),
-          );
-        const [updated] = await db.batch([campaignUpdate, cancelRecipients]);
-        if (updated.length === 0) throw conflict("The campaign changed while you were acting on it. Reload and retry.", "CONFLICT");
-      } else {
-        const updated = await campaignUpdate;
-        if (updated.length === 0) throw conflict("The campaign changed while you were acting on it. Reload and retry.", "CONFLICT");
-      }
+      const changed = () => conflict("The campaign changed while you were acting on it. Reload and retry.", "CONFLICT");
+      await db.transaction(async (tx) => {
+        const updated = await tx
+          .update(campaigns)
+          .set(set)
+          .where(and(mine, eq(campaigns.id, id), eq(campaigns.status, row.status)))
+          .returning({ id: campaigns.id });
+        if (updated.length === 0) throw changed();
+        if (action === "cancel") {
+          // In the same transaction as the campaign's own change: the recipients are cancelled only if the campaign really was.
+          await tx
+            .update(campaignRecipients)
+            .set({ status: "Cancelled", leaseExpiresAt: null })
+            .where(and(eq(campaignRecipients.tenantId, tenantId), eq(campaignRecipients.campaignId, id), inArray(campaignRecipients.status, [...UNSENT_RECIPIENT_STATUSES])));
+        }
+      });
       return full(id);
     },
 

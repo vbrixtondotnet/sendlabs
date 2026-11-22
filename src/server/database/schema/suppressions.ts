@@ -1,4 +1,4 @@
-import { check, foreignKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { check, foreignKey, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core";
 import { SUPPRESSION_REASONS } from "../../../shared/types";
 import { campaigns } from "./campaigns";
 import { createdAt, idColumn, inList, normalizedEmailRule } from "./helpers";
@@ -8,7 +8,7 @@ import { tenants } from "./tenants";
  * Addresses that must never be emailed again by this tenant: today, people who used an unsubscribe link. One row per
  * address per tenant (unsubscribing twice changes nothing). Rows are only ever added by the unsubscribe endpoint.
  */
-export const suppressions = sqliteTable(
+export const suppressions = pgTable(
   "suppressions",
   {
     id: idColumn(),

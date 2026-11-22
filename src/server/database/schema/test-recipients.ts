@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, foreignKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { check, foreignKey, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core";
 import { createdAt, idColumn, normalizedEmailRule } from "./helpers";
 import { tenants } from "./tenants";
 import { users } from "./users";
@@ -8,7 +8,7 @@ import { users } from "./users";
  * The test-send allowlist: the only addresses a campaign's "Send test email" ever mails. It is per tenant and managed
  * by Administrators, so nobody can aim a test at an outside address.
  */
-export const testRecipients = sqliteTable(
+export const testRecipients = pgTable(
   "test_recipients",
   {
     id: idColumn(),

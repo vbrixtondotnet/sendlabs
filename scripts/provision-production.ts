@@ -1,28 +1,20 @@
 /**
- * Creates the FIRST organization and its Administrator for a deployed (remote) database, which starts empty.
+ * Creates the FIRST organization and its Administrator in an empty PostgreSQL database (a new live deployment).
  *
- * The seed scripts refuse to run anywhere but local on purpose, and the remote database cannot be opened from Node. So this
- * runs the app's own `provisionTenant` (the same validation, password hashing and tenant-plus-admin creation the sign-up
- * flow uses) against a throwaway local database, then writes the resulting rows as an SQL file to run against the remote one:
+ * Runs the app's own `provisionTenant` (the same validation, password hashing and tenant-plus-admin creation the sign-up flow
+ * uses) directly against the target database, so run it AFTER `npm run db:migrate` has created the tables:
  *
- *   npx vite-node scripts/provision-production.ts -- --name "Sabertooth Software Labs" --email you@yourcompany.com \
- *     [--display-name "Your Name"] [--first-name F --last-name L] [--website example.com] [--password "..."] [--out path/to/provision.sql]
- *   npx wrangler d1 execute sendrix-db-production --remote --env production --file path/to/provision.sql
+ *   npx vite-node scripts/provision-production.ts -- --url "postgres://..." --name "Sabertooth Software Labs" --email you@yourcompany.com \
+ *     [--display-name "Your Name"] [--first-name F --last-name L] [--website example.com] [--password "..."]
  *
- * A strong temporary password is generated and printed ONCE here. It is never written to the SQL file (only its hash is),
- * and the account is flagged "must change password": change it from My Settings after the first sign-in.
- * Never run this twice for the same address: the second run fails on the unique email, changing nothing.
+ * `--url` may be left out to use DATABASE_URL from .dev.vars. A strong temporary password is generated and printed ONCE here;
+ * only its hash is stored, and the account is flagged "must change password": change it from My Settings after the first
+ * sign-in. Running it twice for the same address fails on the unique email, changing nothing.
  */
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { getPlatformProxy } from "wrangler";
-import { createDb } from "../src/server/database/client";
+import { sql } from "drizzle-orm";
 import { provisionTenant } from "../src/server/services/tenants";
-
-function arg(name: string): string | undefined {
-  const i = process.argv.indexOf(`--${name}`);
-  return i >= 0 ? process.argv[i + 1] : undefined;
-}
+import { arg } from "./lib/env";
+import { openDb } from "./lib/db";
 
 const name = arg("name");
 const email = arg("email");
@@ -31,9 +23,8 @@ const lastName = arg("last-name") ?? "";
 const displayName = arg("display-name") ?? [firstName, lastName].filter(Boolean).join(" ");
 const website = arg("website") ?? "";
 const givenPassword = arg("password");
-const out = arg("out") ?? join(process.env.TEMP ?? ".", "sendrix-provision.sql");
 if (!name || !email) {
-  console.error('Usage: provision-production.ts --name "Organization" --email admin@example.com [--display-name "Name"] [--out file.sql]');
+  console.error('Usage: provision-production.ts [--url postgres://...] --name "Organization" --email admin@example.com [--display-name "Name"]');
   process.exit(1);
 }
 
@@ -50,44 +41,16 @@ function temporaryPassword(): string {
   return chars.join("");
 }
 
-const sqlLiteral = (v: unknown): string => {
-  if (v === null || v === undefined) return "NULL";
-  if (typeof v === "number") return String(v);
-  if (typeof v === "boolean") return v ? "1" : "0";
-  return `'${String(v).replace(/'/g, "''")}'`;
-};
-
-const { env, dispose } = await getPlatformProxy<Env>({ persist: false });
+const { db, close } = openDb();
 try {
-  // A throwaway database with the real schema, so the real service can run on it.
-  const dir = join(process.cwd(), "migrations");
-  for (const f of readdirSync(dir).filter((x) => x.endsWith(".sql")).sort()) {
-    const statements = readFileSync(join(dir, f), "utf8").split("--> statement-breakpoint").map((s) => s.trim()).filter(Boolean);
-    await env.DB.batch(statements.map((s) => env.DB.prepare(s)));
-  }
-
   const password = givenPassword ?? temporaryPassword();
-  const { tenantId, userId } = await provisionTenant(createDb(env.DB), {
-    name,
-    admin: { email, displayName, password, mustChangePassword: true },
-  });
+  const { tenantId, userId } = await provisionTenant(db, { name, admin: { email, displayName, password, mustChangePassword: true } });
+  if (website) await db.execute(sql`UPDATE tenants SET website = ${website} WHERE id = ${tenantId}`);
+  if (firstName || lastName) await db.execute(sql`UPDATE users SET first_name = ${firstName}, last_name = ${lastName} WHERE id = ${userId}`);
 
-  if (website) await env.DB.prepare("UPDATE tenants SET website = ? WHERE id = ?").bind(website, tenantId).run();
-  if (firstName || lastName) await env.DB.prepare("UPDATE users SET first_name = ?, last_name = ? WHERE id = ?").bind(firstName, lastName, userId).run();
-
-  const lines: string[] = ["-- Generated by scripts/provision-production.ts. Contains a password HASH, never the password."];
-  for (const [table, id] of [["tenants", tenantId], ["users", userId]] as const) {
-    const row = await env.DB.prepare(`SELECT * FROM ${table} WHERE id = ?`).bind(id).first<Record<string, unknown>>();
-    if (!row) throw new Error(`Provisioned ${table} row not found`);
-    const cols = Object.keys(row);
-    lines.push(`INSERT INTO ${table} (${cols.map((c) => `"${c}"`).join(", ")}) VALUES (${cols.map((c) => sqlLiteral(row[c])).join(", ")});`);
-  }
-  writeFileSync(out, lines.join("\n") + "\n", "utf8");
-
-  console.log(`\nWrote ${out}`);
-  console.log(`Organization: ${name}`);
+  console.log(`\nOrganization: ${name}`);
   console.log(`Administrator: ${email}`);
   if (!givenPassword) console.log(`\nTEMPORARY PASSWORD (shown once, not saved anywhere): ${password}\n`);
 } finally {
-  await dispose();
+  await close();
 }

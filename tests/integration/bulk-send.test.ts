@@ -75,8 +75,8 @@ describe("launching a campaign", () => {
     expect(r.json.campaign.launchedAt).toBeTruthy();
     expect(google.mailbox).toHaveLength(0);
     expect(await statuses(id)).toEqual([{ email_snapshot: "ann@x.test", status: "Pending", skip_reason: null }, { email_snapshot: "bob@x.test", status: "Pending", skip_reason: null }]);
-    const [snap] = await h.rows<{ personalization_snapshot: string }>("SELECT personalization_snapshot FROM campaign_recipients WHERE email_snapshot = 'ann@x.test'");
-    expect(JSON.parse(snap!.personalization_snapshot)).toMatchObject({ email: "ann@x.test", firstName: "Ann" });
+    const [snap] = await h.rows<{ personalization_snapshot: Record<string, unknown> }>("SELECT personalization_snapshot FROM campaign_recipients WHERE email_snapshot = 'ann@x.test'");
+    expect(snap!.personalization_snapshot).toMatchObject({ email: "ann@x.test", firstName: "Ann" }); // jsonb comes back parsed
   });
 
   it("locks the campaign: its content can no longer be edited, and it cannot be launched twice", async () => {

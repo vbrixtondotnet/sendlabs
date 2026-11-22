@@ -7,6 +7,8 @@
  * All optional on purpose: when any is missing, the Gmail connection reports "not configured" instead of crashing.
  */
 interface Env {
+  /** PostgreSQL connection string for development, tests and scripts. In production the HYPERDRIVE binding is used instead. */
+  DATABASE_URL?: string;
   /** Google Cloud OAuth client id (Web application). Not secret, but supplied per environment. */
   GOOGLE_CLIENT_ID?: string;
   /** SECRET. Google Cloud OAuth client secret. */

@@ -1,4 +1,4 @@
-import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { integer, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core";
 import { createdAt } from "./helpers";
 
 /**
@@ -6,7 +6,7 @@ import { createdAt } from "./helpers";
  * This is reference data shared by every tenant, seeded by a migration with stable ids
  * (see ACCESS_LEVELS in src/shared/types.ts). It is not per tenant and has no API to change it.
  */
-export const access = sqliteTable(
+export const access = pgTable(
   "access",
   {
     /** A stable slug such as "administrator". Not generated, so seeds and code can refer to it. */

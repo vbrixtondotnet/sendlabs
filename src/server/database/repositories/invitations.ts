@@ -105,19 +105,21 @@ export function invitationsRepo(db: Database, tenantId: string) {
     },
 
     /**
-     * Stores a new invitation and retires any earlier open one to the same address, in ONE atomic batch, so there is
+     * Stores a new invitation and retires any earlier open one to the same address, in ONE transaction, so there is
      * never a moment with two live links (and the database allows only one open invitation per address anyway).
      * The earlier one becomes Expired if its date had passed, otherwise Revoked: its link stops working.
      */
     async create(input: NewInvitation): Promise<string> {
       const now = nowMs();
-      const [, inserted] = await db.batch([
-        db
+      const inserted = await db.transaction(async (tx) => {
+        // Two invitations to one address at the same moment are taken in turn, so the second retires the first.
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${"invite:" + tenantId + ":" + input.normalizedEmail}))`);
+        await tx
           .update(invitations)
           .set({ status: sql`CASE WHEN ${invitations.expiresAt} <= ${now} THEN 'Expired' ELSE 'Revoked' END` })
-          .where(and(mine, eq(invitations.normalizedEmail, input.normalizedEmail), eq(invitations.status, "Pending"))),
-        db.insert(invitations).values({ tenantId, ...input }).returning({ id: invitations.id }),
-      ]);
+          .where(and(mine, eq(invitations.normalizedEmail, input.normalizedEmail), eq(invitations.status, "Pending")));
+        return tx.insert(invitations).values({ tenantId, ...input }).returning({ id: invitations.id });
+      });
       const id = inserted[0]?.id;
       if (!id) throw new Error("Insert returned no row");
       return id;

@@ -399,7 +399,7 @@ describe("accepting", () => {
     expect(r.json).toEqual({ redirectTo: "/" });
 
     const [u] = await h.rows<Record<string, unknown>>("SELECT * FROM users WHERE normalized_email = ?", email.toLowerCase());
-    expect(u).toMatchObject({ tenant_id: h.tenantId, first_name: "Ada", last_name: "Lovelace", display_name: "Ada Lovelace", access_id: "campaign-manager", status: "Active", must_change_password: 0 });
+    expect(u).toMatchObject({ tenant_id: h.tenantId, first_name: "Ada", last_name: "Lovelace", display_name: "Ada Lovelace", access_id: "campaign-manager", status: "Active", must_change_password: false });
     expect(String(u!.password_hash)).toMatch(/^pbkdf2-sha256\$/);
     expect(JSON.stringify(u)).not.toContain(PASSWORD);
     const [inv] = await h.rows<{ status: string; accepted_user_id: string }>("SELECT status, accepted_user_id FROM invitations WHERE normalized_email = ?", email.toLowerCase());
@@ -572,7 +572,7 @@ describe("removing users (soft delete)", () => {
 
     expect((await h.api("DELETE", `/api/users/${u.id}`)).status).toBe(204);
     const row = await userRow(u.id);
-    expect(row.is_deleted).toBe(1);
+    expect(row.is_deleted).toBe(true);
     expect(row.deleted_at).toBeGreaterThan(Date.now() - 60_000);
     expect(row.status).toBe("Active"); // deletion is its own flag, not a status change
 
@@ -602,13 +602,13 @@ describe("removing users (soft delete)", () => {
     const victim = await newUser();
     const viewer = await newUser("viewer");
     expect((await h.api("DELETE", `/api/users/${victim.id}`, undefined, asSession(viewer.session))).status).toBe(403);
-    expect((await userRow(victim.id)).is_deleted).toBe(0);
+    expect((await userRow(victim.id)).is_deleted).toBe(false);
   });
 
   it("another tenant's users do not exist for you: 404, and nothing changes", async () => {
     const globexAdmin = await idOf(GLOBEX);
     expect((await h.api("DELETE", `/api/users/${globexAdmin}`)).status).toBe(404);
-    expect((await userRow(globexAdmin)).is_deleted).toBe(0);
+    expect((await userRow(globexAdmin)).is_deleted).toBe(false);
     expect((await h.api("DELETE", "/api/users/does-not-exist")).status).toBe(404);
   });
 
@@ -622,7 +622,7 @@ describe("removing users (soft delete)", () => {
     const r = await h.api("DELETE", `/api/users/${h.userId}`);
     expect(r.status).toBe(409);
     expect(r.json.error.code).toBe("CANNOT_REMOVE_SELF");
-    expect((await userRow(h.userId)).is_deleted).toBe(0);
+    expect((await userRow(h.userId)).is_deleted).toBe(false);
   });
 
   it("the last active Administrator cannot be removed, even by a disabled-but-signed-in path", async () => {
@@ -630,9 +630,8 @@ describe("removing users (soft delete)", () => {
     // repository rule directly: there is nobody else who is an active Administrator.
     const { tenantId, userId } = await h.addTenant("Solo Inc", "boss@solo.test");
     const { usersRepo } = await import("../../src/server/database/repositories/users");
-    const { createDb } = await import("../../src/server/database/client");
-    expect(await usersRepo(createDb(h.env.DB), tenantId).remove(userId)).toBe("last_administrator");
-    expect((await userRow(userId)).is_deleted).toBe(0);
+    expect(await usersRepo(h.db, tenantId).remove(userId)).toBe("last_administrator");
+    expect((await userRow(userId)).is_deleted).toBe(false);
   });
 
   it("two Administrators removing each other at the same moment cannot both succeed", async () => {
@@ -649,7 +648,7 @@ describe("removing users (soft delete)", () => {
       h.api("DELETE", `/api/users/${aId}`, undefined, asSession(bSession)),
     ]);
     expect(results.filter((r) => r.status === 204)).toHaveLength(1);
-    expect(await h.rows("SELECT id FROM users WHERE tenant_id = ? AND is_deleted = 0 AND access_id = 'administrator'", tenantId)).toHaveLength(1);
+    expect(await h.rows("SELECT id FROM users WHERE tenant_id = ? AND is_deleted = false AND access_id = 'administrator'", tenantId)).toHaveLength(1);
   });
 
   describe("inviting a removed user again", () => {
@@ -674,7 +673,7 @@ describe("removing users (soft delete)", () => {
 
       const rows = await h.rows<Record<string, unknown>>("SELECT * FROM users WHERE normalized_email = ?", u.email.toLowerCase());
       expect(rows).toHaveLength(1);
-      expect(rows[0]).toMatchObject({ id: u.id, is_deleted: 0, deleted_at: null, status: "Active", first_name: "Back", last_name: "Again", display_name: "Back Again", access_id: "campaign-manager", tenant_id: h.tenantId });
+      expect(rows[0]).toMatchObject({ id: u.id, is_deleted: false, deleted_at: null, status: "Active", first_name: "Back", last_name: "Again", display_name: "Back Again", access_id: "campaign-manager", tenant_id: h.tenantId });
       expect(rows[0]!.password_hash).not.toBe(oldHash);
 
       expect(emailsIn(await listed())).toContain(u.email);
@@ -693,7 +692,7 @@ describe("removing users (soft delete)", () => {
       expect((await h.api("POST", `/api/invitations/${token}/accept`, { password: PASSWORD })).status).toBe(404);
       await h.sql("UPDATE invitations SET expires_at = ?, status = 'Revoked' WHERE id = ?", Date.now() + 1e9, inv.json.id);
       expect((await h.api("POST", `/api/invitations/${token}/accept`, { password: PASSWORD })).status).toBe(404);
-      expect((await userRow(u.id)).is_deleted).toBe(1);
+      expect((await userRow(u.id)).is_deleted).toBe(true);
       expect(await h.rows("SELECT id FROM sessions WHERE user_id = ?", u.id)).toHaveLength(0);
     });
 
@@ -704,9 +703,9 @@ describe("removing users (soft delete)", () => {
       await invite({ email: u.email });
       const token = tokenFromMail();
       expect((await h.api("POST", `/api/invitations/${token}/accept`, { password: "short" })).status).toBe(400);
-      expect((await userRow(u.id)).is_deleted).toBe(1);
+      expect((await userRow(u.id)).is_deleted).toBe(true);
       expect((await h.api("POST", `/api/invitations/${token}/accept`, { password: PASSWORD })).status).toBe(200);
-      expect((await userRow(u.id)).is_deleted).toBe(0);
+      expect((await userRow(u.id)).is_deleted).toBe(false);
     });
 
     it("simultaneous clicks reactivate once and make one session", async () => {
@@ -723,11 +722,11 @@ describe("removing users (soft delete)", () => {
 
     it("someone removed from ANOTHER tenant still cannot be invited here, and nothing is revealed", async () => {
       const globexAdmin = await idOf(GLOBEX);
-      await h.sql("UPDATE users SET is_deleted = 1, deleted_at = 1 WHERE id = ?", globexAdmin);
+      await h.sql("UPDATE users SET is_deleted = true, deleted_at = 1 WHERE id = ?", globexAdmin);
       const r = await invite({ email: GLOBEX });
       expect(r.status).toBe(409);
       expect(r.json.error.code).toBe("CANNOT_INVITE");
-      await h.sql("UPDATE users SET is_deleted = 0, deleted_at = NULL WHERE id = ?", globexAdmin);
+      await h.sql("UPDATE users SET is_deleted = false, deleted_at = NULL WHERE id = ?", globexAdmin);
     });
   });
 });

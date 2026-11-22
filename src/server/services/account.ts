@@ -1,9 +1,9 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import type { MeDto } from "../../shared/api";
 import { passwordProblem } from "../../shared/password-rules";
 import { POSTAL_ADDRESS_MAX, type PasswordChange, type ProfileUpdate, type TenantUpdate } from "../../shared/schemas";
 import type { Database } from "../database/client";
-import { tenants, users } from "../database/schema";
+import { loginAttempts, sessions, tenants, users } from "../database/schema";
 import { ApiError, badRequest, isUniqueViolation } from "../lib/errors";
 import { nowMs } from "../lib/id";
 import { hashPassword, verifyPassword } from "../lib/password";
@@ -50,10 +50,9 @@ export async function changePassword(db: Database, who: Self, input: PasswordCha
     throw badRequest("Validation failed", [{ path: "newPassword", message: "Choose a password different from your current one" }], "VALIDATION_ERROR");
   }
 
-  const d1 = db.$client;
   const key = `password:${who.userId}`;
   const now = nowMs();
-  const wait = await lockedFor(d1, [key], now);
+  const wait = await lockedFor(db, [key], now);
   if (wait > 0) {
     const seconds = Math.ceil(wait / 1000);
     throw new ApiError(429, "TOO_MANY_ATTEMPTS", `Too many incorrect attempts. Try again in ${Math.max(1, Math.ceil(seconds / 60))} minute(s).`, { retryAfterSeconds: seconds });
@@ -67,16 +66,16 @@ export async function changePassword(db: Database, who: Self, input: PasswordCha
   if (!user) throw new ApiError(404, "NOT_FOUND", "User not found");
 
   if (!(await verifyPassword(input.currentPassword, user.passwordHash))) {
-    await recordFailure(d1, key, LOGIN_MAX_FAILURES, now).run();
+    await recordFailure(db, key, LOGIN_MAX_FAILURES, now);
     throw badRequest("Your current password is not correct", [{ path: "currentPassword", message: "Your current password is not correct" }], "INVALID_CURRENT_PASSWORD");
   }
 
   const passwordHash = await hashPassword(input.newPassword);
-  await d1.batch([
-    d1.prepare(`UPDATE users SET password_hash = ?1, must_change_password = 0, updated_at = ?2 WHERE id = ?3 AND tenant_id = ?4`).bind(passwordHash, now, who.userId, who.tenantId),
-    d1.prepare(`DELETE FROM sessions WHERE user_id = ?1 AND tenant_id = ?2 AND id <> ?3`).bind(who.userId, who.tenantId, who.sessionId ?? ""),
-    d1.prepare(`DELETE FROM login_attempts WHERE key = ?1`).bind(key),
-  ]);
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`UPDATE users SET password_hash = ${passwordHash}, must_change_password = false, updated_at = ${now} WHERE id = ${who.userId} AND tenant_id = ${who.tenantId}`);
+    await tx.delete(sessions).where(and(eq(sessions.userId, who.userId), eq(sessions.tenantId, who.tenantId), ne(sessions.id, who.sessionId ?? "")));
+    await tx.delete(loginAttempts).where(eq(loginAttempts.key, key));
+  });
   console.log(JSON.stringify({ level: "info", event: "password_changed", tenantId: who.tenantId, userId: who.userId }));
 }
 

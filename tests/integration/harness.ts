@@ -1,14 +1,17 @@
-import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { getPlatformProxy, type PlatformProxy } from "wrangler";
+import { randomBytes } from "node:crypto";
+import postgres from "postgres";
+import { loadDevVars } from "../../scripts/lib/env";
+import { withDatabase } from "../../scripts/lib/migrations";
 import { createApp } from "../../src/server/app";
-import { createDb } from "../../src/server/database/client";
+import { closeDb, createDb, type Database } from "../../src/server/database/client";
 import { GoogleOAuth } from "../../src/server/services/google-oauth";
 import { provisionTenant } from "../../src/server/services/tenants";
 
 /**
- * Real D1 (Miniflare/workerd), real migrations, real Hono app. Nothing is mocked.
- * `persist: false` keeps the database in memory, so tests never touch .wrangler/ dev data.
+ * Real PostgreSQL, real migrations, real Hono app. Nothing is mocked.
+ * Each test file gets a database of its own, copied from a template that already has every migration applied (built once per
+ * run by tests/global-setup.ts) and dropped when the file is done. So files running side by side never see each other's data,
+ * and the development database is never touched.
  */
 export interface Reply { status: number; json: any; headers: Headers }
 export type EnvOverride = {
@@ -55,6 +58,8 @@ export interface Caller {
 
 export interface Harness extends Caller {
   env: Env;
+  /** The test database, for tests that call repositories directly. One shared client: closed by `dispose`. */
+  db: Database;
   /** The default tenant ("Sabertooth Software Labs") and its Administrator, who is the default caller. */
   tenantId: string;
   userId: string;
@@ -67,40 +72,51 @@ export interface Harness extends Caller {
   withEnv: (override: EnvOverride) => Caller;
   /** Creates another tenant with its own Administrator. */
   addTenant: (name: string, adminEmail: string) => Promise<{ tenantId: string; userId: string }>;
+  /** Run a statement. Write `?` for each bound value, as in SQLite; it is turned into PostgreSQL's `$1`, `$2`... */
   sql: (statement: string, ...params: unknown[]) => Promise<void>;
   /** Run a SELECT and get the rows back. */
   rows: <T = Record<string, unknown>>(statement: string, ...params: unknown[]) => Promise<T[]>;
   dispose: () => Promise<void>;
 }
 
-/** The migration files in order, each split into its single statements (D1 `prepare` takes one at a time). */
-export function migrationFiles(): { name: string; statements: string[] }[] {
-  const dir = join(process.cwd(), "migrations");
-  return readdirSync(dir)
-    .filter((f) => f.endsWith(".sql"))
-    .sort()
-    .map((name) => ({
-      name,
-      statements: readFileSync(join(dir, name), "utf8")
-        .split("--> statement-breakpoint")
-        .map((s) => s.trim())
-        .filter(Boolean),
-    }));
-}
-
-export async function applyMigrations(d1: D1Database, only?: (name: string) => boolean) {
-  for (const f of migrationFiles()) {
-    if (only && !only(f.name)) continue;
-    await d1.batch(f.statements.map((s) => d1.prepare(s)));
-  }
-}
+/** `?` placeholders (SQLite style) to PostgreSQL's numbered `$1`, `$2`, ... (the statements here never contain a literal `?`). */
+const toPg = (statement: string): string => {
+  let n = 0;
+  return statement.replace(/\?/g, () => `$${++n}`);
+};
 
 export async function startHarness(options: { google?: GoogleOAuth; fetch?: typeof fetch } = {}): Promise<Harness> {
-  const proxy: PlatformProxy<Env> = await getPlatformProxy<Env>({ persist: false });
-  const env = proxy.env;
-  await applyMigrations(env.DB);
+  loadDevVars();
+  const testUrl = process.env.TEST_DATABASE_URL;
+  const template = process.env.SENDRIX_TEST_TEMPLATE_DB;
+  if (!testUrl || !template) {
+    throw new Error("Integration tests need PostgreSQL: set TEST_DATABASE_URL in .dev.vars (a login that may create databases). See .dev.vars.example.");
+  }
 
-  const app = createApp({ ...(options.google ? { google: options.google } : {}), ...(options.fetch ? { fetch: options.fetch } : {}) });
+  // A database of this file's own, copied from the template.
+  const dbName = `sendrix_t_${randomBytes(6).toString("hex")}`;
+  const admin = postgres(testUrl, { max: 1, onnotice: () => {} });
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await admin.unsafe(`CREATE DATABASE ${dbName} TEMPLATE ${template}`);
+      break;
+    } catch (e) {
+      // Another file may be copying the template at this very moment: wait a moment and try again.
+      if (attempt >= 20 || !/being accessed by other users|already exists/.test(String((e as Error).message))) throw e;
+      await new Promise((r) => setTimeout(r, 150 * (attempt + 1)));
+    }
+  }
+  const databaseUrl = withDatabase(testUrl, dbName);
+  const db = createDb(databaseUrl, { max: 10 });
+  const raw = db.$client;
+
+  // What the Worker would be given in development: no Cloudflare bindings, and a database address.
+  const env = { ENVIRONMENT: "local", DATABASE_URL: databaseUrl } as unknown as Env;
+  const pending = new Set<Promise<unknown>>();
+  const ctx = { waitUntil: (p: Promise<unknown>) => { pending.add(p); void p.finally(() => pending.delete(p)); }, passThroughOnException: () => {} };
+
+  // The app shares this file's connection pool, so a test makes no new connection per request.
+  const app = createApp({ db, ...(options.google ? { google: options.google } : {}), ...(options.fetch ? { fetch: options.fetch } : {}) });
   const reply = async (res: Response): Promise<Reply> => {
     const text = await res.text();
     let json: any = null;
@@ -108,7 +124,7 @@ export async function startHarness(options: { google?: GoogleOAuth; fetch?: type
     return { status: res.status, json, headers: res.headers };
   };
   const fetchWith = (override: EnvOverride, req: Request) =>
-    app.fetch(req, { ...env, ...TEST_GOOGLE_ENV, ...override } as unknown as Env, proxy.ctx as never);
+    app.fetch(req, { ...env, ...TEST_GOOGLE_ENV, ...override } as unknown as Env, ctx as never);
 
   const caller = (override: EnvOverride): Caller => ({
     api: async (method, path, body, headers) => {
@@ -127,8 +143,7 @@ export async function startHarness(options: { google?: GoogleOAuth; fetch?: type
   });
 
   // The default tenant and its Administrator: what `npm run db:seed:tenant:local` creates for development.
-  const adminEmail = env.DEV_ACTOR_EMAIL ?? "admin@sabertoothsoftwarelabs.net";
-  const db = createDb(env.DB);
+  const adminEmail = "admin@sabertoothsoftwarelabs.net";
   const seeded = await provisionTenant(db, {
     name: "Sabertooth Software Labs",
     admin: { email: adminEmail, displayName: "Administrator", password: "Password@123" },
@@ -138,6 +153,7 @@ export async function startHarness(options: { google?: GoogleOAuth; fetch?: type
   const base = caller({ DEV_ACTOR_EMAIL: adminEmail });
   return {
     env,
+    db,
     ...base,
     tenantId: seeded.tenantId,
     userId: seeded.userId,
@@ -147,10 +163,15 @@ export async function startHarness(options: { google?: GoogleOAuth; fetch?: type
     withEnv: (override) => caller(override),
     addTenant: (name, email) => provisionTenant(db, { name, admin: { email, displayName: name, password: "Password@123" } }),
     sql: async (statement, ...params) => {
-      await env.DB.prepare(statement).bind(...params).run();
+      await raw.unsafe(toPg(statement), params as never[]);
     },
-    rows: async <T,>(statement: string, ...params: unknown[]) => ((await env.DB.prepare(statement).bind(...params).all()).results ?? []) as T[],
-    dispose: () => proxy.dispose(),
+    rows: async <T,>(statement: string, ...params: unknown[]) => [...(await raw.unsafe(toPg(statement), params as never[]))] as T[],
+    dispose: async () => {
+      await Promise.allSettled([...pending]);
+      await closeDb(db).catch(() => undefined);
+      await admin.unsafe(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`).catch(() => undefined);
+      await admin.end({ timeout: 5 });
+    },
   };
 }
 

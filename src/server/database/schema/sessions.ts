@@ -1,4 +1,4 @@
-import { foreignKey, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { bigint, foreignKey, index, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core";
 import { createdAt, idColumn } from "./helpers";
 import { tenants } from "./tenants";
 import { users } from "./users";
@@ -7,7 +7,7 @@ import { users } from "./users";
  * A signed-in browser. The cookie holds a random secret; only its SHA-256 hash is stored here, so reading this
  * table cannot sign anyone in. Created when someone accepts an invitation. (There is no login page yet.)
  */
-export const sessions = sqliteTable(
+export const sessions = pgTable(
   "sessions",
   {
     id: idColumn(),
@@ -17,7 +17,7 @@ export const sessions = sqliteTable(
     userId: text("user_id").notNull(),
     /** SHA-256 (base64url) of the cookie's secret. */
     tokenHash: text("token_hash").notNull(),
-    expiresAt: integer("expires_at").notNull(),
+    expiresAt: bigint("expires_at", { mode: "number" }).notNull(),
     createdAt: createdAt(),
   },
   (t) => [

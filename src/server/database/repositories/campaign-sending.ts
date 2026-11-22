@@ -20,7 +20,6 @@ export interface ClaimedRecipient {
  * Failed or Skipped, with Processing -> Queued when a send is retried or a lease expires.
  */
 export function campaignSendingRepo(db: Database) {
-  const run = async (text: string, ...params: unknown[]) => db.$client.prepare(text).bind(...params).all();
 
   return {
     /** Campaigns that are Sending and not backed off, least recently served first. */
@@ -61,32 +60,52 @@ export function campaignSendingRepo(db: Database) {
         .where(and(eq(campaignRecipients.campaignId, campaignId), eq(campaignRecipients.status, "Processing"), sql`${campaignRecipients.leaseExpiresAt} < ${now}`));
     },
 
-    /** Pending -> Queued for the next `n` in send order. One statement, so a second tick cannot take the same rows. */
+    /**
+     * Pending -> Queued for the next `n` in send order. One statement, and `FOR UPDATE SKIP LOCKED` means a second tick running
+     * at the same moment takes different rows instead of waiting for, or doubling up on, these.
+     *
+     * The rows are chosen ONCE, in a materialized CTE, and then updated. (`WHERE id IN (SELECT ... LIMIT n FOR UPDATE ...)` looks
+     * equivalent but PostgreSQL may run that subquery again for each row it checks, so the LIMIT is not honoured and far more
+     * than `n` rows change: a daily limit of 3 sent 5, and a trickle of 1 sent all 30.)
+     */
     async promote(tenantId: string, campaignId: string, n: number, now: number): Promise<void> {
-      await run(
-        `UPDATE campaign_recipients SET status = 'Queued', queued_at = ?1, updated_at = ?1
-         WHERE tenant_id = ?2 AND campaign_id = ?3 AND status = 'Pending'
-           AND id IN (SELECT id FROM campaign_recipients WHERE tenant_id = ?2 AND campaign_id = ?3 AND status = 'Pending' ORDER BY sequence LIMIT ?4)`,
-        now, tenantId, campaignId, n,
-      );
+      await db.execute(sql`
+        WITH picked AS MATERIALIZED (
+          SELECT id FROM campaign_recipients
+           WHERE tenant_id = ${tenantId} AND campaign_id = ${campaignId} AND status = 'Pending'
+           ORDER BY sequence LIMIT ${n} FOR UPDATE SKIP LOCKED)
+        UPDATE campaign_recipients r SET status = 'Queued', queued_at = ${now}, updated_at = ${now}
+          FROM picked WHERE r.id = picked.id`);
     },
 
     /**
      * Queued -> Processing for the next `n` in send order, with a lease, counting the attempt. Returns exactly the rows this
-     * call claimed: the UPDATE and its RETURNING are one statement.
+     * call claimed: the UPDATE and its RETURNING are one statement, and SKIP LOCKED keeps two ticks from claiming the same row.
      */
     async claim(tenantId: string, campaignId: string, n: number, now: number, leaseMs: number): Promise<ClaimedRecipient[]> {
-      const result = await run(
-        `UPDATE campaign_recipients SET status = 'Processing', lease_expires_at = ?5, attempt_count = attempt_count + 1, updated_at = ?1
-         WHERE tenant_id = ?2 AND campaign_id = ?3 AND status = 'Queued'
-           AND id IN (SELECT id FROM campaign_recipients WHERE tenant_id = ?2 AND campaign_id = ?3 AND status = 'Queued' ORDER BY sequence LIMIT ?4)
-         RETURNING id, email_snapshot, personalization_snapshot, attempt_count, sequence`,
-        now, tenantId, campaignId, n, now + leaseMs,
-      );
-      const rows = (result.results ?? []) as { id: string; email_snapshot: string; personalization_snapshot: string; attempt_count: number; sequence: number }[];
-      return rows
+      const rows = (await db.execute(sql`
+        WITH picked AS MATERIALIZED (
+          SELECT id FROM campaign_recipients
+           WHERE tenant_id = ${tenantId} AND campaign_id = ${campaignId} AND status = 'Queued'
+           ORDER BY sequence LIMIT ${n} FOR UPDATE SKIP LOCKED)
+        UPDATE campaign_recipients r SET status = 'Processing', lease_expires_at = ${now + leaseMs}, attempt_count = r.attempt_count + 1, updated_at = ${now}
+          FROM picked WHERE r.id = picked.id
+        RETURNING r.id, r.email_snapshot, r.personalization_snapshot, r.attempt_count, r.sequence`)) as unknown as {
+        id: string;
+        email_snapshot: string;
+        personalization_snapshot: Partial<ContactFields> | string;
+        attempt_count: number;
+        sequence: number;
+      }[];
+      return [...rows]
         .sort((a, b) => a.sequence - b.sequence)
-        .map((r) => ({ id: r.id, email: r.email_snapshot, contact: JSON.parse(r.personalization_snapshot) as Partial<ContactFields>, attempts: r.attempt_count }));
+        .map((r) => ({
+          id: r.id,
+          email: r.email_snapshot,
+          // jsonb comes back already parsed
+          contact: (typeof r.personalization_snapshot === "string" ? JSON.parse(r.personalization_snapshot) : r.personalization_snapshot) as Partial<ContactFields>,
+          attempts: r.attempt_count,
+        }));
     },
 
     // Outcomes. Each is conditional on the recipient still being Processing, so a late write cannot overwrite a newer state.

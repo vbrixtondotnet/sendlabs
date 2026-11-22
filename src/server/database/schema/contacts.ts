@@ -1,4 +1,4 @@
-import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { bigint, check, index, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core";
 import { CONSENT_STATUSES } from "../../../shared/types";
 import { createdAt, idColumn, inList, nonNegativeOrNull, normalizedEmailRule, updatedAt } from "./helpers";
 import { tenants } from "./tenants";
@@ -9,7 +9,7 @@ import { tenants } from "./tenants";
  * can see the other's. Columns follow template.csv. Suppression is a separate table (added later) so an
  * opt-out outlives any edit or re-import of the contact.
  */
-export const contacts = sqliteTable(
+export const contacts = pgTable(
   "contacts",
   {
     id: idColumn(),
@@ -27,15 +27,15 @@ export const contacts = sqliteTable(
     title: text("title").notNull().default(""),
     companyName: text("company_name").notNull().default(""),
     /** Null when blank or non-numeric in the CSV. */
-    employees: integer("employees"),
+    employees: bigint("employees", { mode: "number" }),
     industry: text("industry").notNull().default(""),
     linkedinUrl: text("linkedin_url").notNull().default(""),
     website: text("website").notNull().default(""),
     city: text("city").notNull().default(""),
     state: text("state").notNull().default(""),
     country: text("country").notNull().default(""),
-    /** Whole US dollars. SQLite integers are 64-bit, so large revenues are safe. */
-    annualRevenue: integer("annual_revenue"),
+    /** Whole US dollars. A 64-bit column, so large revenues are safe. */
+    annualRevenue: bigint("annual_revenue", { mode: "number" }),
 
     /** The CSV has no consent column, so imports start as Unknown. */
     consentStatus: text("consent_status", { enum: CONSENT_STATUSES }).notNull().default("Unknown"),

@@ -1,5 +1,4 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { createDb } from "../../src/server/database/client";
 import { GoogleOAuth, GMAIL_SEND_SCOPE, googleConfig } from "../../src/server/services/google-oauth";
 import { refreshTokenFor } from "../../src/server/services/sender";
 import { SENDER_CONNECT_ERRORS } from "../../src/shared/types";
@@ -9,7 +8,7 @@ import { startHarness, TEST_KEY, type Caller, type Harness } from "./harness";
 const google = new FakeGoogle();
 let h: Harness;
 const cfg = googleConfig({ GOOGLE_CLIENT_ID: "test-client-id", GOOGLE_CLIENT_SECRET: "test-client-secret", TOKEN_ENCRYPTION_KEY: TEST_KEY, APP_BASE_URL: "http://localhost:5173" })!;
-const db = () => createDb(h.env.DB);
+const db = () => h.db;
 
 beforeAll(async () => { h = await startHarness({ google: new GoogleOAuth(google.fetch) }); });
 afterAll(async () => { await h.dispose(); });

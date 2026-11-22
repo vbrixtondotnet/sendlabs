@@ -14,14 +14,15 @@
     "seed:local": "tsx scripts/seed-local.ts",
     "preview": "vite preview",
     "cf-typegen": "wrangler types",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate:local": "wrangler d1 migrations apply sendrix-db-local --local",
-    "db:clear:local": "wrangler d1 execute sendrix-db-local --local --file scripts/clear-local-data.sql",
+    "db:generate": "drizzle-kit generate && node scripts/order-migrations.mjs",
+    "db:migrate": "tsx scripts/db-migrate.ts",
+    "db:compare": "tsx scripts/compare-schemas.ts",
+    "db:clear:local": "tsx scripts/clear-local-data.ts",
     "db:seed:tenant:local": "tsx scripts/seed-default-tenant.ts",
     "db:seed:superadmin:local": "tsx scripts/seed-super-admin.ts",
     "db:reset:local": "npm run db:clear:local && npm run db:seed:tenant:local && npm run db:seed:superadmin:local",
-    "db:migrate:staging": "wrangler d1 migrations apply sendrix-db-staging --remote --env staging",
-    "db:migrate:production": "wrangler d1 migrations apply sendrix-db-production --remote --env production"
+    "db:copy-from-d1": "tsx scripts/migrate-d1-to-postgres.ts",
+    "db:provision": "tsx scripts/provision-production.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.107.1",
@@ -31,6 +32,7 @@
     "@tiptap/starter-kit": "^3.33.0",
     "drizzle-orm": "^0.45.4",
     "hono": "^4.13.17",
+    "postgres": "^4.1.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-router-dom": "^7.18.5",

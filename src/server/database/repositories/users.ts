@@ -1,4 +1,4 @@
-import { and, count, eq, inArray } from "drizzle-orm";
+import { and, count, eq, inArray, sql } from "drizzle-orm";
 import type { Page, UserDto } from "../../../shared/api";
 import { toUserDto } from "../../lib/dto";
 import { offsetOf, pageOf } from "../../lib/http";
@@ -34,27 +34,28 @@ export function usersRepo(db: Database, tenantId: string) {
     },
 
     /**
-     * Soft-deletes a user: marks them removed and ends all their sessions, in one atomic batch. Nothing is erased.
+     * Soft-deletes a user: marks them removed and ends all their sessions, in one transaction. Nothing is erased.
      * Refuses (returns "last_administrator") when it would leave the tenant with no active Administrator; that rule is
      * part of the UPDATE itself, so two Administrators removing each other at once cannot both succeed.
      */
     async remove(id: string): Promise<"removed" | "not_found" | "last_administrator"> {
       const now = nowMs();
-      const d1 = db.$client;
-      const [update] = await d1.batch([
-        d1
-          .prepare(
-            `UPDATE users SET is_deleted = 1, deleted_at = ?1, updated_at = ?1
-             WHERE id = ?2 AND tenant_id = ?3 AND is_deleted = 0
-               AND (access_id <> 'administrator'
-                    OR EXISTS (SELECT 1 FROM users o WHERE o.tenant_id = ?3 AND o.id <> ?2 AND o.is_deleted = 0
-                               AND o.status = 'Active' AND o.access_id = 'administrator'))
-             RETURNING id`,
-          )
-          .bind(now, id, tenantId),
-        d1.prepare(`DELETE FROM sessions WHERE user_id = ?1 AND tenant_id = ?2 AND EXISTS (SELECT 1 FROM users WHERE id = ?1 AND is_deleted = 1)`).bind(id, tenantId),
-      ]);
-      if ((update?.results?.length ?? 0) === 1) return "removed";
+      const removed = await db.transaction(async (tx) => {
+        // Serialize removals within a tenant: without this, two Administrators removing each other at the same moment could
+        // each see the other as "still there" and both succeed, leaving no Administrator.
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${"remove-user:" + tenantId}))`);
+        const updated = await tx.execute(sql`
+          UPDATE users SET is_deleted = true, deleted_at = ${now}, updated_at = ${now}
+           WHERE id = ${id} AND tenant_id = ${tenantId} AND is_deleted = false
+             AND (access_id <> 'administrator'
+                  OR EXISTS (SELECT 1 FROM users o WHERE o.tenant_id = ${tenantId} AND o.id <> ${id} AND o.is_deleted = false
+                             AND o.status = 'Active' AND o.access_id = 'administrator'))
+          RETURNING id`);
+        if (updated.length !== 1) return false;
+        await tx.execute(sql`DELETE FROM sessions WHERE user_id = ${id} AND tenant_id = ${tenantId}`);
+        return true;
+      });
+      if (removed) return "removed";
       return (await this.get(id)) ? "last_administrator" : "not_found";
     },
 

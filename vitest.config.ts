@@ -9,7 +9,9 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["tests/**/*.test.{ts,tsx}"],
-    // The integration tests start a local workerd (Miniflare) for D1, which takes a few seconds.
+    // Builds the PostgreSQL template database once per run (see tests/global-setup.ts).
+    globalSetup: ["tests/global-setup.ts"],
+    // The integration tests each create a PostgreSQL database of their own, which takes a moment.
     testTimeout: 30_000,
     hookTimeout: 90_000,
   },

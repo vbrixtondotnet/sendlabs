@@ -62,9 +62,9 @@ export async function provisionTenant(db: Database, input: ProvisionTenantInput)
   const passwordHash = await hashPassword(input.admin.password);
 
   try {
-    await db.batch([
-      db.insert(tenants).values({ id: tenantId, name, slug }),
-      db.insert(users).values({
+    await db.transaction(async (tx) => {
+      await tx.insert(tenants).values({ id: tenantId, name, slug });
+      await tx.insert(users).values({
         id: userId,
         tenantId,
         email,
@@ -73,8 +73,8 @@ export async function provisionTenant(db: Database, input: ProvisionTenantInput)
         passwordHash,
         mustChangePassword: input.admin.mustChangePassword ?? false,
         accessId: "administrator" satisfies AccessId,
-      }),
-    ]);
+      });
+    });
   } catch (err) {
     const message = constraintMessage(err);
     if (message.includes("users_normalized_email_uq") || message.includes("users.normalized_email")) {

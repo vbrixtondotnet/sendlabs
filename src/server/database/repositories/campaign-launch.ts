@@ -1,7 +1,7 @@
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
 import type { ContactFields } from "../../../shared/types";
 import { newId, nowMs } from "../../lib/id";
-import { BULK_ROWS, chunk, runBulk } from "../batch";
+import { BULK_ROWS, chunk } from "../batch";
 import type { Database } from "../client";
 import { campaignRecipients, campaigns, tenants, type CampaignRow } from "../schema";
 
@@ -21,7 +21,8 @@ export interface Audience {
 
 /** Everything about launching one campaign, scoped to one tenant. */
 export function campaignLaunchRepo(db: Database, tenantId: string) {
-  const all = async <T,>(text: string, ...params: unknown[]) => ((await db.$client.prepare(text).bind(...params).all()).results ?? []) as T[];
+  /** Runs a raw query and returns its rows. */
+  const rowsOf = async <T,>(query: ReturnType<typeof sql>) => (await db.execute(query)) as unknown as T[];
 
   return {
     async campaign(id: string): Promise<CampaignRow | null> {
@@ -39,23 +40,17 @@ export function campaignLaunchRepo(db: Database, tenantId: string) {
      * industries. Anyone on the suppression list, and anyone who withdrew consent, is left out (and counted).
      */
     async audience(c: Pick<CampaignRow, "recipientImportId" | "recipientIndustries">): Promise<Audience> {
-      // The audience filter, as a SQL condition on `contacts` with its bound values (industries go in as one JSON array, so
-      // a long list cannot run into D1's limit on bound parameters).
-      let filter = "";
-      const params: unknown[] = [tenantId];
+      // The audience filter, as a SQL condition on `contacts`. Industries go in as one JSON array, so a long list is one parameter.
+      let filter = sql``;
       if (c.recipientImportId) {
-        filter = "AND id IN (SELECT contact_id FROM import_rows WHERE tenant_id = ?1 AND import_id = ?2 AND contact_id IS NOT NULL)";
-        params.push(c.recipientImportId);
+        filter = sql`AND id IN (SELECT contact_id FROM import_rows WHERE tenant_id = ${tenantId} AND import_id = ${c.recipientImportId} AND contact_id IS NOT NULL)`;
       } else if (c.recipientIndustries.length > 0) {
-        filter = "AND industry IN (SELECT value FROM json_each(?2))";
-        params.push(JSON.stringify(c.recipientIndustries));
+        filter = sql`AND industry IN (SELECT jsonb_array_elements_text(${JSON.stringify(c.recipientIndustries)}::jsonb))`;
       }
-      const rows = await all<Record<string, unknown>>(
-        `SELECT id, normalized_email, first_name, last_name, title, company_name, employees, industry, linkedin_url, website, city, state, country, annual_revenue,
-                (consent_status = 'Withdrawn' OR EXISTS (SELECT 1 FROM suppressions s WHERE s.tenant_id = contacts.tenant_id AND s.normalized_email = contacts.normalized_email)) AS excluded
-           FROM contacts WHERE tenant_id = ?1 ${filter} ORDER BY created_at, id`,
-        ...params,
-      );
+      const rows = await rowsOf<Record<string, unknown>>(sql`
+        SELECT id, normalized_email, first_name, last_name, title, company_name, employees, industry, linkedin_url, website, city, state, country, annual_revenue,
+               (consent_status = 'Withdrawn' OR EXISTS (SELECT 1 FROM suppressions s WHERE s.tenant_id = contacts.tenant_id AND s.normalized_email = contacts.normalized_email)) AS excluded
+          FROM contacts WHERE tenant_id = ${tenantId} ${filter} ORDER BY created_at, id`);
       const recipients: RecipientSnapshot[] = [];
       let excluded = 0;
       for (const r of rows) {
@@ -91,22 +86,16 @@ export function campaignLaunchRepo(db: Database, tenantId: string) {
      * rows behind, so they are cleared first: a Draft never has real ones. Chunked, so it is safe for thousands.
      */
     async writeRecipients(campaignId: string, recipients: readonly RecipientSnapshot[]): Promise<void> {
-      await db.$client.prepare("DELETE FROM campaign_recipients WHERE tenant_id = ?1 AND campaign_id = ?2").bind(tenantId, campaignId).run();
-      const now = nowMs();
-      const insert = `INSERT INTO campaign_recipients
-          (id, tenant_id, campaign_id, contact_id, email_snapshot, personalization_snapshot, sequence, status, attempt_count, created_at, updated_at)
-        SELECT json_extract(value,'$[0]'), ?2, ?3, json_extract(value,'$[1]'), json_extract(value,'$[2]'), json_extract(value,'$[3]'), json_extract(value,'$[4]'), 'Pending', 0, ?4, ?4
-        FROM json_each(?1) WHERE true`;
-      let sequence = 0;
-      const statements = chunk(recipients, BULK_ROWS).map((group) =>
-        db.$client.prepare(insert).bind(
-          JSON.stringify(group.map((r) => [newId(), r.contactId, r.email, JSON.stringify(r.fields), ++sequence])),
-          tenantId,
-          campaignId,
-          now,
-        ),
-      );
-      await runBulk(db, statements);
+      // One transaction: either every row is written or none is, and the clear-out and the new rows are never seen apart.
+      await db.transaction(async (tx) => {
+        await tx.delete(campaignRecipients).where(and(eq(campaignRecipients.tenantId, tenantId), eq(campaignRecipients.campaignId, campaignId)));
+        let sequence = 0;
+        for (const group of chunk(recipients, BULK_ROWS)) {
+          await tx.insert(campaignRecipients).values(
+            group.map((r) => ({ id: newId(), tenantId, campaignId, contactId: r.contactId, emailSnapshot: r.email, personalizationSnapshot: r.fields, sequence: ++sequence })),
+          );
+        }
+      });
     },
 
     /** Draft -> Sending, once. Returns false when someone else got there first (or the campaign is no longer a Draft). */

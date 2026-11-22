@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { Hono } from "hono";
 import type { AppEnv } from "../app";
 
@@ -6,7 +7,7 @@ export const healthRoutes = new Hono<AppEnv>();
 healthRoutes.get("/", async (c) => {
   let database: "ok" | "error" = "ok";
   try {
-    await c.env.DB.prepare("SELECT 1").first();
+    await c.get("db").execute(sql`SELECT 1`);
   } catch {
     database = "error";
   }

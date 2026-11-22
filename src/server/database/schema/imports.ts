@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, foreignKey, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { bigint, check, foreignKey, index, integer, jsonb, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core";
 import { IMPORT_ROW_OUTCOMES, IMPORT_STATUSES } from "../../../shared/types";
 import { contacts } from "./contacts";
 import { createdAt, idColumn, inList } from "./helpers";
@@ -10,7 +10,7 @@ import { users } from "./users";
  * One CSV upload by one of a tenant's users. The server parses the file in the same request, so the
  * original is not stored. Counts are authoritative (computed by the Worker, not the browser).
  */
-export const imports = sqliteTable(
+export const imports = pgTable(
   "imports",
   {
     id: idColumn(),
@@ -21,7 +21,7 @@ export const imports = sqliteTable(
     fileSize: integer("file_size").notNull(),
     status: text("status", { enum: IMPORT_STATUSES }).notNull().default("Processing"),
     /** { fieldKey: csvColumnIndex }, as the user confirmed it. */
-    columnMapping: text("column_mapping", { mode: "json" }).$type<Record<string, number>>().notNull(),
+    columnMapping: jsonb("column_mapping").$type<Record<string, number>>().notNull(),
 
     totalRows: integer("total_rows").notNull(),
     validRows: integer("valid_rows").notNull().default(0),
@@ -39,7 +39,7 @@ export const imports = sqliteTable(
     /** The uploading user. The composite key below guarantees they belong to the same tenant. */
     createdBy: text("created_by").notNull(),
     createdAt: createdAt(),
-    completedAt: integer("completed_at"),
+    completedAt: bigint("completed_at", { mode: "number" }),
   },
   (t) => [
     // Lets import rows reference "an import of the SAME tenant" with a composite foreign key.
@@ -59,7 +59,7 @@ export const imports = sqliteTable(
  * existed before the file was uploaded. Carries its own `tenant_id`, and the composite keys guarantee the
  * import and the contact belong to that same tenant.
  */
-export const importRows = sqliteTable(
+export const importRows = pgTable(
   "import_rows",
   {
     id: idColumn(),

@@ -24,7 +24,7 @@ beforeEach(async () => {
   google.mailbox.length = 0;
   await h.sql("DELETE FROM test_recipients");
   // The compliance rules have their own tests below; everywhere else they are out of the way.
-  await h.sql("UPDATE tenants SET require_unsubscribe_link = 0, one_click_unsubscribe = 1, postal_address = ''");
+  await h.sql("UPDATE tenants SET require_unsubscribe_link = false, one_click_unsubscribe = true, postal_address = ''");
 });
 
 async function connectGmail(who: Caller, email: string) {
@@ -586,7 +586,7 @@ describe("compliance rules apply to a test send exactly as they will to a real o
       expect(rows.length).toBeGreaterThan(1);
       const fresh = await h.addTenant("Brand New Co", "boss@brandnew.test");
       const [row] = await h.rows<{ require_unsubscribe_link: number; one_click_unsubscribe: number }>("SELECT require_unsubscribe_link, one_click_unsubscribe FROM tenants WHERE id = ?", fresh.tenantId);
-      expect(row).toEqual({ require_unsubscribe_link: 1, one_click_unsubscribe: 1 });
+      expect(row).toEqual({ require_unsubscribe_link: true, one_click_unsubscribe: true });
       expect((await h.as("boss@brandnew.test").api("GET", "/api/me")).json.tenant).toMatchObject({ requireUnsubscribeLink: true, oneClickUnsubscribe: true });
     });
 

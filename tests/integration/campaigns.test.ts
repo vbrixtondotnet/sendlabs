@@ -151,7 +151,7 @@ describe("campaign CRUD", () => {
     expect("footer" in (await h.api("GET", `/api/campaigns/${made.json.id}`)).json).toBe(false);
     expect((await create({ footer: "<p>mine</p>" })).status).toBe(400);
     expect((await h.api("PATCH", `/api/campaigns/${made.json.id}`, { footer: "<p>mine</p>" })).status).toBe(400);
-    expect(await h.rows("SELECT name FROM pragma_table_info('campaigns') WHERE name = 'footer'")).toHaveLength(0);
+    expect(await h.rows("SELECT column_name FROM information_schema.columns WHERE table_name = 'campaigns' AND column_name = 'footer'")).toHaveLength(0);
   });
 
   it("a duplicate carries the signature over", async () => {

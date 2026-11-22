@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { createDb, type Database } from "./database/client";
+import { closeDb, connectionStringFor, createDb, type Database } from "./database/client";
 import { ApiError } from "./lib/errors";
 import { errorResponse, formatIssues } from "./lib/http";
 import { requireActor, type Actor } from "./middleware/auth";
@@ -37,7 +37,7 @@ const MAX_UPLOAD_BYTES = MAX_FILE_BYTES + 256 * 1024;
  * Built by a factory so tests can mount it with their own bindings, and with a stand-in for Google
  * (`google`), so the whole Gmail connection can be tested without talking to the real service.
  */
-export function createApp(options: { google?: GoogleOAuth; fetch?: typeof fetch } = {}) {
+export function createApp(options: { google?: GoogleOAuth; fetch?: typeof fetch; db?: Database } = {}) {
   const app = new Hono<AppEnv>();
   const google = options.google ?? new GoogleOAuth();
 
@@ -69,10 +69,23 @@ export function createApp(options: { google?: GoogleOAuth; fetch?: typeof fetch 
     await next();
   });
   app.use("/api/*", async (c, next) => {
-    c.set("db", createDb(c.env.DB));
+    // One database client per request. It connects only when a query runs, and its connections are closed once the response
+    // is on its way (after it, where the platform allows, so the response is not held up).
+    // (A caller may hand in a ready client, as the tests do to share one connection pool; that one is not closed here.)
+    const db = options.db ?? createDb(connectionStringFor(c.env));
+    c.set("db", db);
     c.set("google", google);
     c.set("fetch", options.fetch ?? ((...a) => fetch(...a)));
-    await next();
+    try {
+      await next();
+    } finally {
+      const closing = options.db ? Promise.resolve() : closeDb(db).catch(() => undefined);
+      try {
+        c.executionCtx.waitUntil(closing);
+      } catch {
+        await closing; // no execution context (tests, scripts): wait for it
+      }
+    }
   });
 
   // Public: health, and the page Google sends the browser back to. Everything else requires an actor.

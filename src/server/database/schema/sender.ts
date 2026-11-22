@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, foreignKey, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { bigint, check, foreignKey, index, integer, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core";
 import { SENDER_PROVIDERS, SENDER_STATUSES } from "../../../shared/types";
 import { createdAt, idColumn, inList, updatedAt } from "./helpers";
 import { tenants } from "./tenants";
@@ -13,7 +13,7 @@ import { users } from "./users";
  * ciphertext copied into another tenant's row cannot be decrypted. Short-lived access tokens are never
  * stored: they expire within the hour and are minted again from the refresh token when needed.
  */
-export const senderAccounts = sqliteTable(
+export const senderAccounts = pgTable(
   "sender_accounts",
   {
     id: idColumn(),
@@ -42,7 +42,7 @@ export const senderAccounts = sqliteTable(
 
     /** The user who connected it. The composite key guarantees they belong to the same tenant. */
     connectedBy: text("connected_by").notNull(),
-    connectedAt: integer("connected_at").notNull(),
+    connectedAt: bigint("connected_at", { mode: "number" }).notNull(),
 
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -65,7 +65,7 @@ export const senderAccounts = sqliteTable(
  * Only a hash of the `state` value is stored, and the PKCE verifier is encrypted, so a database read alone
  * cannot complete someone's connection.
  */
-export const oauthStates = sqliteTable(
+export const oauthStates = pgTable(
   "oauth_states",
   {
     id: idColumn(),
@@ -77,9 +77,9 @@ export const oauthStates = sqliteTable(
     stateHash: text("state_hash").notNull(),
     /** PKCE code verifier, encrypted. Google must see its challenge first and this value second. */
     codeVerifierEncrypted: text("code_verifier_encrypted").notNull(),
-    expiresAt: integer("expires_at").notNull(),
+    expiresAt: bigint("expires_at", { mode: "number" }).notNull(),
     /** Set when the callback claims it. A used state is dead: a replayed callback is refused. */
-    usedAt: integer("used_at"),
+    usedAt: bigint("used_at", { mode: "number" }),
     createdAt: createdAt(),
   },
   (t) => [

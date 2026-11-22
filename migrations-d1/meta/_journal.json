@@ -1,0 +1,181 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1794116285072,
+      "tag": "0000_old_silverclaw",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1794118201110,
+      "tag": "0001_csv_imports",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1794145924124,
+      "tag": "0002_multi_tenancy",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1794147521106,
+      "tag": "0003_gmail_sender",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1794150991985,
+      "tag": "0004_invitations_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1794152710608,
+      "tag": "0005_soft_delete_users",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1794153262938,
+      "tag": "0006_login_attempts",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1794170243586,
+      "tag": "0007_tenant_postal_address",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1794175307440,
+      "tag": "0008_test_recipients",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1794196197181,
+      "tag": "0009_user_position",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1794196479467,
+      "tag": "0010_invitation_position",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1794197228331,
+      "tag": "0011_tenant_website_campaign_signature",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1794198261944,
+      "tag": "0012_tenant_compliance_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1794199499644,
+      "tag": "0013_campaign_footer",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1794200412143,
+      "tag": "0014_unsubscribe_suppressions_drop_footer",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1794233379050,
+      "tag": "0015_signature_plain_text_to_html",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1794243701662,
+      "tag": "0016_email_templates",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1794487043308,
+      "tag": "0017_campaign_recipient_industries",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1794490000000,
+      "tag": "0018_my_templates_drop_selected",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1794488835084,
+      "tag": "0019_super_administrator_role",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1794489472697,
+      "tag": "0020_system_templates",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1794555872542,
+      "tag": "0021_sender_company_placeholder",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1794557678990,
+      "tag": "0022_campaign_plain_text",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1794618013221,
+      "tag": "0023_sender_name",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1794664682849,
+      "tag": "0024_personal_emails",
+      "breakpoints": true
+    }
+  ]
+}

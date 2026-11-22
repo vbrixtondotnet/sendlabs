@@ -7,7 +7,7 @@ import { toImportDto, toImportRowDto } from "../../lib/dto";
 import { offsetOf, pageOf } from "../../lib/http";
 import { newId, nowMs } from "../../lib/id";
 import { REJECTED_OUTCOMES, type ImportRowOutcome } from "../../../shared/types";
-import { chunk, runBulk } from "../batch";
+import { BULK_ROWS, chunk } from "../batch";
 import type { Database } from "../client";
 import { importRows, imports } from "../schema";
 import { usersRepo } from "./users";
@@ -52,22 +52,14 @@ export function importsRepo(db: Database, tenantId: string) {
       return row.id;
     },
 
-    /** Writes every row's outcome, in bulk (see `runBulk`). */
+    /** Writes every row's outcome, in bulk: a few hundred rows per statement. */
     async addRows(importId: string, rows: readonly RowResult[]): Promise<void> {
       const now = nowMs();
-      const sqlText = `INSERT INTO import_rows (id, tenant_id, import_id, row_number, raw_value, outcome, contact_id, created_at)
-        SELECT json_extract(value,'$[0]'), ?4, ?2, json_extract(value,'$[1]'), json_extract(value,'$[2]'),
-               json_extract(value,'$[3]'), json_extract(value,'$[4]'), ?3
-        FROM json_each(?1) WHERE true`;
-      const statements = chunk(rows, 200).map((group) =>
-        db.$client.prepare(sqlText).bind(
-          JSON.stringify(group.map((r) => [newId(), r.rowNumber, r.rawValue, r.outcome, r.contactId])),
-          importId,
-          now,
-          tenantId,
-        ),
-      );
-      await runBulk(db, statements);
+      for (const group of chunk(rows, BULK_ROWS)) {
+        await db.insert(importRows).values(
+          group.map((r) => ({ id: newId(), tenantId, importId, rowNumber: r.rowNumber, rawValue: r.rawValue, outcome: r.outcome, contactId: r.contactId, createdAt: now })),
+        );
+      }
     },
 
     async complete(id: string, createdContacts: number, existingContacts: number): Promise<void> {

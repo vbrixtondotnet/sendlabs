@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, foreignKey, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { bigint, check, foreignKey, index, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core";
 import { INVITATION_STATUSES } from "../../../shared/types";
 import { access } from "./access";
 import { createdAt, idColumn, inList, normalizedEmailRule, updatedAt } from "./helpers";
@@ -13,7 +13,7 @@ import { users } from "./users";
  * hash, so reading this table cannot reveal a working link. The token is single-use: accepting flips
  * `status` to Accepted in the same atomic step that creates the user.
  */
-export const invitations = sqliteTable(
+export const invitations = pgTable(
   "invitations",
   {
     id: idColumn(),
@@ -36,12 +36,12 @@ export const invitations = sqliteTable(
     /** SHA-256 (base64url) of the secret in the link. Never the secret itself. */
     tokenHash: text("token_hash").notNull(),
     status: text("status", { enum: INVITATION_STATUSES }).notNull().default("Pending"),
-    expiresAt: integer("expires_at").notNull(),
+    expiresAt: bigint("expires_at", { mode: "number" }).notNull(),
 
     /** The Administrator who sent it. The composite key guarantees they belong to the same tenant. */
     invitedBy: text("invited_by").notNull(),
 
-    acceptedAt: integer("accepted_at"),
+    acceptedAt: bigint("accepted_at", { mode: "number" }),
     /** The user that accepting created. */
     acceptedUserId: text("accepted_user_id"),
 

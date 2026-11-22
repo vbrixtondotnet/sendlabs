@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, foreignKey, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { bigint, boolean, check, foreignKey, index, integer, jsonb, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core";
 import {
   CAMPAIGN_STATUSES,
   RECIPIENT_STATUSES,
@@ -11,8 +11,8 @@ import { createdAt, idColumn, inList, updatedAt } from "./helpers";
 import { tenants } from "./tenants";
 import { users } from "./users";
 
-const hhmm = (column: string) =>
-  `("${column}" GLOB '[01][0-9]:[0-5][0-9]' OR "${column}" GLOB '2[0-3]:[0-5][0-9]')`;
+/** "HH:MM", 00:00 to 23:59 (SQLite wrote this with GLOB; PostgreSQL uses a regular expression). */
+const hhmm = (column: string) => `("${column}" ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$')`;
 
 /**
  * A campaign sends one separate email per recipient, in daily batches (the "drip"):
@@ -20,7 +20,7 @@ const hhmm = (column: string) =>
  * Subject, body and drip settings lock once the campaign leaves Draft (enforced in the service layer).
  * Owned by one tenant, and created by one of that tenant's users.
  */
-export const campaigns = sqliteTable(
+export const campaigns = pgTable(
   "campaigns",
   {
     id: idColumn(),
@@ -54,13 +54,13 @@ export const campaigns = sqliteTable(
      * Alternative audience: every contact of the tenant whose industry is one of these (exact match). Empty means
      * "not used". Mutually exclusive with `recipientImportId`. Resolved into campaign_recipients at launch.
      */
-    recipientIndustries: text("recipient_industries", { mode: "json" }).$type<string[]>().notNull().default(sql`'[]'`),
+    recipientIndustries: jsonb("recipient_industries").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
 
     /**
      * Send as plain text only (no HTML part), which reads like a personal email and is less likely to land in Gmail's
      * Promotions tab. The text is made from the same message, so links stay (as "text (url)") but formatting is lost.
      */
-    plainText: integer("plain_text", { mode: "boolean" }).notNull().default(false),
+    plainText: boolean("plain_text").notNull().default(false),
 
     /* --- daily drip schedule --- */
     dailyLimit: integer("daily_limit").notNull().default(500),
@@ -69,12 +69,12 @@ export const campaigns = sqliteTable(
     sendWindowEnd: text("send_window_end").notNull().default("17:00"),
     /** IANA timezone name, e.g. America/Los_Angeles. */
     timezone: text("timezone").notNull().default("America/Los_Angeles"),
-    nextRunAt: integer("next_run_at"),
-    lastRunAt: integer("last_run_at"),
+    nextRunAt: bigint("next_run_at", { mode: "number" }),
+    lastRunAt: bigint("last_run_at", { mode: "number" }),
 
-    launchedAt: integer("launched_at"),
-    completedAt: integer("completed_at"),
-    archivedAt: integer("archived_at"),
+    launchedAt: bigint("launched_at", { mode: "number" }),
+    completedAt: bigint("completed_at", { mode: "number" }),
+    archivedAt: bigint("archived_at", { mode: "number" }),
 
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -102,7 +102,7 @@ export const campaigns = sqliteTable(
  * never loses recipient work. Only each day's batch is enqueued. Carries its own `tenant_id`, and the
  * composite keys guarantee the campaign and the contact belong to that same tenant.
  */
-export const campaignRecipients = sqliteTable(
+export const campaignRecipients = pgTable(
   "campaign_recipients",
   {
     id: idColumn(),
@@ -120,7 +120,7 @@ export const campaignRecipients = sqliteTable(
     /** Normalized address at launch time. Historical campaigns stay auditable if the contact later changes. */
     emailSnapshot: text("email_snapshot").notNull(),
     /** Merge-field values at launch time, so every send is reproducible. */
-    personalizationSnapshot: text("personalization_snapshot", { mode: "json" })
+    personalizationSnapshot: jsonb("personalization_snapshot")
       .$type<Partial<ContactFields>>()
       .notNull(),
 
@@ -131,11 +131,11 @@ export const campaignRecipients = sqliteTable(
     skipReason: text("skip_reason", { enum: SKIP_REASONS }),
     attemptCount: integer("attempt_count").notNull().default(0),
     /** Set when the queue consumer claims the row. An expired lease means the consumer died mid-send. */
-    leaseExpiresAt: integer("lease_expires_at"),
+    leaseExpiresAt: bigint("lease_expires_at", { mode: "number" }),
 
-    queuedAt: integer("queued_at"),
+    queuedAt: bigint("queued_at", { mode: "number" }),
     /** When Gmail accepted the message. Acceptance is not inbox delivery. */
-    acceptedAt: integer("accepted_at"),
+    acceptedAt: bigint("accepted_at", { mode: "number" }),
     /** Sanitized provider error. Never contains tokens or message content. */
     lastError: text("last_error"),
 

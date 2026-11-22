@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { InvitationDto, InvitationPreviewDto } from "../../shared/api";
 import { normalizeEmail } from "../../shared/email";
 import { passwordProblem } from "../../shared/password-rules";
@@ -7,7 +7,7 @@ import type { Role } from "../../shared/types";
 import type { Database } from "../database/client";
 import { invitationsRepo, previewByTokenHash } from "../database/repositories/invitations";
 import { senderRepo } from "../database/repositories/sender";
-import { users } from "../database/schema";
+import { invitations, sessions, tenants, users } from "../database/schema";
 import { ApiError, badRequest, constraintMessage } from "../lib/errors";
 import { decryptSecret, randomToken, sha256Base64Url } from "../lib/crypto";
 import { newId, nowMs } from "../lib/id";
@@ -189,12 +189,13 @@ export async function previewInvitation(db: Database, token: string): Promise<In
 }
 
 /**
- * Turns an invitation into a user, and signs them in. One atomic batch, so either all of it happens or none:
- *   1. create the user (only if the invitation is still open, unexpired and for an active tenant)
- *   2. mark the invitation Accepted, naming that user
- *   3. start their session
- * Two people clicking at once cannot both succeed (the second finds the invitation used), and an address that already
- * has an account fails the whole batch, leaving the invitation untouched and usable.
+ * Turns an invitation into a user, and signs them in. One transaction, so either all of it happens or none:
+ *   1. lock the invitation and check it is still open, unexpired and for an active tenant
+ *   2. create the user (or bring back the one who was removed from this tenant earlier)
+ *   3. mark the invitation Accepted, naming that user
+ *   4. start their session
+ * Two people clicking at once take turns on the invitation's row lock, so the second finds it used and gets nothing, and an
+ * address that already has an account fails the whole transaction, leaving the invitation untouched and usable.
  * The password is checked first, so a typo never uses the link up.
  */
 export async function acceptInvitation(db: Database, token: string, password: string): Promise<{ sessionToken: string; expiresAt: number }> {
@@ -207,65 +208,61 @@ export async function acceptInvitation(db: Database, token: string, password: st
   const sessionToken = randomToken();
   const now = nowMs();
   const expiresAt = now + SESSION_TTL_MS;
-  const d1 = db.$client;
+  const sessionTokenHash = await sha256Base64Url(sessionToken);
 
-  // Someone previously removed from this tenant keeps their row (soft delete). Accepting brings that same account
-  // back, instead of creating a second one for the same address.
-  const returning = await d1
-    .prepare(
-      `SELECT u.id AS id FROM invitations i JOIN users u ON u.tenant_id = i.tenant_id AND u.normalized_email = i.normalized_email
-       WHERE i.token_hash = ?1 AND u.is_deleted = 1`,
-    )
-    .bind(tokenHash)
-    .first<{ id: string }>();
-  const userId = returning?.id ?? newId();
-
-  // The password hash carries a random salt, so it identifies THIS call. Later statements require it, which stops a
-  // concurrent loser from getting a session for the account the winner just activated.
-  const validInvitation = `i.token_hash = ?4 AND i.status = 'Pending' AND i.expires_at > ?3 AND t.status = 'Active'`;
-
-  let results;
   try {
-    results = await d1.batch([
-      returning
-        ? d1
-            .prepare(
-              `UPDATE users SET is_deleted = 0, deleted_at = NULL, status = 'Active', password_hash = ?2, must_change_password = 0,
-                      first_name = (SELECT i.first_name FROM invitations i WHERE i.token_hash = ?4),
-                      last_name = (SELECT i.last_name FROM invitations i WHERE i.token_hash = ?4),
-                      position = (SELECT i.position FROM invitations i WHERE i.token_hash = ?4),
-                      display_name = (SELECT trim(i.first_name || ' ' || i.last_name) FROM invitations i WHERE i.token_hash = ?4),
-                      access_id = (SELECT i.access_id FROM invitations i WHERE i.token_hash = ?4),
-                      last_login_at = ?3, updated_at = ?3
-               WHERE id = ?1 AND is_deleted = 1
-                 AND EXISTS (SELECT 1 FROM invitations i JOIN tenants t ON t.id = i.tenant_id WHERE ${validInvitation} AND i.tenant_id = users.tenant_id)`,
-            )
-            .bind(userId, passwordHash, now, tokenHash)
-        : d1
-            .prepare(
-              `INSERT INTO users (id, tenant_id, email, normalized_email, first_name, last_name, position, display_name, password_hash,
-                                  must_change_password, access_id, status, last_login_at, created_at, updated_at)
-               SELECT ?1, i.tenant_id, i.email, i.normalized_email, i.first_name, i.last_name, i.position, trim(i.first_name || ' ' || i.last_name), ?2,
-                      0, i.access_id, 'Active', ?3, ?3, ?3
-               FROM invitations i JOIN tenants t ON t.id = i.tenant_id
-               WHERE ${validInvitation}`,
-            )
-            .bind(userId, passwordHash, now, tokenHash),
-      d1
-        .prepare(
-          `UPDATE invitations SET status = 'Accepted', accepted_at = ?1, accepted_user_id = ?2, updated_at = ?1
-           WHERE token_hash = ?3 AND status = 'Pending'
-             AND EXISTS (SELECT 1 FROM users WHERE id = ?2 AND is_deleted = 0 AND password_hash = ?4)
-           RETURNING id`,
-        )
-        .bind(now, userId, tokenHash, passwordHash),
-      d1
-        .prepare(
-          `INSERT INTO sessions (id, tenant_id, user_id, token_hash, expires_at, created_at)
-           SELECT ?1, tenant_id, id, ?2, ?3, ?4 FROM users WHERE id = ?5 AND is_deleted = 0 AND password_hash = ?6`,
-        )
-        .bind(newId(), await sha256Base64Url(sessionToken), expiresAt, now, userId, passwordHash),
-    ]);
+    await db.transaction(async (tx) => {
+      // 1. Lock the invitation row: a second person accepting the same link waits here, and then finds it already used.
+      const [inv] = await tx
+        .select({
+          id: invitations.id,
+          tenantId: invitations.tenantId,
+          email: invitations.email,
+          normalizedEmail: invitations.normalizedEmail,
+          firstName: invitations.firstName,
+          lastName: invitations.lastName,
+          position: invitations.position,
+          accessId: invitations.accessId,
+          status: invitations.status,
+          expiresAt: invitations.expiresAt,
+          tenantStatus: tenants.status,
+        })
+        .from(invitations)
+        .innerJoin(tenants, eq(tenants.id, invitations.tenantId))
+        .where(eq(invitations.tokenHash, tokenHash))
+        .for("update", { of: invitations });
+      if (!inv || inv.status !== "Pending" || inv.expiresAt <= now || inv.tenantStatus !== "Active") throw INVALID();
+
+      // 2. Someone previously removed from this tenant keeps their row (soft delete). Accepting brings that same account
+      //    back, instead of creating a second one for the same address.
+      const [returning] = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.tenantId, inv.tenantId), eq(users.normalizedEmail, inv.normalizedEmail), eq(users.isDeleted, true)))
+        .limit(1);
+      const userId = returning?.id ?? newId();
+      const displayName = `${inv.firstName} ${inv.lastName}`.trim();
+      if (returning) {
+        await tx
+          .update(users)
+          .set({
+            isDeleted: false, deletedAt: null, status: "Active", passwordHash, mustChangePassword: false,
+            firstName: inv.firstName, lastName: inv.lastName, position: inv.position, displayName, accessId: inv.accessId,
+            lastLoginAt: now, updatedAt: now,
+          })
+          .where(eq(users.id, userId));
+      } else {
+        await tx.insert(users).values({
+          id: userId, tenantId: inv.tenantId, email: inv.email, normalizedEmail: inv.normalizedEmail,
+          firstName: inv.firstName, lastName: inv.lastName, position: inv.position, displayName, passwordHash,
+          mustChangePassword: false, accessId: inv.accessId, status: "Active", lastLoginAt: now, createdAt: now, updatedAt: now,
+        });
+      }
+
+      // 3. + 4. The invitation is used up, naming the user, and the person is signed in.
+      await tx.update(invitations).set({ status: "Accepted", acceptedAt: now, acceptedUserId: userId, updatedAt: now }).where(eq(invitations.id, inv.id));
+      await tx.insert(sessions).values({ id: newId(), tenantId: inv.tenantId, userId, tokenHash: sessionTokenHash, expiresAt, createdAt: now });
+    });
   } catch (e) {
     const message = constraintMessage(e);
     if (message.includes("users.normalized_email") || message.includes("users_normalized_email_uq")) {
@@ -274,8 +271,6 @@ export async function acceptInvitation(db: Database, token: string, password: st
     throw e;
   }
 
-  // The UPDATE returns a row only if this call is the one that used the invitation up.
-  if ((results[1]?.results?.length ?? 0) !== 1) throw INVALID();
   console.log(JSON.stringify({ level: "info", event: "invitation_accepted" }));
   return { sessionToken, expiresAt };
 }

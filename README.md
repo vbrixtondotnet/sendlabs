@@ -6,7 +6,7 @@ Sendrix is a web application that imports client contacts from CSV files, lets u
 
 ### Backend (started: Contacts and Campaigns only)
 
-Cloudflare Worker + Hono + D1 + Drizzle, under `src/server`. Built so far: the database schema, repositories and API routes for **Contacts, Campaigns and CSV imports**, **tenants, users and access levels**, the status state machines, and a health endpoint. Not built yet: **sign-in**, tenant sign-up, user management, campaign **launch**, test-send, retry-failed, the queue, Gmail and suppression. The UI is connected to this API for Contacts, Campaigns, Campaign details, the Campaign editor and Overview (see **Running it locally**).
+Cloudflare Worker + Hono + PostgreSQL (via Drizzle), under `src/server`. Built so far: the database schema, repositories and API routes for **Contacts, Campaigns and CSV imports**, **tenants, users and access levels**, the status state machines, and a health endpoint. Not built yet: **sign-in**, tenant sign-up, user management, campaign **launch**, test-send, retry-failed, the queue, Gmail and suppression. The UI is connected to this API for Contacts, Campaigns, Campaign details, the Campaign editor and Overview (see **Running it locally**).
 
 > **Security status:** you sign in with email and password on the login page (`/login`), or by accepting an invitation; both start a session. Every route except `/api/health`, the login and logout endpoints and the public invitation endpoints needs a session, and everything fails closed with `503 AUTH_NOT_CONFIGURED` unless `ENVIRONMENT` is `local` (set in `wrangler.jsonc`), so deploying this build cannot expose anyone's data until that is deliberately enabled. Optional local shortcut: put `DEV_ACTOR_EMAIL=admin@sabertoothsoftwarelabs.net` in `.dev.vars` and requests with no session run as that user (off by default). Roles are enforced on the user and invitation routes only so far.
 
@@ -91,8 +91,8 @@ Everything below is scoped to the caller's tenant. All list endpoints take `page
 - **Limits:** `.csv` only, 10 MB, 20,000 rows. A binary file renamed to `.csv`, an unclosed quote, or a header with no data is refused with `422 INVALID_CSV` and records nothing. Over the size limit returns `413`.
 - **Contacts are unique per tenant.** An address that already exists in the tenant (matched ignoring letter case and surrounding spaces) is skipped and **never overwritten**. The same address in another tenant is a different contact and is not touched. Re-uploading the same file creates nothing, so a failed or repeated import is safe.
 - **Nothing is silently dropped.** Rejected rows keep their row number, the cell text (cut to 500 characters) and the reason, and can be downloaded from the import history at any time.
-- **Not atomic across a whole file** (D1 writes are atomic per batch, a file is many batches). If it fails midway the import is marked `Failed`, the contacts saved so far are kept, and uploading the file again finishes the job. A crash leaves the import visibly `Processing`.
-- **Fast enough for your list.** Bulk writes send each chunk of rows as one bound JSON array that SQLite expands, which keeps clear of D1's 100-parameter limit. An 8,000-row file imports in about 1.5 seconds locally (the first approach, small multi-row inserts, took 15 seconds). Each import logs its phase timings, with no addresses or file content.
+- **Not atomic across a whole file** (each chunk of rows is its own transaction, a file is many chunks). If it fails midway the import is marked `Failed`, the contacts saved so far are kept, and uploading the file again finishes the job. A crash leaves the import visibly `Processing`.
+- **Fast enough for your list.** Bulk writes insert rows in chunks of 500, which keeps clear of PostgreSQL's bound-parameter limit. An 8,000-row file imports in about 1.5 seconds locally (the first approach, small multi-row inserts, took 15 seconds). Each import logs its phase timings, with no addresses or file content.
 - **The original file is not kept.** It is parsed in the same request, so nothing needs storing. R2 would only be needed to edit the column mapping after upload.
 
 #### Connecting Gmail
@@ -144,7 +144,7 @@ How it is kept safe:
 
 - The link holds a 32-byte random secret. **Only its SHA-256 hash is stored**, so a database leak cannot be used to accept an invitation. It is valid for 7 days and works once.
 - Every unusable link (unknown, tampered, expired, used, revoked, suspended tenant) gets the same `404 INVITATION_INVALID`, so nothing can be learned by guessing.
-- Accepting is **one atomic D1 batch** (create user, mark invitation accepted, start session): two simultaneous clicks make one user. A wrong or short password is rejected first, so a typo does not use the link up. An address that already has an account gets `409 EMAIL_EXISTS` and the invitation stays usable.
+- Accepting is **one atomic transaction (with the invitation row locked)** (create user, mark invitation accepted, start session): two simultaneous clicks make one user. A wrong or short password is rejected first, so a typo does not use the link up. An address that already has an account gets `409 EMAIL_EXISTS` and the invitation stays usable.
 - The tenant and role come from the invitation row, never from the request. Unknown fields are rejected.
 - One open invitation per address per tenant: **resend** issues a new link and the old one stops working; **revoke** kills it. A person cannot be mailed twice within 60 seconds, and a tenant can have at most 50 open invitations.
 - Inviting an address that belongs to another tenant answers a generic `CANNOT_INVITE`, so the API does not reveal who uses Sendrix.
@@ -285,7 +285,7 @@ The look comes from the logo, `src/client/assets/logo.png` (kept as supplied). I
 
 #### Tests
 
-`npm test` runs 1008 tests: state machines, validation schemas, IDs, password hashing, the CSV parser, the API including tenant isolation, CSV imports up to 8,000 rows and the whole Gmail connection and invitation flow against a stand-in for Google (all on in-memory D1), the migrations, and the UI pages (rendered in a simulated browser with the network stubbed, checking they call the API correctly and handle errors, empty states and read-only roles). The integration tests run the real Hono app and repositories against an in-memory D1 database (Miniflare) built from the committed migrations, so they never touch your local dev data. `npm run typecheck` covers the front end, the server, the server-side tests and the UI tests (the last two use separate configs, because browser and Cloudflare Worker types define clashing globals).
+`npm test` runs 1008 tests: state machines, validation schemas, IDs, password hashing, the CSV parser, the API including tenant isolation, CSV imports up to 8,000 rows and the whole Gmail connection and invitation flow against a stand-in for Google (all on a real PostgreSQL), the migrations, and the UI pages (rendered in a simulated browser with the network stubbed, checking they call the API correctly and handle errors, empty states and read-only roles). The integration tests run the real Hono app and repositories against a real PostgreSQL database built from the committed migrations: each test file gets a private copy and drops it afterwards, so they never touch your development data (needs `TEST_DATABASE_URL`). `npm run typecheck` covers the front end, the server, the server-side tests and the UI tests (the last two use separate configs, because browser and Cloudflare Worker types define clashing globals).
 
 | Table | Purpose |
 |---|---|
@@ -305,17 +305,43 @@ Foreign keys that include `tenant_id` cannot use `ON DELETE SET NULL` (SQLite wo
 **The multi-tenancy migration (`0002`)** drops and recreates the five tenant-owned tables, because SQLite cannot add a required `tenant_id`, change a unique key or add composite foreign keys to an existing table. That is only safe while they are empty, so the migration **aborts without changing anything if any of them holds a row** (tested). Clear the data on purpose first (`npm run db:clear:local`), or write a data-preserving migration. Never edit a migration that has been applied.
 
 ```bash
-npm run db:generate          # after editing src/server/database/schema/*, creates a migration
-npm run db:migrate:local     # apply to the local D1 database (.wrangler/state)
-npm run db:seed:tenant:local # create the default tenant and its Administrator (safe to run twice)
-npm run db:clear:local       # delete ALL tenants, users, contacts, campaigns and imports (keeps tables and the 3 access levels)
+npm run db:generate          # after editing src/server/database/schema/*: creates a migration (and puts its statements in a valid order)
+npm run db:migrate           # apply the migrations to the database in DATABASE_URL (.dev.vars); `-- --url "postgresql://..."` for another one
+npm run db:compare           # prove the PostgreSQL structure equals the original D1 one (prints IDENTICAL plus the intentional type changes)
+npm run db:seed:tenant:local # create the default tenant and its Administrator (safe to run twice; refuses a non-local database)
+npm run db:clear:local       # delete ALL tenants, users, contacts, campaigns and imports (keeps tables and reference data)
 npm run db:reset:local       # clear, then seed the default tenant again
 npm run dev:api              # Worker on http://localhost:8787, try /api/health
 npm run cf-typegen           # regenerate worker-configuration.d.ts after editing wrangler.jsonc
-npm run typecheck            # front end and server
+npm run typecheck            # front end, server and tests
 ```
 
-`wrangler.jsonc` holds placeholder database IDs for staging and production. Replace them with the IDs printed by `wrangler d1 create`.
+### PostgreSQL
+
+**Local setup (once).** Install PostgreSQL, then create a login and two databases (the second is the tests' base; each test file copies a template of it and drops its copy):
+
+```sql
+CREATE ROLE sendrix LOGIN PASSWORD '<choose one>' CREATEDB;
+CREATE DATABASE sendrix OWNER sendrix;
+CREATE DATABASE sendrix_test OWNER sendrix;
+```
+
+Put `DATABASE_URL=postgresql://sendrix:<password>@localhost:5432/sendrix` and `TEST_DATABASE_URL=postgresql://sendrix:<password>@localhost:5432/sendrix_test` in `.dev.vars` (git-ignored), then `npm run db:migrate` and `npm run db:seed:tenant:local`.
+
+**Structure.** `migrations/0000_baseline.sql` creates the same tables, columns, constraints and indexes as the original D1 migrations (kept in `migrations-d1/`), and `0001_seed_reference_data.sql` adds the access levels and system templates. The only differences, all intentional: millisecond timestamps and large counts are `bigint` (not `integer`), the 0/1 flags are real `boolean`s, and JSON stored as text is `jsonb`. `npm run db:compare` checks this. Never edit an applied migration; add a new one with `npm run db:generate`.
+
+**In the Worker.** Each request opens its own `postgres` connection and closes it when done. In staging and production the address comes from a **Hyperdrive** binding (`HYPERDRIVE` in `wrangler.jsonc`, which pools connections to the database); in development from `DATABASE_URL`.
+
+**Going live (cutover from D1).** Production keeps running on D1 until you do this; nothing above touches it.
+
+1. Create the database (any managed PostgreSQL) and a Hyperdrive config for it: `npx wrangler hyperdrive create sendrix-production --connection-string "postgresql://..."`. Put its id in `wrangler.jsonc` (`REPLACE_WITH_PRODUCTION_HYPERDRIVE_ID`).
+2. Create the tables: `npm run db:migrate -- --url "postgresql://..."`.
+3. Export the live data (read-only): `npx wrangler d1 export sendrix-db-production --remote --env production --output d1-export.sql`.
+4. Rehearse the copy, which rolls back: `npm run db:copy-from-d1 -- --source d1-export.sql --url "postgresql://..." --dry-run`. Then run it again without `--dry-run`. It is one transaction, converts the flags and JSON, and checks every table's row count against the export. It refuses a target that already has data unless you pass `--truncate`.
+5. Deploy this branch's Worker (`TOKEN_ENCRYPTION_KEY` must be the **same** value as before, or every organization must reconnect Gmail). Sessions are copied, so people stay signed in.
+6. For a brand-new deployment with no D1 data, skip 3-4 and create the first organization with `npm run db:provision -- --url "postgresql://..." --name "..." --email ...`.
+
+To go back, redeploy the previous (D1) version: D1 is never modified by any of these steps. Anything written to PostgreSQL after the cutover is not copied back.
 
 ### Running it locally
 
@@ -397,7 +423,7 @@ If the API is not running, pages show "Could not reach the API. Start it with `n
 
 - Internal business-outreach tool, not multi-tenant SaaS.
 - One Workspace mailbox initially; provider/account abstractions leave room for more.
-- D1 (SQLite) is the database. PostgreSQL is not to be substituted without the owner's explicit decision.
+- PostgreSQL is the database (this branch; production still runs on D1 until the cutover below). The structure is identical to the D1 one except for three type changes, listed in "PostgreSQL" below.
 - Cloudflare Workers, D1, Queues and R2 are the infrastructure foundation. No VPS or always-on server.
 - Credentials are supplied later. Only placeholders are scaffolded. Nothing is invented or committed.
 

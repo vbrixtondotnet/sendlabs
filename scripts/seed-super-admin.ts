@@ -13,18 +13,17 @@
  * owns no contacts, campaigns or templates, and nothing treats the SuperAdministrator as its member: the role, not the
  * tenant, is what matters.
  *
- * That password is a DEVELOPMENT credential and is committed on purpose; this script only ever talks to the simulated
- * local database and refuses to run anywhere else. Never seed this account into staging or production. Safe to run twice.
+ * That password is a DEVELOPMENT credential and is committed on purpose; this script refuses any database that is not on
+ * this machine. Never seed this account into staging or production. Safe to run twice.
  */
 import { eq } from "drizzle-orm";
-import { getPlatformProxy } from "wrangler";
 import { SUPER_ADMINISTRATOR } from "../src/shared/types";
-import { createDb } from "../src/server/database/client";
 import { tenants, users } from "../src/server/database/schema";
 import { ApiError } from "../src/server/lib/errors";
 import { newId } from "../src/server/lib/id";
 import { hashPassword, passwordProblem } from "../src/server/lib/password";
 import { findTenantBySlug } from "../src/server/services/tenants";
+import { openDb } from "./lib/db";
 
 const PLATFORM_TENANT_NAME = "Sendrix Platform";
 const PLATFORM_TENANT_SLUG = "sendrix-platform";
@@ -33,13 +32,8 @@ const FIRST_NAME = "Super";
 const LAST_NAME = "Administrator";
 const PASSWORD = process.env["SEED_SUPERADMIN_PASSWORD"] ?? "Password@123";
 
-const proxy = await getPlatformProxy<Env>();
+const { db, close } = openDb({ requireLocal: true });
 try {
-  if (proxy.env.ENVIRONMENT !== "local") {
-    console.error(`Refusing to seed: ENVIRONMENT is "${proxy.env.ENVIRONMENT}", not "local".`);
-    process.exit(1);
-  }
-  const db = createDb(proxy.env.DB);
   const problem = passwordProblem(PASSWORD);
   if (problem) throw new ApiError(400, "VALIDATION_ERROR", `The password is not allowed: ${problem}`);
 
@@ -72,5 +66,5 @@ try {
   console.error(err instanceof ApiError ? `Could not seed: ${err.message}` : err);
   process.exitCode = 1;
 } finally {
-  await proxy.dispose();
+  await close();
 }

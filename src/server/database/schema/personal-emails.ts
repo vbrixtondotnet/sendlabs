@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, foreignKey, index, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { check, foreignKey, index, pgTable, text } from "drizzle-orm/pg-core";
 import { createdAt, idColumn, normalizedEmailRule } from "./helpers";
 import { tenants } from "./tenants";
 import { users } from "./users";
@@ -9,7 +9,7 @@ import { users } from "./users";
  * campaign it has no audience, no schedule and no unsubscribe footer. The table exists so the page can show what went out
  * and so the daily limit can be counted. Only successfully sent messages are stored.
  */
-export const personalEmails = sqliteTable(
+export const personalEmails = pgTable(
   "personal_emails",
   {
     id: idColumn(),
