@@ -176,28 +176,26 @@ export interface SenderDto {
   connectedAt: string;
 }
 
-/** One person found by the people search (Apollo). Nothing is stored: results are shown, not saved. */
+/**
+ * One person found by the people search (a row of global_contacts). The email address is NOT included: it is revealed on request
+ * (for a credit), so it must not travel with every search result.
+ */
 export interface PersonDto {
   id: string;
   firstName: string;
   lastName: string;
   title: string;
   companyName: string;
-  email: string;
-  /** Employees at the person's company. */
-  employees: number;
+  /** Employees at the person's company; null when unknown. */
+  employees: number | null;
   industry: string;
-  linkedinUrl: string;
   website: string;
   city: string;
   state: string;
   country: string;
 }
 
-export interface PeopleSearchDto extends Page<PersonDto> {
-  /** Where the results come from: "mock" is made-up sample data (Apollo is not connected yet). */
-  source: "mock" | "apollo";
-}
+export type PeopleSearchDto = Page<PersonDto>;
 
 /** A template in My Templates. The body is left out (it is large): fetch one template to get it. */
 export interface EmailTemplateSummaryDto {

@@ -23,10 +23,15 @@ export const PEOPLE_COMPANY_SIZES = [
   { value: "5001,", label: "5,001+" },
 ] as const;
 
-export const PEOPLE_INDUSTRIES = [
-  "Accounting", "Airlines/Aviation", "Automotive", "Banking", "Biotechnology", "Construction", "Consumer Goods", "Education",
-  "Energy", "Financial Services", "Food & Beverages", "Health Care", "Hospitality", "Information Technology and Services",
-  "Insurance", "Logistics and Supply Chain", "Manufacturing", "Marketing and Advertising", "Real Estate", "Retail", "Telecommunications",
-] as const;
+/**
+ * Other ways the stored data may spell a country in the filter list. The imported leads say "US", the list says "United States":
+ * choosing one finds all of them.
+ */
+export const PEOPLE_COUNTRY_ALIASES: Record<string, readonly string[]> = {
+  "United States": ["US", "USA", "U.S.", "U.S.A."],
+  "United Kingdom": ["UK", "GB", "Great Britain"],
+  "United Arab Emirates": ["UAE"],
+};
 
+export const PEOPLE_MAX_INDUSTRIES = 50;
 export const PEOPLE_MAX_TITLES = 10;

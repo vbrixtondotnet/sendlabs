@@ -4,12 +4,12 @@ import { api, withQuery } from "./http";
 
 export interface PeopleFilters {
   countries: string[];
-  industry: string;
+  industries: string[];
   companySize: string;
   titles: string[];
 }
 
-/** Searches people (sample data until Apollo is connected). Lists are sent comma-separated. */
+/** Searches the shared people directory. The server pages: only the requested page is fetched. Lists are sent comma-separated. */
 export function usePeopleSearch(filters: PeopleFilters, page: number, pageSize: number) {
   return useQuery({
     queryKey: ["people", filters, page, pageSize],
@@ -20,11 +20,20 @@ export function usePeopleSearch(filters: PeopleFilters, page: number, pageSize: 
           page,
           pageSize,
           countries: filters.countries.join(","),
-          industry: filters.industry,
+          industries: filters.industries.join(","),
           companySize: filters.companySize,
           titles: filters.titles.join(","),
         }),
       ),
     placeholderData: keepPreviousData,
+  });
+}
+
+/** The industries that exist in the directory (the choices of the Industry filter). */
+export function usePeopleIndustries() {
+  return useQuery({
+    queryKey: ["people", "industries"],
+    queryFn: () => api<{ items: string[] }>("GET", "/api/people/industries"),
+    staleTime: 5 * 60_000,
   });
 }

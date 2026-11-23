@@ -4,7 +4,7 @@ import { FIELDS } from "./csv";
 import { isValidEmail, normalizeEmail } from "./email";
 import { isBlankHtml } from "./merge";
 import { PASSWORD_MAX_LENGTH } from "./password-rules";
-import { PEOPLE_COMPANY_SIZES, PEOPLE_INDUSTRIES, PEOPLE_MAX_TITLES } from "./people";
+import { PEOPLE_COMPANY_SIZES, PEOPLE_MAX_INDUSTRIES, PEOPLE_MAX_TITLES } from "./people";
 import { ACCESS_LEVELS, CAMPAIGN_STATUSES, CONSENT_STATUSES, IMPORT_ROW_OUTCOMES, RECIPIENT_STATUSES, type AccessId } from "./types";
 
 /* ------------------------------ primitives ------------------------------ */
@@ -245,7 +245,7 @@ const csvList = (max: number) =>
 
 export const peopleSearchQuery = pageQuery.extend({
   countries: csvList(60),
-  industry: optionalQuery(z.enum(PEOPLE_INDUSTRIES)),
+  industries: csvList(PEOPLE_MAX_INDUSTRIES),
   companySize: optionalQuery(z.enum(PEOPLE_COMPANY_SIZES.map((s) => s.value) as [string, ...string[]])),
   titles: csvList(PEOPLE_MAX_TITLES),
 });

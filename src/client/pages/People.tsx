@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { PEOPLE_COMPANY_SIZES, PEOPLE_COUNTRIES, PEOPLE_INDUSTRIES, PEOPLE_MAX_TITLES } from "@shared/people";
+import { PEOPLE_COMPANY_SIZES, PEOPLE_COUNTRIES, PEOPLE_MAX_TITLES } from "@shared/people";
 import { Button, Card, Empty, ErrorNotice, Field, LoadingRows, Notice, PageHeader, Pagination, Select, Td, Th, fmt } from "@/components/ui";
 import { MultiSelect } from "@/components/MultiSelect";
 import { useToast } from "@/hooks/useToast";
-import { usePeopleSearch, type PeopleFilters } from "@/services/people";
+import { usePeopleIndustries, usePeopleSearch, type PeopleFilters } from "@/services/people";
 
 const PAGE_SIZE = 50;
-const NONE: PeopleFilters = { countries: [], industry: "", companySize: "", titles: [] };
+const NONE: PeopleFilters = { countries: [], industries: [], companySize: "", titles: [] };
 
 /** Job titles: type one and press Enter (or comma) to add it; each shows as a removable chip. */
 function TitlesInput({ value, onChange }: { value: string[]; onChange: (next: string[]) => void }) {
@@ -50,6 +50,7 @@ export function People() {
   const [page, setPage] = useState(1);
   const { toast } = useToast();
   const list = usePeopleSearch(applied, page, PAGE_SIZE);
+  const industries = usePeopleIndustries();
   const total = list.data?.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -76,12 +77,7 @@ export function People() {
           <Card>
             <form onSubmit={search} className="space-y-4 p-4" aria-label="Search people">
               <MultiSelect label="Country" options={PEOPLE_COUNTRIES} value={draft.countries} onChange={(countries) => setDraft({ ...draft, countries })} placeholder="Search countries..." />
-              <Field label="Industry" htmlFor="people-industry">
-                <Select id="people-industry" value={draft.industry} onChange={(e) => setDraft({ ...draft, industry: e.target.value })}>
-                  <option value="">Any industry</option>
-                  {PEOPLE_INDUSTRIES.map((i) => <option key={i}>{i}</option>)}
-                </Select>
-              </Field>
+              <MultiSelect label="Industry" options={industries.data?.items ?? []} value={draft.industries} onChange={(industries) => setDraft({ ...draft, industries })} placeholder="Search industries..." />
               <Field label="Company size" htmlFor="people-size">
                 <Select id="people-size" value={draft.companySize} onChange={(e) => setDraft({ ...draft, companySize: e.target.value })}>
                   <option value="">Any size</option>
@@ -132,7 +128,7 @@ export function People() {
                         Add Contact
                       </Button>
                     </Td>
-                    <Td className="tabular-nums">{fmt(p.employees)}</Td>
+                    <Td className="tabular-nums">{p.employees === null ? "-" : fmt(p.employees)}</Td>
                     <Td>{p.industry}</Td>
                     <Td>{dash(p.city)}</Td>
                     <Td>{dash(p.state)}</Td>

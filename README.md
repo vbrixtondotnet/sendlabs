@@ -343,7 +343,7 @@ Put `DATABASE_URL=postgresql://sendrix:<password>@localhost:5432/sendrix` and `T
 
 To go back, redeploy the previous (D1) version: D1 is never modified by any of these steps. Anything written to PostgreSQL after the cutover is not copied back.
 
-**People (Apollo search).** The People page (`/people`, after Contacts) searches by Country (searchable multi-select), Industry, Company Size and Job Titles. It currently shows made-up sample data (with no warning on the page) from `src/server/services/people-search.ts`; to connect Apollo, add a provider implementing `PeopleProvider` there and return it from `peopleProvider()`. Nothing is saved.
+**Search People.** The Search People page (`/people`, after Contacts) searches the shared `global_contacts` directory by Country (searchable multi-select; "United States" also finds rows stored as "US"), Industry (searchable multi-select of the industries in the table), Company Size and Job Titles. Paging, filtering and counting happen in the database (50 rows per page), and the email address is not sent with search results. To add Apollo as a source later, load its people into `global_contacts`.
 
 **Loading the shared directory.** `npm run db:import:global-contacts` reads the "US Leads" sheet of `../assets/leads.xlsx` (outside the repository, never committed) into `global_contacts` (industry = category3, else category2, else Category; one row per business name). `-- --dry-run` previews it, `-- --replace` empties the table first, and running it again skips addresses already stored.
 
