@@ -46,6 +46,8 @@ function TitlesInput({ value, onChange }: { value: string[]; onChange: (next: st
 }
 
 const dash = (v: string) => v || "-";
+const fullName = (p: { firstName: string; lastName: string }) => [p.firstName, p.lastName].filter(Boolean).join(" ");
+const place = (p: { city: string; state: string }) => dash([p.city, p.state].filter(Boolean).join(", "));
 
 export function People() {
   const [draft, setDraft] = useState<PeopleFilters>(NONE);
@@ -132,16 +134,17 @@ export function People() {
             <table className="w-full min-w-[1100px] text-left text-sm">
               <thead className="sticky top-0 z-10">
                 <tr>
-                  <Th>First Name</Th><Th>Last Name</Th><Th>Title</Th><Th>Company Name</Th><Th>Email</Th><Th># Employees</Th>
-                  <Th>Industry</Th><Th>City</Th><Th>State</Th><Th>Country</Th>
+                  <Th>Full Name</Th><Th>Company Name</Th><Th>Email</Th><Th># Employees</Th>
+                  <Th>Industry</Th><Th>Location</Th><Th>Country</Th>
                 </tr>
               </thead>
               <tbody>
                 {list.data.items.map((p) => (
                   <tr key={p.id} className="[&>td]:!py-1.5">
-                    <Td className="font-medium">{p.firstName}</Td>
-                    <Td className="font-medium">{p.lastName}</Td>
-                    <Td className="max-w-[14rem] truncate">{p.title}</Td>
+                    <Td>
+                      <p className="font-medium">{fullName(p) || "(no name)"}</p>
+                      <p className="max-w-[16rem] truncate text-xs text-slate-500">{p.title}</p>
+                    </Td>
                     <Td className="whitespace-nowrap">{p.companyName}</Td>
                     <Td>
                       {p.email ? (
@@ -162,8 +165,7 @@ export function People() {
                     </Td>
                     <Td className="tabular-nums">{p.employees === null ? "-" : fmt(p.employees)}</Td>
                     <Td>{p.industry}</Td>
-                    <Td>{dash(p.city)}</Td>
-                    <Td>{dash(p.state)}</Td>
+                    <Td className="whitespace-nowrap">{place(p)}</Td>
                     <Td className="whitespace-nowrap">{p.country}</Td>
                   </tr>
                 ))}

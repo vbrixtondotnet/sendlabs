@@ -18,10 +18,12 @@ describe("People page", () => {
     stubApi(base);
     renderAt(<People />);
     expect(screen.queryByText("Sample data")).toBeNull();
-    expect(await screen.findByText("Ava")).toBeTruthy();
+    expect(await screen.findByText("Ava Smith")).toBeTruthy();
     const headers = screen.getAllByRole("columnheader").map((h) => h.textContent);
-    expect(headers).toEqual(["First Name", "Last Name", "Title", "Company Name", "Email", "# Employees", "Industry", "City", "State", "Country"]);
-    const row = screen.getByText("Ava").closest("tr")!;
+    expect(headers).toEqual(["Full Name", "Company Name", "Email", "# Employees", "Industry", "Location", "Country"]);
+    const row = screen.getByText("Ava Smith").closest("tr")!;
+    expect(within(row).getByText("CEO")).toBeTruthy(); // the position sits under the name
+    expect(within(row).getByText("Austin, Texas")).toBeTruthy(); // city and state together
     expect(within(row).getByText("1,400")).toBeTruthy();
     expect(within(row).queryByRole("link", { name: "LinkedIn" })).toBeNull();
     expect(screen.queryByText(/people found/)).toBeNull();
@@ -42,7 +44,7 @@ describe("People page", () => {
     it("shows the email address of a person who is already one of your contacts, and no button for them", async () => {
       stubApi((call) => (call.path === "/api/people" ? reply([person({ email: "ava@summit.test" }), person({ id: "p2", firstName: "Liam" })]) : withAdd()(call)));
       renderAt(<People />);
-      const row = (await screen.findByText("Ava")).closest("tr")!;
+      const row = (await screen.findByText("Ava Smith")).closest("tr")!;
       expect(within(row).getByText("ava@summit.test")).toBeTruthy();
       expect(within(row).queryByRole("button", { name: "Add Contact" })).toBeNull();
       expect(screen.getAllByRole("button", { name: "Add Contact" })).toHaveLength(1); // Liam's
@@ -51,7 +53,7 @@ describe("People page", () => {
     it("says there is no email when the directory has none, instead of offering to spend a credit", async () => {
       stubApi((call) => (call.path === "/api/people" ? reply([person({ hasEmail: false })]) : withAdd()(call)));
       renderAt(<People />);
-      const row = (await screen.findByText("Ava")).closest("tr")!;
+      const row = (await screen.findByText("Ava Smith")).closest("tr")!;
       expect(within(row).getByText("No email")).toBeTruthy();
       expect(within(row).queryByRole("button", { name: "Add Contact" })).toBeNull();
     });
@@ -64,7 +66,7 @@ describe("People page", () => {
         return withAdd()(call);
       });
       renderAt(<People />);
-      await screen.findByText("Ava");
+      await screen.findByText("Ava Smith");
       fireEvent.click(screen.getByRole("button", { name: "Add Contact" }));
       expect(await screen.findByText("ava@summit.test")).toBeTruthy();
       expect(await screen.findByText(/added to your contacts\. 1 credit used\./)).toBeTruthy();
@@ -75,14 +77,14 @@ describe("People page", () => {
     it("does not offer Add Contact when there are no credits left", async () => {
       stubApi(withAdd({ credits: 0 }));
       renderAt(<People />);
-      await screen.findByText("Ava");
+      await screen.findByText("Ava Smith");
       for (const b of screen.getAllByRole("button", { name: "Add Contact" })) expect((b as HTMLButtonElement).disabled).toBe(true);
     });
 
     it("explains it when the server says the credits ran out", async () => {
       stubApi(withAdd({ add: () => ({ status: 402, json: { error: { code: "INSUFFICIENT_CREDITS", message: "You are out of credits." } } }) }));
       renderAt(<People />);
-      await screen.findByText("Ava");
+      await screen.findByText("Ava Smith");
       fireEvent.click(screen.getAllByRole("button", { name: "Add Contact" })[0]!);
       expect(await screen.findByText("You are out of credits.")).toBeTruthy();
     });
@@ -91,7 +93,7 @@ describe("People page", () => {
   it("picks several countries from a searchable dropdown", async () => {
     stubApi(base);
     renderAt(<People />);
-    await screen.findByText("Ava");
+    await screen.findByText("Ava Smith");
     const box = screen.getByRole("combobox", { name: "Country" });
     fireEvent.focus(box);
     fireEvent.change(box, { target: { value: "germ" } });
@@ -109,7 +111,7 @@ describe("People page", () => {
   it("sends all the filters only when Search is pressed", async () => {
     const calls = stubApi(base);
     renderAt(<People />);
-    await screen.findByText("Ava");
+    await screen.findByText("Ava Smith");
     const before = calls.length;
 
     const box = screen.getByRole("combobox", { name: "Country" });
@@ -137,8 +139,8 @@ describe("People page", () => {
   it("shows a dash for a missing city or state", async () => {
     stubApi(({ path }) => (path === "/api/people/industries" ? { json: { items: [] } } : path === "/api/people" ? reply([person({ city: "", state: "", employees: null })]) : undefined));
     renderAt(<People />);
-    const row = (await screen.findByText("Ava")).closest("tr")!;
-    expect(within(row).getAllByText("-")).toHaveLength(3); // city, state and the unknown employee count
+    const row = (await screen.findByText("Ava Smith")).closest("tr")!;
+    expect(within(row).getAllByText("-")).toHaveLength(2); // the empty location and the unknown employee count
   });
 
   it("says so when nothing matches", async () => {
@@ -153,11 +155,11 @@ describe("People page", () => {
       : path === "/api/people" ? { json: page([person({ id: `p${query.get("page")}`, firstName: `Page${query.get("page")}` })], 120, Number(query.get("page")), 50) }
       : undefined);
     renderAt(<People />);
-    expect(await screen.findByText("Page1")).toBeTruthy();
+    expect(await screen.findByText("Page1 Smith")).toBeTruthy();
     expect(screen.getByText("1-50 of 120")).toBeTruthy(); // the total still shows in the pager
     expect(lastSearch(calls)!.query.get("pageSize")).toBe("50");
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    expect(await screen.findByText("Page2")).toBeTruthy();
+    expect(await screen.findByText("Page2 Smith")).toBeTruthy();
     expect(lastSearch(calls)!.query.get("page")).toBe("2");
   });
 });
