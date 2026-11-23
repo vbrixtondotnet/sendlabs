@@ -141,7 +141,7 @@ export function People() {
               <tbody>
                 {list.data.items.map((p) => (
                   <tr key={p.id} className="[&>td]:!py-1.5">
-                    <Td>
+                    <Td className="min-w-[16rem]">
                       <p className="font-medium">{fullName(p) || "(no name)"}</p>
                       <p className="max-w-[16rem] truncate text-xs text-slate-500">{p.title}</p>
                     </Td>
