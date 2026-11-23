@@ -24,7 +24,7 @@ describe("People page", () => {
     const row = screen.getByText("Ava").closest("tr")!;
     expect(within(row).getByText("1,400")).toBeTruthy();
     expect(within(row).queryByRole("link", { name: "LinkedIn" })).toBeNull();
-    expect(screen.getByText("2 people found")).toBeTruthy();
+    expect(screen.queryByText(/people found/)).toBeNull();
     // The email is hidden: a button reveals it (for a credit) instead of the address.
     expect(within(row).getByRole("button", { name: "Add Contact" })).toBeTruthy();
     expect(screen.getAllByRole("button", { name: "Add Contact" })).toHaveLength(2);
@@ -98,7 +98,7 @@ describe("People page", () => {
       : undefined);
     renderAt(<People />);
     expect(await screen.findByText("Page1")).toBeTruthy();
-    expect(screen.getByText("120 people found")).toBeTruthy();
+    expect(screen.getByText("1-50 of 120")).toBeTruthy(); // the total still shows in the pager
     expect(lastSearch(calls)!.query.get("pageSize")).toBe("50");
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(await screen.findByText("Page2")).toBeTruthy();

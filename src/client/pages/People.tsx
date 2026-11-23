@@ -101,7 +101,6 @@ export function People() {
           <div className="min-h-0 flex-1 overflow-y-auto"><LoadingRows cols={12} /></div>
         ) : (
           <>
-            <p className="shrink-0 px-4 pt-3 text-sm text-slate-600 dark:text-slate-400" role="status">{fmt(total)} {total === 1 ? "person" : "people"} found</p>
             {/* The table scrolls on its own (both ways) with the header row pinned, like Apollo; the page and the filters stay put. */}
             <div className="min-h-0 flex-1 overflow-auto" tabIndex={0} aria-label="People results">
             <table className="w-full min-w-[1100px] text-left text-sm">
