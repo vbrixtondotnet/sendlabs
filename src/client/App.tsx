@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { Overview } from "@/pages/Overview";
 import { Imports } from "@/pages/Imports";
+import { Jobs } from "@/pages/Jobs";
 import { People } from "@/pages/People";
 import { Contacts } from "@/pages/Contacts";
 import { Campaigns } from "@/pages/Campaigns";
@@ -29,6 +30,7 @@ export function App() {
         <Route path="campaigns/new" element={<CampaignEditor />} />
         <Route path="campaigns/:id/edit" element={<CampaignEditor />} />
         <Route path="campaigns/:id" element={<CampaignDetails />} />
+        <Route path="jobs" element={<Jobs />} />
         <Route path="templates" element={<EmailTemplates />} />
         <Route path="settings" element={<Settings />} />
         <Route path="account" element={<MySettings />} />

@@ -48,6 +48,17 @@ describe("the Settings menu is for Administrators only", () => {
   });
 });
 
+describe("the Jobs menu item", () => {
+  it("is in the left navigation straight after Campaigns, and goes to /jobs", async () => {
+    stubApi(({ path }) => (path === "/api/me" ? { json: me() } : undefined));
+    open();
+    await screen.findByText("Sabertooth Software Labs");
+    const nav = within(screen.getByRole("navigation", { name: "Main" })).getAllByRole("link").map((l) => l.textContent);
+    expect(nav.indexOf("Jobs")).toBe(nav.indexOf("Campaigns") + 1);
+    expect(screen.getByRole("link", { name: "Jobs" }).getAttribute("href")).toBe("/jobs");
+  });
+});
+
 describe("the Gmail-style shell", () => {
   it("has a New campaign button above the navigation for people who can create, and not for a Viewer", async () => {
     stubApi(({ path }) => (path === "/api/me" ? { json: me({ access: "Campaign Manager" }) } : undefined));
@@ -196,13 +207,13 @@ describe("initials", () => {
 describe("the Email Templates menu item", () => {
   const links = () => screen.getAllByRole("link").map((l) => l.textContent);
 
-  it.each(["Administrator", "Campaign Manager"] as const)("is in the left navigation for a %s, straight after Campaigns", async (access) => {
+  it.each(["Administrator", "Campaign Manager"] as const)("is in the left navigation for a %s, after Campaigns and Jobs", async (access) => {
     stubApi(({ path }) => (path === "/api/me" ? { json: me({ access }) } : undefined));
     open();
     await screen.findByText("Sabertooth Software Labs");
     const order = links();
     expect(order).toContain("Email Templates");
-    expect(order.indexOf("Email Templates")).toBe(order.indexOf("Campaigns") + 1);
+    expect(order.indexOf("Email Templates")).toBe(order.indexOf("Jobs") + 1);
     expect(screen.getByRole("link", { name: "Email Templates" }).getAttribute("href")).toBe("/templates");
   });
 
