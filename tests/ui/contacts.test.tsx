@@ -22,11 +22,10 @@ describe("Contacts page (live data)", () => {
     expect(await screen.findByText("Nick Harbaugh")).toBeTruthy();
     expect(screen.getByText("julie@jcdavispower.com")).toBeTruthy();
     expect(screen.getByText("2 contacts match.", { exact: false })).toBeTruthy();
-    const julieRow = screen.getByText("julie@jcdavispower.com").closest("tr")!;
-    expect(within(julieRow).getByText("Granted")).toBeTruthy(); // the badge, not the filter option
+    expect(screen.queryByRole("columnheader", { name: "Consent" })).toBeNull(); // no consent column any more
   });
 
-  it("sends the search text (debounced), the industry and the consent filter to the API", async () => {
+  it("sends the search text (debounced), and the industry filter to the API", async () => {
     const calls = stubApi(base);
     renderAt(<Contacts />);
     await screen.findByText("Nick Harbaugh");
@@ -40,8 +39,7 @@ describe("Contacts page (live data)", () => {
     fireEvent.change(screen.getByLabelText("Filter by industry"), { target: { value: "construction" } });
     await waitFor(() => expect(lastList(calls)!.query.get("industry")).toBe("construction"));
 
-    fireEvent.change(screen.getByLabelText("Filter by consent"), { target: { value: "Granted" } });
-    await waitFor(() => expect(lastList(calls)!.query.get("consent")).toBe("Granted"));
+    expect(screen.queryByLabelText("Filter by consent")).toBeNull(); // no consent filter any more
     expect(lastList(calls)!.query.get("page")).toBe("1"); // filters reset to the first page
   });
 

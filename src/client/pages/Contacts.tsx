@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import type { ContactDto } from "@shared/api";
 import { CONSENT_STATUSES, type ConsentStatus } from "@shared/types";
 import {
-  Badge, Button, Card, Empty, ErrorNotice, Field, LoadingRows, Modal, Notice, PageHeader, Pagination, Select, Table, TextInput, Td, Th, fmt, fmtDay,
+  Button, Card, Empty, ErrorNotice, Field, LoadingRows, Modal, Notice, PageHeader, Pagination, Select, Table, TextInput, Td, Th, fmt, fmtDay,
 } from "@/components/ui";
 import { useDebounced } from "@/hooks/useDebounced";
 import { useRole } from "@/hooks/useRole";
@@ -14,7 +14,6 @@ import { useContacts, useCreateContact, useDeleteContact, useIndustries, useUpda
 const PAGE_SIZE = 15;
 const location = (c: ContactDto) => [c.city, c.state].filter(Boolean).join(", ") || c.country || "n/a";
 const fullName = (c: { firstName: string; lastName: string }) => [c.firstName, c.lastName].filter(Boolean).join(" ");
-const consentTone = { Granted: "green", Unknown: "slate", Withdrawn: "red" } as const;
 
 export function Contacts() {
   const { canEdit } = useRole();
@@ -24,12 +23,11 @@ export function Contacts() {
   const fromBar = params.get("q") ?? "";
   useEffect(() => { setQ(fromBar); setPage(1); }, [fromBar]);
   const [industry, setIndustry] = useState("");
-  const [consent, setConsent] = useState<ConsentStatus | "">("");
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<ContactDto | "new" | null>(null);
 
   const search = useDebounced(q.trim());
-  const list = useContacts({ page, pageSize: PAGE_SIZE, q: search, industry, consent });
+  const list = useContacts({ page, pageSize: PAGE_SIZE, q: search, industry });
   const industries = useIndustries();
   const total = list.data?.total ?? 0;
 
@@ -47,21 +45,17 @@ export function Contacts() {
             <option value="">All industries</option>
             {industries.data?.map((i) => <option key={i}>{i}</option>)}
           </Select>
-          <Select className="max-w-[14rem]" aria-label="Filter by consent" value={consent} onChange={(e) => { setConsent(e.target.value as ConsentStatus | ""); setPage(1); }}>
-            <option value="">Any consent</option>
-            {CONSENT_STATUSES.map((c) => <option key={c} value={c}>{c}</option>)}
-          </Select>
         </div>
 
         {list.isError ? (
           <div className="p-4"><ErrorNotice error={list.error} onRetry={() => void list.refetch()} /></div>
         ) : list.isPending ? (
-          <LoadingRows cols={6} />
+          <LoadingRows cols={5} />
         ) : (
           <>
             <Table>
               <thead>
-                <tr><Th>Contact</Th><Th>Company</Th><Th>Email</Th><Th>Industry</Th><Th>Location</Th><Th>Consent</Th></tr>
+                <tr><Th>Contact</Th><Th>Company</Th><Th>Email</Th><Th>Industry</Th><Th>Location</Th></tr>
               </thead>
               <tbody>
                 {list.data.items.map((c) => (
@@ -76,13 +70,12 @@ export function Contacts() {
                     <Td className="text-slate-600 dark:text-slate-300">{c.email}</Td>
                     <Td className="text-slate-600 dark:text-slate-300">{c.industry}</Td>
                     <Td className="whitespace-nowrap text-slate-600 dark:text-slate-300">{location(c)}</Td>
-                    <Td><Badge tone={consentTone[c.consentStatus]}>{c.consentStatus}</Badge></Td>
                   </tr>
                 ))}
               </tbody>
             </Table>
             {list.data.items.length === 0 && (
-              <Empty>{search || industry || consent ? "No contacts match your filters." : "No contacts yet. Add one, or import a CSV."}</Empty>
+              <Empty>{search || industry ? "No contacts match your filters." : "No contacts yet. Add one, or import a CSV."}</Empty>
             )}
             <Pagination page={page} pageCount={Math.max(1, Math.ceil(total / PAGE_SIZE))} total={total} pageSize={PAGE_SIZE} onPage={setPage} />
           </>
