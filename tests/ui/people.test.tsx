@@ -20,7 +20,7 @@ describe("People page", () => {
     expect(screen.queryByText("Sample data")).toBeNull();
     expect(await screen.findByText("Ava")).toBeTruthy();
     const headers = screen.getAllByRole("columnheader").map((h) => h.textContent);
-    expect(headers).toEqual(["First Name", "Last Name", "Title", "Company Name", "Email", "# Employees", "Industry", "Website", "City", "State", "Country"]);
+    expect(headers).toEqual(["First Name", "Last Name", "Title", "Company Name", "Email", "# Employees", "Industry", "City", "State", "Country"]);
     const row = screen.getByText("Ava").closest("tr")!;
     expect(within(row).getByText("1,400")).toBeTruthy();
     expect(within(row).queryByRole("link", { name: "LinkedIn" })).toBeNull();
