@@ -127,7 +127,7 @@ export const senderDto =(over: Partial<SenderDto> = {}): SenderDto => ({
 
 /** What GET /api/me returns: an Administrator of a company with the default compliance settings (both on). */
 export const meDto = (user: Partial<MeDto["user"]> = {}, tenant: Partial<MeDto["tenant"]> = {}): MeDto => ({
-  user: { id: "u1", email: "admin@sabertoothsoftwarelabs.net", firstName: "Ada", lastName: "Lovelace", position: "", displayName: "Ada Lovelace", access: "Administrator", mustChangePassword: false, ...user },
+  user: { id: "u1", email: "admin@sabertoothsoftwarelabs.net", firstName: "Ada", lastName: "Lovelace", position: "", displayName: "Ada Lovelace", access: "Administrator", mustChangePassword: false, credits: 100, ...user },
   tenant: { id: "t", name: "Acme", slug: "acme", postalAddress: "Acme Inc.\n1 Road, Springfield", website: "", requireUnsubscribeLink: true, oneClickUnsubscribe: true, ...tenant },
   session: true,
   });

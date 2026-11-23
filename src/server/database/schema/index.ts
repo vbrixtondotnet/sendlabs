@@ -13,3 +13,4 @@ export * from "./suppressions";
 export * from "./email-templates";
 export * from "./system-templates";
 export * from "./global-contacts";
+export * from "./credit-transactions";

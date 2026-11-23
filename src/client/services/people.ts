@@ -1,5 +1,5 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import type { PeopleSearchDto } from "@shared/api";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { AddContactResultDto, MeDto, PeopleSearchDto } from "@shared/api";
 import { api, withQuery } from "./http";
 
 export interface PeopleFilters {
@@ -35,5 +35,21 @@ export function usePeopleIndustries() {
     queryKey: ["people", "industries"],
     queryFn: () => api<{ items: string[] }>("GET", "/api/people/industries"),
     staleTime: 5 * 60_000,
+  });
+}
+
+/**
+ * "Add Contact": adds the person to the user's contacts, reveals their email address and spends 1 credit. Afterwards the
+ * search results (which now show the address), the contacts list and the credit balance (inside /api/me) are refreshed.
+ */
+export function useAddPersonContact() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (personId: string) => api<AddContactResultDto>("POST", `/api/people/${encodeURIComponent(personId)}/add-contact`),
+    onSuccess: (result) => {
+      qc.setQueryData<MeDto>(["me"], (me) => (me ? { ...me, user: { ...me.user, credits: result.credits } } : me));
+      void qc.invalidateQueries({ queryKey: ["people"] });
+      void qc.invalidateQueries({ queryKey: ["contacts"] });
+    },
   });
 }

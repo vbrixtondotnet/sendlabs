@@ -29,6 +29,13 @@
       "when": 1795422213072,
       "tag": "0003_global_contacts",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795454582889,
+      "tag": "0004_credits",
+      "breakpoints": true
     }
   ]
 }

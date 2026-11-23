@@ -1,9 +1,12 @@
 import { useState } from "react";
+import type { PersonDto } from "@shared/api";
 import { PEOPLE_COMPANY_SIZES, PEOPLE_COUNTRIES, PEOPLE_MAX_TITLES } from "@shared/people";
 import { Button, Card, Empty, ErrorNotice, Field, LoadingRows, PageHeader, Pagination, Select, Td, Th, fmt } from "@/components/ui";
 import { MultiSelect } from "@/components/MultiSelect";
 import { useToast } from "@/hooks/useToast";
-import { usePeopleIndustries, usePeopleSearch, type PeopleFilters } from "@/services/people";
+import { ApiClientError } from "@/services/http";
+import { useMe } from "@/services/me";
+import { useAddPersonContact, usePeopleIndustries, usePeopleSearch, type PeopleFilters } from "@/services/people";
 
 const PAGE_SIZE = 50;
 const NONE: PeopleFilters = { countries: [], industries: [], companySize: "", titles: [] };
@@ -51,6 +54,17 @@ export function People() {
   const { toast } = useToast();
   const list = usePeopleSearch(applied, page, PAGE_SIZE);
   const industries = usePeopleIndustries();
+  const me = useMe();
+  const add = useAddPersonContact();
+  const credits = me.data?.user.credits ?? 0;
+  // Which person's button is working, so only that one shows "Adding..." (a second click on it is ignored by `disabled`).
+  const adding = add.isPending ? add.variables : null;
+
+  const addContact = (p: PersonDto) =>
+    add.mutate(p.id, {
+      onSuccess: (r) => toast(r.charged ? `${p.firstName} ${p.lastName}`.trim() + " added to your contacts. 1 credit used." : `${p.firstName} ${p.lastName}`.trim() + " is already in your contacts."),
+      onError: (e) => toast(e instanceof ApiClientError && e.code === "INSUFFICIENT_CREDITS" ? "You are out of credits." : e instanceof Error ? e.message : "Could not add this contact", "error"),
+    });
   const total = list.data?.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -130,9 +144,21 @@ export function People() {
                     <Td className="max-w-[14rem] truncate">{p.title}</Td>
                     <Td className="whitespace-nowrap">{p.companyName}</Td>
                     <Td>
-                      <Button variant="primary" className="cursor-pointer whitespace-nowrap !px-3 !py-1" onClick={() => toast(`Adding ${p.firstName} ${p.lastName} will be available once Apollo is connected.`, "info")}>
-                        Add Contact
-                      </Button>
+                      {p.email ? (
+                        <span className="whitespace-nowrap">{p.email}</span>
+                      ) : !p.hasEmail ? (
+                        <span className="text-slate-400">No email</span>
+                      ) : (
+                        <Button
+                          variant="primary"
+                          className="cursor-pointer whitespace-nowrap !px-3 !py-1"
+                          disabled={adding !== null || credits < 1}
+                          title={credits < 1 ? "You are out of credits" : "Reveal the email address and add this person to your contacts (1 credit)"}
+                          onClick={() => addContact(p)}
+                        >
+                          {adding === p.id ? "Adding..." : "Add Contact"}
+                        </Button>
+                      )}
                     </Td>
                     <Td className="tabular-nums">{p.employees === null ? "-" : fmt(p.employees)}</Td>
                     <Td>{p.industry}</Td>

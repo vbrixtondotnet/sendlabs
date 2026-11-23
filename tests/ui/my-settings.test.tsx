@@ -6,7 +6,7 @@ import type { MeDto } from "../../src/shared/api";
 import { renderAt, stubApi, type Call, type Handler } from "./harness";
 
 const meDto = (over: Partial<MeDto["user"]> = {}): MeDto => ({
-  user: { id: "u1", email: "ada@acme.test", firstName: "Ada", lastName: "Lovelace", position: "", displayName: "Ada Lovelace", access: "Campaign Manager", mustChangePassword: false, ...over },
+  user: { id: "u1", email: "ada@acme.test", firstName: "Ada", lastName: "Lovelace", position: "", displayName: "Ada Lovelace", access: "Campaign Manager", mustChangePassword: false, credits: 100, ...over },
   tenant: { id: "t", name: "Acme", slug: "acme", postalAddress: "", website: "", requireUnsubscribeLink: true, oneClickUnsubscribe: true },
   session: true,
 });

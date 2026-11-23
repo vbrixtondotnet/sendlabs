@@ -199,7 +199,7 @@ describe("Company Details tab", () => {
 
   /** A server that remembers what was saved, like the real one. */
   function companyServer(opts: { tenant?: Partial<MeDto["tenant"]>; reply?: ReturnType<typeof fail> } = {}): Handler {
-    let me: MeDto = { user: { id: "u1", email: "a@acme.test", firstName: "A", lastName: "B", position: "", displayName: "A B", access: "Administrator", mustChangePassword: false }, tenant: tenant(opts.tenant), session: true };
+    let me: MeDto = { user: { id: "u1", email: "a@acme.test", firstName: "A", lastName: "B", position: "", displayName: "A B", access: "Administrator", mustChangePassword: false, credits: 100 }, tenant: tenant(opts.tenant), session: true };
     return ({ method, path, body }) => {
       if (method === "GET" && path === "/api/me") return { json: me };
       if (method === "GET" && path === "/api/sender") return { json: senderStatus(null) };

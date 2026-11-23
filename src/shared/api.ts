@@ -136,7 +136,7 @@ export interface ImportRowDto {
 
 /** The signed-in user and the tenant they belong to. */
 export interface MeDto {
-  user: { id: string; email: string; firstName: string; lastName: string; position: string; displayName: string; access: Role; mustChangePassword: boolean };
+  user: { id: string; email: string; firstName: string; lastName: string; position: string; displayName: string; access: Role; mustChangePassword: boolean; /** Credits left. Adding a person from Search People spends them. */ credits: number };
   /** True when signed in through a real session (e.g. after accepting an invitation), false for the local development placeholder user. */
   session: boolean;
   tenant: { id: string; name: string; slug: string; postalAddress: string; website: string; requireUnsubscribeLink: boolean; oneClickUnsubscribe: boolean };
@@ -177,8 +177,9 @@ export interface SenderDto {
 }
 
 /**
- * One person found by the people search (a row of global_contacts). The email address is NOT included: it is revealed on request
- * (for a credit), so it must not travel with every search result.
+ * One person found by the people search (a row of global_contacts). The email address is only included once it has been revealed:
+ * that is, when the person is already one of the caller's own contacts (they paid a credit for it, or already had it). Otherwise
+ * `email` is null, so it never travels with an ordinary search result.
  */
 export interface PersonDto {
   id: string;
@@ -193,9 +194,24 @@ export interface PersonDto {
   city: string;
   state: string;
   country: string;
+  /** The email address, or null while it is not revealed (the person is not one of the caller's contacts yet). */
+  email: string | null;
+  /** Whether the directory has an email address for this person at all. When false there is nothing to reveal. */
+  hasEmail: boolean;
 }
 
 export type PeopleSearchDto = Page<PersonDto>;
+
+/** The result of "Add Contact" on a person: they are now (or already were) one of the caller's contacts, with the email revealed. */
+export interface AddContactResultDto {
+  person: PersonDto;
+  /** The contact in the caller's list. */
+  contactId: string;
+  /** True when a credit was spent; false when the person was already one of the caller's contacts (nothing is charged twice). */
+  charged: boolean;
+  /** The caller's credits after this. */
+  credits: number;
+}
 
 /** A template in My Templates. The body is left out (it is large): fetch one template to get it. */
 export interface EmailTemplateSummaryDto {

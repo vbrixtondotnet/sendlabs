@@ -3,14 +3,14 @@ import { describe, expect, it } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { People } from "../../src/client/pages/People";
 import type { PersonDto } from "../../src/shared/api";
-import { page, renderAt, stubApi, type Handler } from "./harness";
+import { meDto, page, renderAt, stubApi, type Handler } from "./harness";
 
 const person = (over: Partial<PersonDto> = {}): PersonDto => ({
   id: "p1", firstName: "Ava", lastName: "Smith", title: "CEO", companyName: "Summit Group", employees: 1400,
-  industry: "Retail", website: "https://www.summitgroup.example", city: "Austin", state: "Texas", country: "United States", ...over,
+  industry: "Retail", website: "https://www.summitgroup.example", city: "Austin", state: "Texas", country: "United States", email: null, hasEmail: true, ...over,
 });
 const reply = (items: PersonDto[], total = items.length) => ({ json: page(items, total, 1, 50) });
-const base: Handler = ({ path }) => (path === "/api/people/industries" ? { json: { items: ["Retail", "Software"] } } : path === "/api/people" ? reply([person(), person({ id: "p2", firstName: "Liam", city: "", state: "" })]) : undefined);
+const base: Handler = ({ path }) => (path === "/api/me" ? { json: meDto() } : path === "/api/people/industries" ? { json: { items: ["Retail", "Software"] } } : path === "/api/people" ? reply([person(), person({ id: "p2", firstName: "Liam", city: "", state: "" })]) : undefined);
 const lastSearch = (calls: ReturnType<typeof stubApi>) => [...calls].reverse().find((c) => c.path === "/api/people");
 
 describe("People page", () => {
@@ -30,6 +30,62 @@ describe("People page", () => {
     expect(screen.getAllByRole("button", { name: "Add Contact" })).toHaveLength(2);
     expect(document.body.textContent).not.toContain("ava.smith@summitgroup.example");
     expect(screen.getByRole("note").textContent).toMatch(/Reveal a contact.s email address by adding it to your contacts\. Each reveal costs 1 credit\./);
+  });
+
+  describe("Add Contact and credits", () => {
+    const withAdd = (over: { credits?: number; add?: (id: string) => ReturnType<Handler> } = {}): Handler => (call) => {
+      if (call.path === "/api/me") return { json: meDto({ credits: over.credits ?? 100 }) };
+      if (call.method === "POST" && call.path.endsWith("/add-contact")) return over.add ? over.add(call.path) : { json: { person: person({ email: "ava@summit.test" }), contactId: "c1", charged: true, credits: 99 } };
+      return base(call);
+    };
+
+    it("shows the email address of a person who is already one of your contacts, and no button for them", async () => {
+      stubApi((call) => (call.path === "/api/people" ? reply([person({ email: "ava@summit.test" }), person({ id: "p2", firstName: "Liam" })]) : withAdd()(call)));
+      renderAt(<People />);
+      const row = (await screen.findByText("Ava")).closest("tr")!;
+      expect(within(row).getByText("ava@summit.test")).toBeTruthy();
+      expect(within(row).queryByRole("button", { name: "Add Contact" })).toBeNull();
+      expect(screen.getAllByRole("button", { name: "Add Contact" })).toHaveLength(1); // Liam's
+    });
+
+    it("says there is no email when the directory has none, instead of offering to spend a credit", async () => {
+      stubApi((call) => (call.path === "/api/people" ? reply([person({ hasEmail: false })]) : withAdd()(call)));
+      renderAt(<People />);
+      const row = (await screen.findByText("Ava")).closest("tr")!;
+      expect(within(row).getByText("No email")).toBeTruthy();
+      expect(within(row).queryByRole("button", { name: "Add Contact" })).toBeNull();
+    });
+
+    it("adds the person with one POST, tells you a credit was used, and shows the address after the refresh", async () => {
+      let added = false;
+      const calls = stubApi((call) => {
+        if (call.method === "POST" && call.path === "/api/people/p1/add-contact") { added = true; return { json: { person: person({ email: "ava@summit.test" }), contactId: "c1", charged: true, credits: 99 } }; }
+        if (call.path === "/api/people") return reply([person({ email: added ? "ava@summit.test" : null })]);
+        return withAdd()(call);
+      });
+      renderAt(<People />);
+      await screen.findByText("Ava");
+      fireEvent.click(screen.getByRole("button", { name: "Add Contact" }));
+      expect(await screen.findByText("ava@summit.test")).toBeTruthy();
+      expect(await screen.findByText(/added to your contacts\. 1 credit used\./)).toBeTruthy();
+      expect(calls.filter((c) => c.method === "POST")).toHaveLength(1);
+      expect(screen.queryByRole("button", { name: "Add Contact" })).toBeNull();
+    });
+
+    it("does not offer Add Contact when there are no credits left", async () => {
+      stubApi(withAdd({ credits: 0 }));
+      renderAt(<People />);
+      await screen.findByText("Ava");
+      for (const b of screen.getAllByRole("button", { name: "Add Contact" })) expect((b as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it("explains it when the server says the credits ran out", async () => {
+      stubApi(withAdd({ add: () => ({ status: 402, json: { error: { code: "INSUFFICIENT_CREDITS", message: "You are out of credits." } } }) }));
+      renderAt(<People />);
+      await screen.findByText("Ava");
+      fireEvent.click(screen.getAllByRole("button", { name: "Add Contact" })[0]!);
+      expect(await screen.findByText("You are out of credits.")).toBeTruthy();
+    });
   });
 
   it("picks several countries from a searchable dropdown", async () => {

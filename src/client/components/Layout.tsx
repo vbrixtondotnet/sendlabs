@@ -97,7 +97,7 @@ export function Layout() {
             <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">Not signed in</span>
           ) : null}
           <div className="ml-auto flex items-center gap-2">
-            {me.data && !isSuperAdmin && <CreditsBadge />}
+            {me.data && !isSuperAdmin && <CreditsBadge credits={me.data.user.credits} />}
             {me.data && <UserMenu user={me.data.user} />}
           </div>
         </header>

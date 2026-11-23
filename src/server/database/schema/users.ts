@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
-import { bigint, boolean, check, index, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core";
+import { bigint, boolean, check, index, integer, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core";
+import { STARTING_CREDITS } from "../../../shared/credits";
 import { USER_STATUSES } from "../../../shared/types";
 import { access } from "./access";
 import { createdAt, idColumn, inList, normalizedEmailRule, updatedAt } from "./helpers";
@@ -41,6 +42,8 @@ export const users = pgTable(
     /** Disabled users cannot sign in but stay in the table, so what they created keeps its owner. */
     status: text("status", { enum: USER_STATUSES }).notNull().default("Active"),
     lastLoginAt: bigint("last_login_at", { mode: "number" }),
+    /** Credits left. Spent by adding a global contact from the People page (see services/people-credits.ts); never below zero. */
+    credits: integer("credits").notNull().default(STARTING_CREDITS),
     /**
      * Soft delete. A removed user keeps their row (and so what they created keeps its owner and the email stays
      * reserved), but cannot sign in and is not listed. Accepting a new invitation clears it again.
@@ -59,6 +62,7 @@ export const users = pgTable(
     check("users_status_chk", inList("status", USER_STATUSES)),
     check("users_normalized_email_chk", normalizedEmailRule("normalized_email")),
     check("users_password_hash_chk", sql.raw(`"password_hash" <> ''`)),
+    check("users_credits_chk", sql.raw(`"credits" >= 0`)),
   ],
 );
 

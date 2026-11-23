@@ -1,15 +1,16 @@
-import { and, asc, count, gte, ilike, inArray, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, eq, gte, ilike, inArray, lte, or, sql, type SQL } from "drizzle-orm";
 import type { PeopleSearchDto, PersonDto } from "../../../shared/api";
 import { PEOPLE_COUNTRY_ALIASES } from "../../../shared/people";
 import type { PeopleSearchQuery } from "../../../shared/schemas";
 import { offsetOf, pageOf } from "../../lib/http";
 import type { Database } from "../client";
-import { globalContacts, type GlobalContactRow } from "../schema";
+import { contacts, globalContacts, type GlobalContactRow } from "../schema";
 
 /** `%`, `_` and `\` typed by a person must match themselves in a LIKE pattern, not act as wildcards. */
 const likeEscape = (v: string) => v.replace(/[\\%_]/g, (c) => `\\${c}`);
 
-const toDto = (r: GlobalContactRow): PersonDto => ({
+/** `revealed` is true when the person is one of the caller's own contacts: only then does the email address leave the server. */
+export const toPersonDto = (r: GlobalContactRow, revealed: boolean): PersonDto => ({
   id: r.id,
   firstName: r.firstName,
   lastName: r.lastName,
@@ -21,10 +22,15 @@ const toDto = (r: GlobalContactRow): PersonDto => ({
   city: r.city,
   state: r.state,
   country: r.country,
+  email: revealed && r.email.trim() !== "" ? r.email.trim() : null,
+  hasEmail: r.email.trim() !== "",
 });
 
-/** The shared directory. Not scoped to a tenant: every organization searches the same rows. */
-export function globalContactsRepo(db: Database) {
+/**
+ * The shared directory. Not scoped to a tenant: every organization searches the same rows. The tenant is only needed to tell
+ * which people are already its contacts, because those (and only those) show their email address.
+ */
+export function globalContactsRepo(db: Database, tenantId: string) {
   return {
     /**
      * One page of people matching every filter that was given (a filter left empty is not applied). Paging happens in the
@@ -52,10 +58,18 @@ export function globalContactsRepo(db: Database) {
 
       const condition = where.length > 0 ? and(...where) : undefined;
       const [rows, totals] = await Promise.all([
-        db.select().from(globalContacts).where(condition).orderBy(asc(globalContacts.company), asc(globalContacts.id)).limit(q.pageSize).offset(offsetOf(q.page, q.pageSize)),
+        db
+          .select({ person: globalContacts, contactId: contacts.id })
+          .from(globalContacts)
+          // A person is "added" when this tenant holds a contact with the same address (the unique index makes this a point lookup).
+          .leftJoin(contacts, and(eq(contacts.tenantId, tenantId), sql`${globalContacts.email} <> ''`, eq(contacts.normalizedEmail, sql`lower(trim(${globalContacts.email}))`)))
+          .where(condition)
+          .orderBy(asc(globalContacts.company), asc(globalContacts.id))
+          .limit(q.pageSize)
+          .offset(offsetOf(q.page, q.pageSize)),
         db.select({ n: count() }).from(globalContacts).where(condition),
       ]);
-      return pageOf(rows.map(toDto), totals[0]?.n ?? 0, q.page, q.pageSize);
+      return pageOf(rows.map((r) => toPersonDto(r.person, r.contactId !== null)), totals[0]?.n ?? 0, q.page, q.pageSize);
     },
 
     /** Every industry in the directory, alphabetical: the choices of the Industry filter. */

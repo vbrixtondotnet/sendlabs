@@ -36,8 +36,8 @@ describe("GET /api/people (reads global_contacts)", () => {
     const r = await search("?countries=Germany");
     expect(r.status).toBe(200);
     expect(r.json.items).toHaveLength(1);
-    expect(r.json.items[0]).toEqual({ id: "s1", firstName: "Acme Inc", lastName: "", title: "Marketing Manager", companyName: "Acme Inc", employees: 8, industry: "Software", website: "", city: "Berlin", state: "", country: "Germany" });
-    expect(JSON.stringify(r.json)).not.toMatch(/secret\d@|email/);
+    expect(r.json.items[0]).toEqual({ id: "s1", firstName: "Acme Inc", lastName: "", title: "Marketing Manager", companyName: "Acme Inc", employees: 8, industry: "Software", website: "", city: "Berlin", state: "", country: "Germany", email: null, hasEmail: true });
+    expect(JSON.stringify(r.json)).not.toMatch(/secret\d@/); // the address itself is never sent (email is null until the person is added)
   });
 
   describe("server-side paging", () => {

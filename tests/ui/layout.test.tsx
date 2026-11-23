@@ -12,7 +12,7 @@ import { goTo } from "../../src/client/lib/navigate";
 beforeEach(() => vi.mocked(goTo).mockClear());
 
 const me = (over: Partial<MeDto["user"]> = {}, tenantName = "Sabertooth Software Labs"): MeDto => ({
-  user: { id: "u1", email: "admin@sabertoothsoftwarelabs.net", firstName: "", lastName: "", position: "", displayName: "Administrator", access: "Administrator", mustChangePassword: false, ...over },
+  user: { id: "u1", email: "admin@sabertoothsoftwarelabs.net", firstName: "", lastName: "", position: "", displayName: "Administrator", access: "Administrator", mustChangePassword: false, credits: 100, ...over },
   tenant: { id: "t1", name: tenantName, slug: "sabertooth-software-labs", postalAddress: "", website: "", requireUnsubscribeLink: true, oneClickUnsubscribe: true },
   session: false,
 });
