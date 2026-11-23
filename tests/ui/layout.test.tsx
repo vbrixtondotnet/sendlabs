@@ -48,6 +48,32 @@ describe("the Settings menu is for Administrators only", () => {
   });
 });
 
+describe("the Gmail-style shell", () => {
+  it("has a New campaign button above the navigation for people who can create, and not for a Viewer", async () => {
+    stubApi(({ path }) => (path === "/api/me" ? { json: me({ access: "Campaign Manager" }) } : undefined));
+    open();
+    expect((await screen.findByRole("link", { name: "New campaign" })).getAttribute("href")).toBe("/campaigns/new");
+  });
+
+  it("hides New campaign from a Viewer", async () => {
+    stubApi(({ path }) => (path === "/api/me" ? { json: me({ access: "Viewer" }) } : undefined));
+    open();
+    await screen.findByText("Sabertooth Software Labs");
+    expect(screen.queryByRole("link", { name: "New campaign" })).toBeNull();
+  });
+
+  it("has a search box in the top bar, and the menu button folds the navigation to icons and back", async () => {
+    stubApi(({ path }) => (path === "/api/me" ? { json: me() } : undefined));
+    open();
+    expect(await screen.findByRole("searchbox", { name: "Search contacts" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Collapse navigation" }));
+    expect(screen.getByRole("button", { name: "Expand navigation" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("link", { name: "Contacts" }).getAttribute("title")).toBe("Contacts"); // icon only: the name moves to a tooltip
+    fireEvent.click(screen.getByRole("button", { name: "Expand navigation" }));
+    expect(screen.getByRole("button", { name: "Collapse navigation" })).toBeTruthy();
+  });
+});
+
 describe("the credits badge (mockup)", () => {
   it("shows 100 Credits at the top right for a tenant user", async () => {
     stubApi(({ path }) => (path === "/api/me" ? { json: me() } : undefined));

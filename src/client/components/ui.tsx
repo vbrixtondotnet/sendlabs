@@ -12,7 +12,7 @@ export const fmtDay = (iso: string) =>
 /* ---------- Card / layout ---------- */
 export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <div className={`rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 ${className}`}>
+    <div className={`rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 ${className}`}>
       {children}
     </div>
   );
@@ -34,7 +34,7 @@ export function PageHeader({ title, description, actions }: { title: string; des
   return (
     <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+        <h1 className="text-[1.375rem] font-normal leading-8">{title}</h1>
         {description && <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{description}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
@@ -61,9 +61,9 @@ export function StatCard({ label, value, hint, tone = "default" }: { label: stri
 /* ---------- Buttons ---------- */
 type Variant = "primary" | "secondary" | "danger" | "ghost";
 const variants: Record<Variant, string> = {
-  primary: "bg-brand-600 text-white hover:bg-brand-700 disabled:hover:bg-brand-600",
+  primary: "bg-brand-600 text-white shadow-sm hover:bg-brand-700 hover:shadow disabled:hover:bg-brand-600 disabled:hover:shadow-sm",
   secondary:
-    "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800",
+    "border border-slate-300 bg-white text-brand-700 hover:bg-brand-50 dark:border-slate-700 dark:bg-slate-900 dark:text-brand-300 dark:hover:bg-slate-800",
   danger: "bg-rose-600 text-white hover:bg-rose-700 disabled:hover:bg-rose-600",
   ghost: "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800",
 };
@@ -76,7 +76,7 @@ export function Button({
   return (
     <button
       {...rest}
-      className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${variants[variant]} ${className}`}
+      className={`inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${variants[variant]} ${className}`}
     />
   );
 }
@@ -200,7 +200,7 @@ export function Table({ children }: { children: ReactNode }) {
   );
 }
 export const Th = ({ children, className = "" }: { children?: ReactNode; className?: string }) => (
-  <th scope="col" className={`whitespace-nowrap bg-slate-50 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:bg-slate-900/60 dark:text-slate-400 ${className}`}>
+  <th scope="col" className={`whitespace-nowrap bg-white px-4 py-2.5 text-xs font-medium text-slate-500 dark:bg-slate-900 dark:text-slate-400 ${className}`}>
     {children}
   </th>
 );

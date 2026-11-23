@@ -3,7 +3,11 @@
 @custom-variant dark (@media (prefers-color-scheme: dark));
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* Gmail's own typeface when the computer has it, else the closest common one. */
+  --font-sans: "Google Sans", "Product Sans", Roboto, "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* The page behind the app, like Gmail's pale blue-grey: the navigation sits on it, the content panel floats above it. */
+  --color-canvas: #f4f7fb;
 
   /* Brand colours, measured from src/client/assets/logo.png: teal #01a4c2 and navy #091a34. */
   /* brand = the logo teal (500) with lighter tints and navy-leaning shades. */
@@ -38,7 +42,17 @@
 }
 
 body {
-  @apply bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
+  @apply bg-canvas text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root { --color-canvas: #0b1220; }
+}
+
+/* Gmail-style list rows: a soft tint under the row you point at. */
+table tbody tr:hover > td { background-color: color-mix(in srgb, var(--color-brand-50) 55%, transparent); }
+@media (prefers-color-scheme: dark) {
+  table tbody tr:hover > td { background-color: color-mix(in srgb, var(--color-brand-900) 25%, transparent); }
 }
 
 :focus-visible {

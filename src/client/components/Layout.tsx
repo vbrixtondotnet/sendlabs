@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from "react";
-import { Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
+import { useState, type FormEvent, type ReactNode } from "react";
+import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { CreditsBadge } from "@/components/CreditsBadge";
 import { Logo } from "@/components/Logo";
 import { UserMenu } from "@/components/UserMenu";
@@ -24,10 +24,23 @@ function NavIcon({ children }: { children: ReactNode }) {
   );
 }
 
+const COLLAPSED_KEY = "sendrix.nav.collapsed";
+const readCollapsed = (): boolean => {
+  try { return window.localStorage.getItem(COLLAPSED_KEY) === "1"; } catch { return false; }
+};
+
+/**
+ * The app shell, laid out like Gmail on the web: a light canvas with the top bar (menu button, logo, search, credits, account)
+ * and the navigation sitting directly on it, a pill-shaped primary button above the navigation, and the page itself in one
+ * large rounded white panel that scrolls on its own. On a large screen the menu button folds the navigation down to icons.
+ */
 export function Layout() {
   const [open, setOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+  const [search, setSearch] = useState("");
   const me = useMe();
   const location = useLocation();
+  const navigate = useNavigate();
 
   // Not signed in: go to the login page, and come back to this page afterwards.
   if (me.error instanceof ApiClientError && me.error.status === 401) {
@@ -42,77 +55,132 @@ export function Layout() {
   const isSuperAdmin = me.data?.user.access === "SuperAdministrator";
   if (isSuperAdmin && location.pathname !== "/templates" && location.pathname !== "/account") return <Navigate to="/templates" replace />;
   const items = NAV.filter((n) => (isSuperAdmin ? n.to === "/templates" : (n.to !== "/settings" || isAdmin) && (n.to !== "/templates" || !isViewer)));
+  const canCreate = !!me.data && !isViewer && !isSuperAdmin;
+  const wide = location.pathname.startsWith("/people"); // the people table wants the whole width
 
-  const nav = (
-    <nav aria-label="Main" className="flex flex-col gap-1 px-3">
+  const toggleCollapsed = () => {
+    const next = !collapsed;
+    setCollapsed(next);
+    try { window.localStorage.setItem(COLLAPSED_KEY, next ? "1" : "0"); } catch { /* storage unavailable: the choice just is not remembered */ }
+  };
+  const submitSearch = (e: FormEvent) => {
+    e.preventDefault();
+    const q = search.trim();
+    navigate(q ? `/contacts?q=${encodeURIComponent(q)}` : "/contacts");
+  };
+
+  /** `rail`: the folded, icons-only form (large screens only). */
+  const nav = (rail: boolean) => (
+    <nav aria-label="Main" className="flex flex-col gap-0.5">
       {items.map((n) => (
         <NavLink
           key={n.to}
           to={n.to}
           end={n.end ?? false}
+          title={rail ? n.label : undefined}
           onClick={() => setOpen(false)}
           className={({ isActive }) =>
-            `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
+            `flex h-9 items-center rounded-full text-sm transition ${rail ? "mx-auto w-12 justify-center" : "gap-4 pl-4 pr-3"} ${
               isActive
-                ? "bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300"
-                : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                ? "bg-brand-100 font-semibold text-brand-900 dark:bg-brand-900/50 dark:text-brand-100"
+                : "text-slate-700 hover:bg-slate-200/70 dark:text-slate-300 dark:hover:bg-slate-800"
             }`
           }
         >
           <NavIcon>{n.icon}</NavIcon>
-          {n.label}
+          <span className={rail ? "sr-only" : "truncate"}>{n.label}</span>
         </NavLink>
       ))}
     </nav>
   );
 
+  /** The Gmail "Compose" position: the one thing you most often start from here. */
+  const createButton = (rail: boolean) =>
+    canCreate && (
+      <Link
+        to="/campaigns/new"
+        onClick={() => setOpen(false)}
+        title={rail ? "New campaign" : undefined}
+        className={`mb-3 flex items-center rounded-2xl bg-brand-100 font-medium text-brand-900 shadow-sm transition hover:shadow-md dark:bg-brand-900/60 dark:text-brand-50 ${rail ? "mx-auto h-12 w-12 justify-center" : "h-14 gap-3 px-5"}`}
+      >
+        <svg viewBox="0 0 24 24" className="h-6 w-6 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+        <span className={rail ? "sr-only" : ""}>New campaign</span>
+      </Link>
+    );
+
   return (
-    <div className="min-h-screen lg:flex">
-      {/* Desktop sidebar */}
-      <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-slate-200 bg-white py-5 dark:border-slate-800 dark:bg-slate-900 lg:flex">
-        <Brand />
-        <div className="mt-6 flex-1">{nav}</div>
-        {isAdmin && <p className="px-6 text-xs text-slate-400">Settings are a preview</p>}
-      </aside>
+    <div className="flex h-screen flex-col bg-canvas">
+      <header className="flex h-16 shrink-0 items-center gap-2 px-2 sm:px-4">
+        <button
+          className="rounded-full p-2.5 text-slate-600 hover:bg-slate-200/70 dark:text-slate-300 dark:hover:bg-slate-800 lg:hidden"
+          onClick={() => setOpen(true)}
+          aria-label="Open navigation"
+        >
+          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+        </button>
+        <button
+          className="hidden rounded-full p-2.5 text-slate-600 hover:bg-slate-200/70 dark:text-slate-300 dark:hover:bg-slate-800 lg:block"
+          onClick={toggleCollapsed}
+          aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
+          aria-pressed={collapsed}
+        >
+          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+        </button>
+        <Link to="/" className="mr-2 flex shrink-0 items-center lg:w-44" aria-label="Sendrix home"><Logo className="h-8" /></Link>
+
+        {!isSuperAdmin && (
+          <form onSubmit={submitSearch} role="search" className="hidden max-w-2xl flex-1 sm:block">
+            <label className="flex h-12 items-center gap-3 rounded-full bg-slate-200/60 px-4 text-slate-600 transition focus-within:bg-white focus-within:shadow-md dark:bg-slate-800 dark:text-slate-300 dark:focus-within:bg-slate-900">
+              <svg viewBox="0 0 24 24" className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+              <input
+                type="search"
+                aria-label="Search contacts"
+                placeholder="Search contacts"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="min-w-0 flex-1 bg-transparent text-base text-slate-900 outline-none placeholder:text-slate-500 dark:text-slate-100"
+              />
+            </label>
+          </form>
+        )}
+
+        <div className="ml-auto flex items-center gap-3">
+          {me.data ? (
+            <span className="hidden max-w-[14rem] truncate text-sm text-slate-600 dark:text-slate-300 md:block" title={me.data.tenant.slug}>{me.data.tenant.name}</span>
+          ) : me.isError ? (
+            <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">Not signed in</span>
+          ) : null}
+          {me.data && !isSuperAdmin && <CreditsBadge credits={me.data.user.credits} />}
+          {me.data && <UserMenu user={me.data.user} />}
+        </div>
+      </header>
 
       {/* Mobile drawer */}
       {open && (
         <div className="fixed inset-0 z-30 lg:hidden">
           <div className="absolute inset-0 bg-slate-900/50" onClick={() => setOpen(false)} aria-hidden="true" />
-          <aside className="relative h-full w-64 bg-white py-5 dark:bg-slate-900">
-            <Brand />
-            <div className="mt-6">{nav}</div>
+          <aside className="relative h-full w-72 bg-canvas px-3 py-4">
+            <div className="mb-4 px-3"><Logo className="h-8" /></div>
+            {createButton(false)}
+            {nav(false)}
           </aside>
         </div>
       )}
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-slate-200 bg-white/90 px-4 py-2.5 backdrop-blur dark:border-slate-800 dark:bg-slate-900/90 sm:px-6">
-          <button className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 lg:hidden" onClick={() => setOpen(true)} aria-label="Open navigation">
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
-          </button>
-          {me.data ? (
-            <span className="truncate text-sm font-medium" title={me.data.tenant.slug}>{me.data.tenant.name}</span>
-          ) : me.isError ? (
-            <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">Not signed in</span>
-          ) : null}
-          <div className="ml-auto flex items-center gap-2">
-            {me.data && !isSuperAdmin && <CreditsBadge credits={me.data.user.credits} />}
-            {me.data && <UserMenu user={me.data.user} />}
+      <div className="flex min-h-0 flex-1">
+        {/* Desktop navigation, straight on the canvas */}
+        <aside className={`hidden shrink-0 flex-col overflow-y-auto pb-4 pt-1 transition-[width] lg:flex ${collapsed ? "w-[4.5rem]" : "w-64 pl-2 pr-3"}`}>
+          {createButton(collapsed)}
+          {nav(collapsed)}
+          {isAdmin && !collapsed && <p className="mt-auto px-4 pt-4 text-xs text-slate-400">Settings are a preview</p>}
+        </aside>
+
+        <main className="min-w-0 flex-1 overflow-y-auto bg-white px-4 py-5 dark:bg-slate-900 sm:mx-2 sm:mb-2 sm:rounded-2xl sm:px-6 lg:ml-0 lg:mr-4 lg:mb-4">
+          <div className={wide ? "w-full" : "mx-auto w-full max-w-7xl"}>
+            <Outlet />
           </div>
-        </header>
-        <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6">
-          <Outlet />
         </main>
       </div>
-    </div>
-  );
-}
-
-function Brand() {
-  return (
-    <div className="px-6">
-      <Logo className="h-8" />
     </div>
   );
 }

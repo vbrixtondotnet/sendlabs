@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import type { ContactDto } from "@shared/api";
 import { CONSENT_STATUSES, type ConsentStatus } from "@shared/types";
 import {
@@ -17,7 +18,11 @@ const consentTone = { Granted: "green", Unknown: "slate", Withdrawn: "red" } as 
 
 export function Contacts() {
   const { canEdit } = useRole();
-  const [q, setQ] = useState("");
+  // The search box in the top bar sends you here with ?q=...; typing in this page's own box works as before.
+  const [params] = useSearchParams();
+  const [q, setQ] = useState(params.get("q") ?? "");
+  const fromBar = params.get("q") ?? "";
+  useEffect(() => { setQ(fromBar); setPage(1); }, [fromBar]);
   const [industry, setIndustry] = useState("");
   const [consent, setConsent] = useState<ConsentStatus | "">("");
   const [page, setPage] = useState(1);

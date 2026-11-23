@@ -82,7 +82,7 @@ export function People() {
   return (
     // Filters on the left, results on the right (like Apollo). On a large screen the page is exactly as tall as the window, so only
     // the filters and the table scroll, each on its own; on a small one the two stack and the page scrolls normally.
-    <div className="flex flex-col lg:h-[calc(100vh-6.5rem)]">
+    <div className="flex flex-col lg:h-[calc(100vh-7.5rem)]">
       <div className="shrink-0 [&>div]:!mb-3">
         <PageHeader title="People" description="Find people to reach out to, by country, industry, company size and job title." />
       </div>
