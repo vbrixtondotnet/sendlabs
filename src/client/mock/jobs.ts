@@ -8,16 +8,21 @@ export interface Job {
   title: string;
   company: string;
   category: string;
+  /** City and state, without any "(Remote)" mark. */
   location: string;
+  /** Can be done remotely: shown as "(Remote)" after the location. */
+  remote: boolean;
+  /** A label for how well it fits you ("Strong applicant"), or null. Made up here. */
+  match: "Strong applicant" | "Early applicant" | null;
   type: "Full-time" | "Part-time" | "Contract";
-  /** ISO date (YYYY-MM-DD). */
-  posted: string;
+  /** Whole days since it was posted (0 = today). */
+  postedDaysAgo: number;
 }
 
 export const JOB_CATEGORIES = ["Carpentry", "Cleaning Services", "Construction", "Electrical", "HVAC", "Landscaping", "Marketing", "Painting", "Plumbing", "Roofing"] as const;
 
 export const JOB_LOCATIONS = [
-  "Atlanta, GA", "Austin, TX", "Chicago, IL", "Denver, CO", "Las Vegas, NV", "Los Angeles, CA", "Miami, FL", "New York, NY", "Phoenix, AZ", "Raleigh, NC", "Seattle, WA", "Remote",
+  "Atlanta, GA", "Austin, TX", "Chicago, IL", "Denver, CO", "Las Vegas, NV", "Los Angeles, CA", "Miami, FL", "New York, NY", "Phoenix, AZ", "Raleigh, NC", "Seattle, WA",
 ] as const;
 
 const TITLES: Record<string, string[]> = {
@@ -34,6 +39,7 @@ const TITLES: Record<string, string[]> = {
 };
 const COMPANIES = ["Summit Group", "Northwind Services", "Bluepeak Co", "Ironbridge Builders", "Harbor Works", "Evergreen Partners", "Redwood Supply", "Silverline Systems", "Brightpath Labs", "Granite Holdings"];
 const TYPES: Job["type"][] = ["Full-time", "Full-time", "Full-time", "Part-time", "Contract"];
+const MATCHES: Job["match"][] = ["Strong applicant", null, null, "Early applicant", null];
 
 /** A tiny deterministic generator, so the list is the same on every visit. */
 function rng(seed: number) {
@@ -53,20 +59,28 @@ function build(count: number): Job[] {
   const jobs: Job[] = [];
   for (let i = 0; i < count; i++) {
     const category = pick(JOB_CATEGORIES);
-    const daysAgo = Math.floor(r() * 45);
-    const d = new Date(Date.UTC(2026, 10, 24) - daysAgo * 86_400_000);
     jobs.push({
       id: `job-${i + 1}`,
       title: pick(TITLES[category]!),
       company: pick(COMPANIES),
       category,
       location: pick(JOB_LOCATIONS),
+      remote: r() < 0.35,
+      match: pick(MATCHES),
       type: pick(TYPES),
-      posted: d.toISOString().slice(0, 10),
+      postedDaysAgo: Math.floor(r() * 45),
     });
   }
   // newest first
-  return jobs.sort((a, b) => (a.posted < b.posted ? 1 : a.posted > b.posted ? -1 : a.id.localeCompare(b.id)));
+  return jobs.sort((a, b) => a.postedDaysAgo - b.postedDaysAgo || a.id.localeCompare(b.id));
 }
 
 export const JOBS: readonly Job[] = build(84);
+
+/** "Today", "3d ago", "2w ago", "1mo ago". */
+export function postedAgo(days: number): string {
+  if (days < 1) return "Today";
+  if (days < 7) return `${days}d ago`;
+  if (days < 30) return `${Math.floor(days / 7)}w ago`;
+  return `${Math.floor(days / 30)}mo ago`;
+}
