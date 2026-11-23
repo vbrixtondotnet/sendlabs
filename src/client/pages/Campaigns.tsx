@@ -4,7 +4,7 @@ import type { CampaignSummaryDto } from "@shared/api";
 import { CAMPAIGN_STATUSES, type CampaignStatus } from "@shared/types";
 import { isCampaignInFlight } from "@shared/status";
 import {
-  Button, Card, CampaignStatusBadge, Empty, ErrorNotice, LoadingRows, Modal, PageHeader, Pagination, Select, StackedBar, Table, TextInput, Td, Th, fmt, fmtDay,
+  Button, CampaignStatusBadge, Empty, ErrorNotice, FillPage, LoadingRows, Modal, PageHeader, Pagination, Select, StackedBar, Table, TableCard, TextInput, Td, Th, fmt, fmtDay,
 } from "@/components/ui";
 import { useDebounced } from "@/hooks/useDebounced";
 import { useRole } from "@/hooks/useRole";
@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/useToast";
 import { ApiClientError } from "@/services/http";
 import { useArchiveCampaign, useCampaigns, useDeleteCampaign, useDuplicateCampaign } from "@/services/campaigns";
 
-const PAGE_SIZE = 15;
+const PAGE_SIZE = 50;
 const statusLabel = (s: CampaignStatus) => (s === "CompletedWithErrors" ? "Completed with errors" : s);
 const recipientCount = (c: CampaignSummaryDto) => Object.values(c.totals).reduce((a, b) => a + b, 0);
 
@@ -43,14 +43,14 @@ export function Campaigns() {
   };
 
   return (
-    <>
+    <FillPage>
       <PageHeader
         title="Campaigns"
         description="Each recipient gets their own individually addressed email."
         actions={canEdit && <Link to="/campaigns/new"><Button variant="primary">New campaign</Button></Link>}
       />
-      <Card>
-        <div className="flex flex-wrap gap-3 border-b border-slate-200 p-4 dark:border-slate-800">
+      <TableCard>
+        <div className="flex shrink-0 flex-wrap gap-3 border-b border-slate-200 p-4 dark:border-slate-800">
           <TextInput className="max-w-xs" placeholder="Search name or subject" aria-label="Search campaigns" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
           <Select className="max-w-[14rem]" aria-label="Filter by status" value={status} onChange={(e) => { setStatus(e.target.value as CampaignStatus | ""); setPage(1); }}>
             <option value="">All statuses</option>
@@ -65,10 +65,10 @@ export function Campaigns() {
         {list.isError ? (
           <div className="p-4"><ErrorNotice error={list.error} onRetry={() => void list.refetch()} /></div>
         ) : list.isPending ? (
-          <LoadingRows cols={5} />
+          <div className="min-h-0 flex-1 overflow-auto"><LoadingRows cols={5} /></div>
         ) : (
           <>
-            <Table>
+            <Table fill>
               <thead>
                 <tr>
                   <Th>Campaign</Th><Th>Status</Th><Th>Progress</Th><Th className="text-right">Recipients</Th><Th>Created</Th><Th><span className="sr-only">Actions</span></Th>
@@ -108,7 +108,7 @@ export function Campaigns() {
             <Pagination page={page} pageCount={Math.max(1, Math.ceil(total / PAGE_SIZE))} total={total} pageSize={PAGE_SIZE} onPage={setPage} />
           </>
         )}
-      </Card>
+      </TableCard>
 
       <Modal
         open={toDelete !== null}
@@ -123,6 +123,6 @@ export function Campaigns() {
       >
         <p className="text-sm">"{toDelete?.name}" will be permanently deleted. Only drafts can be deleted. Launched campaigns can be archived instead.</p>
       </Modal>
-    </>
+    </FillPage>
   );
 }

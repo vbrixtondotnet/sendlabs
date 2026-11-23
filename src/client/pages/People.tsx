@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { PersonDto } from "@shared/api";
 import { PEOPLE_COMPANY_SIZES, PEOPLE_COUNTRIES, PEOPLE_MAX_TITLES } from "@shared/people";
-import { Button, Card, Empty, ErrorNotice, Field, LoadingRows, PageHeader, Pagination, Select, Td, Th, fmt } from "@/components/ui";
+import { Button, Card, Empty, ErrorNotice, Field, FillPage, LoadingRows, PageHeader, Pagination, Select, Table, TableCard, Td, Th, fmt } from "@/components/ui";
 import { MultiSelect } from "@/components/MultiSelect";
 import { useToast } from "@/hooks/useToast";
 import { ApiClientError } from "@/services/http";
@@ -84,10 +84,8 @@ export function People() {
   return (
     // The filters sit in one line above the table, so the table gets the full width. On a large screen the page is exactly as tall as
     // the window and only the table scrolls; on a small one the filters wrap onto several lines and the page scrolls normally.
-    <div className="flex flex-col lg:h-[calc(100vh-7.5rem)]">
-      <div className="shrink-0 [&>div]:!mb-3">
-        <PageHeader title="People" description="Find people to reach out to, by country, industry, company size and job title." />
-      </div>
+    <FillPage>
+      <PageHeader title="People" description="Find people to reach out to, by country, industry, company size and job title." />
 
       {/* relative + z-20: the open Country/Industry lists drop down over the table below */}
       <Card className="relative z-20 mb-3 shrink-0">
@@ -108,7 +106,7 @@ export function People() {
         </form>
       </Card>
 
-      <Card className="flex min-h-[28rem] min-w-0 flex-1 flex-col lg:min-h-0">
+      <TableCard>
           {/* A slim ribbon in the table's top right corner: one line, so it costs almost no height. */}
           <div className="flex shrink-0 justify-end border-b border-slate-200 px-3 py-1.5 dark:border-slate-800">
             <p
@@ -128,9 +126,8 @@ export function People() {
         ) : (
           <>
             {/* The table scrolls on its own (both ways) with the header row pinned, like Apollo; the page and the filters stay put. */}
-            <div className="min-h-0 flex-1 overflow-auto" tabIndex={0} aria-label="People results">
-            <table className="w-full min-w-[1100px] text-left text-sm">
-              <thead className="sticky top-0 z-10">
+            <Table fill minWidth="min-w-[1100px]">
+              <thead>
                 <tr>
                   <Th>Full Name</Th><Th>Company Name</Th><Th>Email</Th><Th># Employees</Th>
                   <Th>Industry</Th><Th>Location</Th><Th>Country</Th>
@@ -168,13 +165,12 @@ export function People() {
                   </tr>
                 ))}
               </tbody>
-            </table>
-            </div>
+            </Table>
             {list.data.items.length === 0 && <Empty>No people match these filters. Try removing one.</Empty>}
             {total > 0 && <div className="shrink-0"><Pagination page={page} pageCount={pageCount} total={total} pageSize={PAGE_SIZE} onPage={setPage} /></div>}
           </>
         )}
-      </Card>
-    </div>
+      </TableCard>
+    </FillPage>
   );
 }

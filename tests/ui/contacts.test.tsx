@@ -30,7 +30,7 @@ describe("Contacts page (live data)", () => {
     renderAt(<Contacts />);
     await screen.findByText("Nick Harbaugh");
     expect(lastList(calls)!.query.get("page")).toBe("1");
-    expect(lastList(calls)!.query.get("pageSize")).toBe("15");
+    expect(lastList(calls)!.query.get("pageSize")).toBe("50");
 
     fireEvent.change(screen.getByLabelText("Search contacts"), { target: { value: "julie" } });
     await waitFor(() => expect(lastList(calls)!.query.get("q")).toBe("julie"), { timeout: 3000 });
@@ -46,7 +46,7 @@ describe("Contacts page (live data)", () => {
   it("pages through results", async () => {
     const calls = stubApi(({ method, path, query }) => {
       if (path === "/api/contacts/industries") return { json: { items: [] } };
-      if (path === "/api/contacts" && method === "GET") return { json: page([contact({ id: `p${query.get("page")}` })], 40, Number(query.get("page"))) };
+      if (path === "/api/contacts" && method === "GET") return { json: page([contact({ id: `p${query.get("page")}` })], 120, Number(query.get("page"))) };
       return undefined;
     });
     renderAt(<Contacts />);

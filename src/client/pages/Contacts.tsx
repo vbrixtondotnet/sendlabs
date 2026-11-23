@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import type { ContactDto } from "@shared/api";
 import { CONSENT_STATUSES, type ConsentStatus } from "@shared/types";
 import {
-  Button, Card, Empty, ErrorNotice, Field, LoadingRows, Modal, Notice, PageHeader, Pagination, Select, Table, TextInput, Td, Th, fmt, fmtDay,
+  Button, Empty, ErrorNotice, Field, FillPage, LoadingRows, Modal, Notice, PageHeader, Pagination, Select, Table, TableCard, TextInput, Td, Th, fmt, fmtDay,
 } from "@/components/ui";
 import { useDebounced } from "@/hooks/useDebounced";
 import { useRole } from "@/hooks/useRole";
@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/useToast";
 import { ApiClientError } from "@/services/http";
 import { useContacts, useCreateContact, useDeleteContact, useIndustries, useUpdateContact } from "@/services/contacts";
 
-const PAGE_SIZE = 15;
+const PAGE_SIZE = 50;
 const location = (c: ContactDto) => [c.city, c.state].filter(Boolean).join(", ") || c.country || "n/a";
 const fullName = (c: { firstName: string; lastName: string }) => [c.firstName, c.lastName].filter(Boolean).join(" ");
 
@@ -32,14 +32,14 @@ export function Contacts() {
   const total = list.data?.total ?? 0;
 
   return (
-    <>
+    <FillPage>
       <PageHeader
         title="Contacts"
         description={list.data ? `${fmt(total)} contact${total === 1 ? "" : "s"} match. One row per email address across all imports.` : "One row per email address across all imports."}
         actions={canEdit && <Button variant="primary" onClick={() => setEditing("new")}>Add contact</Button>}
       />
-      <Card>
-        <div className="flex flex-wrap gap-3 border-b border-slate-200 p-4 dark:border-slate-800">
+      <TableCard>
+        <div className="flex shrink-0 flex-wrap gap-3 border-b border-slate-200 p-4 dark:border-slate-800">
           <TextInput className="max-w-sm" placeholder="Search name, title, email or company" aria-label="Search contacts" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
           <Select className="max-w-[14rem]" aria-label="Filter by industry" value={industry} onChange={(e) => { setIndustry(e.target.value); setPage(1); }}>
             <option value="">All industries</option>
@@ -50,10 +50,10 @@ export function Contacts() {
         {list.isError ? (
           <div className="p-4"><ErrorNotice error={list.error} onRetry={() => void list.refetch()} /></div>
         ) : list.isPending ? (
-          <LoadingRows cols={5} />
+          <div className="min-h-0 flex-1 overflow-auto"><LoadingRows cols={5} /></div>
         ) : (
           <>
-            <Table>
+            <Table fill>
               <thead>
                 <tr><Th>Contact</Th><Th>Company</Th><Th>Email</Th><Th>Industry</Th><Th>Location</Th></tr>
               </thead>
@@ -80,10 +80,10 @@ export function Contacts() {
             <Pagination page={page} pageCount={Math.max(1, Math.ceil(total / PAGE_SIZE))} total={total} pageSize={PAGE_SIZE} onPage={setPage} />
           </>
         )}
-      </Card>
+      </TableCard>
 
       {editing !== null && <ContactDialog key={editing === "new" ? "new" : editing.id} contact={editing === "new" ? null : editing} onClose={() => setEditing(null)} />}
-    </>
+    </FillPage>
   );
 }
 

@@ -32,7 +32,7 @@ export function CardHeader({ title, action, subtitle }: { title: string; subtitl
 
 export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
   return (
-    <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+    <div className="mb-6 flex shrink-0 flex-wrap items-start justify-between gap-3">
       <div>
         <h1 className="text-[1.375rem] font-normal leading-8">{title}</h1>
         {description && <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{description}</p>}
@@ -192,15 +192,35 @@ export function ProgressBar({ value, max, tone = "brand" }: { value: number; max
 }
 
 /* ---------- Tables ---------- */
-export function Table({ children }: { children: ReactNode }) {
+/**
+ * THE table of the app. It scrolls on its own, in both directions, and its header row (`Th`) stays pinned while the rows move.
+ *  - `fill`: for a list page that is the whole point of the screen (inside `FillPage` + `TableCard`). The table takes all the
+ *    height that is left, and the pager sits under it.
+ *  - default: for a table inside a longer page. It grows with its rows up to 70% of the window, then scrolls.
+ * Use `minWidth` (a Tailwind `min-w-[...]` class) when a table has many columns and should scroll sideways rather than squash.
+ */
+export function Table({ children, fill = false, minWidth = "min-w-[640px]" }: { children: ReactNode; fill?: boolean; minWidth?: string }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[640px] text-left text-sm">{children}</table>
+    <div className={`overflow-auto ${fill ? "min-h-0 flex-1" : "max-h-[70vh]"}`} tabIndex={0}>
+      <table className={`w-full text-left text-sm ${minWidth}`}>{children}</table>
     </div>
   );
 }
+
+/**
+ * A list page that fills the window: the title stays, the table scrolls, and nothing else on the page moves. Put a `TableCard`
+ * in it, with the filters (`shrink-0`), a `<Table fill>` and a `Pagination`. On a small screen it is an ordinary page.
+ */
+export function FillPage({ children }: { children: ReactNode }) {
+  return <div className="flex flex-col lg:h-[calc(100vh-7.5rem)] [&>div:first-child]:!mb-3">{children}</div>;
+}
+
+/** The card of a `FillPage`: takes the height that is left and lets the table inside it scroll. */
+export function TableCard({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return <Card className={`flex min-h-[24rem] min-w-0 flex-1 flex-col lg:min-h-0 ${className}`}>{children}</Card>;
+}
 export const Th = ({ children, className = "" }: { children?: ReactNode; className?: string }) => (
-  <th scope="col" className={`whitespace-nowrap bg-white px-4 py-2.5 text-xs font-medium text-slate-500 dark:bg-slate-900 dark:text-slate-400 ${className}`}>
+  <th scope="col" className={`sticky top-0 z-10 whitespace-nowrap bg-white px-4 py-2.5 text-xs font-medium text-slate-500 dark:bg-slate-900 dark:text-slate-400 ${className}`}>
     {children}
   </th>
 );
@@ -212,7 +232,7 @@ export function Pagination({ page, pageCount, total, pageSize, onPage }: { page:
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const to = Math.min(total, page * pageSize);
   return (
-    <nav className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:text-slate-400" aria-label="Pagination">
+    <nav className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:text-slate-400" aria-label="Pagination">
       <span>
         {fmt(from)}-{fmt(to)} of {fmt(total)}
       </span>
