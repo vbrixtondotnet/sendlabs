@@ -23,6 +23,7 @@ describe("Contacts page (live data)", () => {
     expect(screen.getByText("julie@jcdavispower.com")).toBeTruthy();
     expect(screen.getByText("2 contacts match.", { exact: false })).toBeTruthy();
     expect(screen.queryByRole("columnheader", { name: "Consent" })).toBeNull(); // no consent column any more
+    expect(screen.getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Contact", "Company", "Email", "Industry", "Location", "Country"]);
   });
 
   it("sends the search text (debounced), and the industry filter to the API", async () => {

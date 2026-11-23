@@ -12,7 +12,7 @@ import { ApiClientError } from "@/services/http";
 import { useContacts, useCreateContact, useDeleteContact, useIndustries, useUpdateContact } from "@/services/contacts";
 
 const PAGE_SIZE = 50;
-const location = (c: ContactDto) => [c.city, c.state].filter(Boolean).join(", ") || c.country || "n/a";
+const location = (c: ContactDto) => [c.city, c.state].filter(Boolean).join(", ") || "n/a"; // the country has its own column
 const fullName = (c: { firstName: string; lastName: string }) => [c.firstName, c.lastName].filter(Boolean).join(" ");
 
 export function Contacts() {
@@ -50,12 +50,12 @@ export function Contacts() {
         {list.isError ? (
           <div className="p-4"><ErrorNotice error={list.error} onRetry={() => void list.refetch()} /></div>
         ) : list.isPending ? (
-          <div className="min-h-0 flex-1 overflow-auto"><LoadingRows cols={5} /></div>
+          <div className="min-h-0 flex-1 overflow-auto"><LoadingRows cols={6} /></div>
         ) : (
           <>
             <Table fill>
               <thead>
-                <tr><Th>Contact</Th><Th>Company</Th><Th>Email</Th><Th>Industry</Th><Th>Location</Th></tr>
+                <tr><Th>Contact</Th><Th>Company</Th><Th>Email</Th><Th>Industry</Th><Th>Location</Th><Th>Country</Th></tr>
               </thead>
               <tbody>
                 {list.data.items.map((c) => (
@@ -70,6 +70,7 @@ export function Contacts() {
                     <Td className="text-slate-600 dark:text-slate-300">{c.email}</Td>
                     <Td className="text-slate-600 dark:text-slate-300">{c.industry}</Td>
                     <Td className="whitespace-nowrap text-slate-600 dark:text-slate-300">{location(c)}</Td>
+                    <Td className="whitespace-nowrap text-slate-600 dark:text-slate-300">{c.country || "n/a"}</Td>
                   </tr>
                 ))}
               </tbody>
