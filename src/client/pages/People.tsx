@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { PEOPLE_COMPANY_SIZES, PEOPLE_COUNTRIES, PEOPLE_MAX_TITLES } from "@shared/people";
-import { Button, Card, Empty, ErrorNotice, Field, LoadingRows, Notice, PageHeader, Pagination, Select, Td, Th, fmt } from "@/components/ui";
+import { Button, Card, Empty, ErrorNotice, Field, LoadingRows, PageHeader, Pagination, Select, Td, Th, fmt } from "@/components/ui";
 import { MultiSelect } from "@/components/MultiSelect";
 import { useToast } from "@/hooks/useToast";
 import { usePeopleIndustries, usePeopleSearch, type PeopleFilters } from "@/services/people";
@@ -94,11 +94,6 @@ export function People() {
         </aside>
 
         <section className="flex min-h-[28rem] min-w-0 flex-1 flex-col gap-3 lg:min-h-0" aria-label="Results">
-          <div className="shrink-0">
-            <Notice tone="info" title="Reveal a person's email address">
-              Email addresses are hidden until you reveal them. Click <strong>Add Contact</strong> next to a person to reveal their email address for <strong>1 credit</strong>.
-            </Notice>
-          </div>
           <Card className="flex min-h-0 flex-1 flex-col">
         {list.isError ? (
           <div className="p-4"><ErrorNotice error={list.error} onRetry={() => void list.refetch()} /></div>
