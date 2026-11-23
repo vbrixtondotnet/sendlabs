@@ -345,6 +345,8 @@ To go back, redeploy the previous (D1) version: D1 is never modified by any of t
 
 **People (Apollo search).** The People page (`/people`, after Contacts) searches by Country (searchable multi-select), Industry, Company Size and Job Titles. It currently shows made-up sample data (with no warning on the page) from `src/server/services/people-search.ts`; to connect Apollo, add a provider implementing `PeopleProvider` there and return it from `peopleProvider()`. Nothing is saved.
 
+**Loading the shared directory.** `npm run db:import:global-contacts` reads the "US Leads" sheet of `../assets/leads.xlsx` (outside the repository, never committed) into `global_contacts`; `-- --dry-run` previews it, and running it again skips addresses already stored.
+
 ### Running it locally
 
 Two terminals, then open http://localhost:5173:

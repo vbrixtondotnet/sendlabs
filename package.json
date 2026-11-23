@@ -22,7 +22,8 @@
     "db:seed:superadmin:local": "tsx scripts/seed-super-admin.ts",
     "db:reset:local": "npm run db:clear:local && npm run db:seed:tenant:local && npm run db:seed:superadmin:local",
     "db:copy-from-d1": "tsx scripts/migrate-d1-to-postgres.ts",
-    "db:provision": "tsx scripts/provision-production.ts"
+    "db:provision": "tsx scripts/provision-production.ts",
+    "db:import:global-contacts": "tsx scripts/import-global-contacts.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.107.1",
@@ -48,6 +49,7 @@
     "@vitejs/plugin-react": "^6.2.1",
     "drizzle-kit": "^0.31.11",
     "jsdom": "^31.0.0",
+    "read-excel-file": "^9.3.20",
     "tailwindcss": "^4.3.5",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
