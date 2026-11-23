@@ -20,7 +20,7 @@ function TitlesInput({ value, onChange }: { value: string[]; onChange: (next: st
     if (t && !value.some((v) => v.toLowerCase() === t.toLowerCase()) && value.length < PEOPLE_MAX_TITLES) onChange([...value, t]);
   };
   return (
-    <Field label="Job titles" hint="Type a title and press Enter. Matches any of them." htmlFor="people-titles">
+    <Field label="Job titles" htmlFor="people-titles">
       <div className="flex min-h-[2.375rem] flex-wrap items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 py-1.5 focus-within:ring-2 focus-within:ring-brand-500 dark:border-slate-700 dark:bg-slate-900">
         {value.map((t) => (
           <span key={t} className="inline-flex items-center gap-1 rounded-md bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700 dark:bg-brand-950 dark:text-brand-300">
@@ -31,7 +31,7 @@ function TitlesInput({ value, onChange }: { value: string[]; onChange: (next: st
         <input
           id="people-titles"
           className="min-w-[6rem] flex-1 bg-transparent px-1 py-0.5 text-sm outline-none placeholder:text-slate-400"
-          placeholder={value.length === 0 ? "e.g. Marketing Manager" : ""}
+          placeholder={value.length === 0 ? "Type a title, press Enter" : ""}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
@@ -82,35 +82,33 @@ export function People() {
   };
 
   return (
-    // Filters on the left, results on the right (like Apollo). On a large screen the page is exactly as tall as the window, so only
-    // the filters and the table scroll, each on its own; on a small one the two stack and the page scrolls normally.
+    // The filters sit in one line above the table, so the table gets the full width. On a large screen the page is exactly as tall as
+    // the window and only the table scrolls; on a small one the filters wrap onto several lines and the page scrolls normally.
     <div className="flex flex-col lg:h-[calc(100vh-7.5rem)]">
       <div className="shrink-0 [&>div]:!mb-3">
         <PageHeader title="People" description="Find people to reach out to, by country, industry, company size and job title." />
       </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row">
-        <aside className="shrink-0 lg:w-72 lg:overflow-y-auto" aria-label="Filters">
-          <Card>
-            <form onSubmit={search} className="space-y-4 p-4" aria-label="Search people">
-              <MultiSelect label="Country" options={PEOPLE_COUNTRIES} value={draft.countries} onChange={(countries) => setDraft({ ...draft, countries })} placeholder="Search countries..." />
-              <MultiSelect label="Industry" options={industries.data?.items ?? []} value={draft.industries} onChange={(industries) => setDraft({ ...draft, industries })} placeholder="Search industries..." />
-              <Field label="Company size" htmlFor="people-size">
-                <Select id="people-size" value={draft.companySize} onChange={(e) => setDraft({ ...draft, companySize: e.target.value })}>
-                  <option value="">Any size</option>
-                  {PEOPLE_COMPANY_SIZES.map((s) => <option key={s.value} value={s.value}>{s.label} employees</option>)}
-                </Select>
-              </Field>
-              <TitlesInput value={draft.titles} onChange={(titles) => setDraft({ ...draft, titles })} />
-              <div className="flex gap-2">
-                <Button type="submit" variant="primary" className="flex-1">Search</Button>
-                <Button type="button" variant="secondary" onClick={reset}>Reset</Button>
-              </div>
-            </form>
-          </Card>
-        </aside>
 
-        <section className="flex min-h-[28rem] min-w-0 flex-1 flex-col gap-3 lg:min-h-0" aria-label="Results">
-          <Card className="flex min-h-0 flex-1 flex-col">
+      {/* relative + z-20: the open Country/Industry lists drop down over the table below */}
+      <Card className="relative z-20 mb-3 shrink-0">
+        <form onSubmit={search} aria-label="Search people" className="grid items-start gap-3 p-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1.25fr)_minmax(0,0.8fr)_minmax(0,1.2fr)_auto]">
+          <MultiSelect label="Country" options={PEOPLE_COUNTRIES} value={draft.countries} onChange={(countries) => setDraft({ ...draft, countries })} placeholder="Search countries..." />
+          <MultiSelect label="Industry" options={industries.data?.items ?? []} value={draft.industries} onChange={(industries) => setDraft({ ...draft, industries })} placeholder="Search industries..." />
+          <Field label="Company size" htmlFor="people-size">
+            <Select id="people-size" value={draft.companySize} onChange={(e) => setDraft({ ...draft, companySize: e.target.value })}>
+              <option value="">Any size</option>
+              {PEOPLE_COMPANY_SIZES.map((s) => <option key={s.value} value={s.value}>{s.label} employees</option>)}
+            </Select>
+          </Field>
+          <TitlesInput value={draft.titles} onChange={(titles) => setDraft({ ...draft, titles })} />
+          <div className="flex gap-2 sm:col-span-2 lg:col-span-1 lg:mt-[1.625rem]">
+            <Button type="submit" variant="primary" className="flex-1">Search</Button>
+            <Button type="button" variant="secondary" onClick={reset}>Reset</Button>
+          </div>
+        </form>
+      </Card>
+
+      <Card className="flex min-h-[28rem] min-w-0 flex-1 flex-col lg:min-h-0">
           {/* A slim ribbon in the table's top right corner: one line, so it costs almost no height. */}
           <div className="flex shrink-0 justify-end border-b border-slate-200 px-3 py-1.5 dark:border-slate-800">
             <p
@@ -141,7 +139,7 @@ export function People() {
               <tbody>
                 {list.data.items.map((p) => (
                   <tr key={p.id} className="[&>td]:!py-1.5">
-                    <Td className="min-w-[16rem]">
+                    <Td className="min-w-[14rem]">
                       <p className="font-medium">{fullName(p) || "(no name)"}</p>
                       <p className="max-w-[16rem] truncate text-xs text-slate-500">{p.title}</p>
                     </Td>
@@ -164,7 +162,7 @@ export function People() {
                       )}
                     </Td>
                     <Td className="tabular-nums">{p.employees === null ? "-" : fmt(p.employees)}</Td>
-                    <Td>{p.industry}</Td>
+                    <Td className="min-w-[11rem]">{p.industry}</Td>
                     <Td className="whitespace-nowrap">{place(p)}</Td>
                     <Td className="whitespace-nowrap">{p.country}</Td>
                   </tr>
@@ -176,9 +174,7 @@ export function People() {
             {total > 0 && <div className="shrink-0"><Pagination page={page} pageCount={pageCount} total={total} pageSize={PAGE_SIZE} onPage={setPage} /></div>}
           </>
         )}
-          </Card>
-        </section>
-      </div>
+      </Card>
     </div>
   );
 }
