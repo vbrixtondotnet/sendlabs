@@ -95,6 +95,18 @@ export function People() {
 
         <section className="flex min-h-[28rem] min-w-0 flex-1 flex-col gap-3 lg:min-h-0" aria-label="Results">
           <Card className="flex min-h-0 flex-1 flex-col">
+          {/* A slim ribbon in the table's top right corner: one line, so it costs almost no height. */}
+          <div className="flex shrink-0 justify-end border-b border-slate-200 px-3 py-1.5 dark:border-slate-800">
+            <p
+              className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-900 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200"
+              role="note"
+            >
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" /><path d="M12 8v4m0 4h.01" />
+              </svg>
+              Reveal a contact&apos;s email address by adding it to your contacts. Each reveal costs 1 credit.
+            </p>
+          </div>
         {list.isError ? (
           <div className="p-4"><ErrorNotice error={list.error} onRetry={() => void list.refetch()} /></div>
         ) : list.isPending ? (

@@ -29,7 +29,7 @@ describe("People page", () => {
     expect(within(row).getByRole("button", { name: "Add Contact" })).toBeTruthy();
     expect(screen.getAllByRole("button", { name: "Add Contact" })).toHaveLength(2);
     expect(document.body.textContent).not.toContain("ava.smith@summitgroup.example");
-    expect(screen.queryByText(/Reveal a person/)).toBeNull(); // no explanatory notice
+    expect(screen.getByRole("note").textContent).toMatch(/Reveal a contact.s email address by adding it to your contacts\. Each reveal costs 1 credit\./);
   });
 
   it("picks several countries from a searchable dropdown", async () => {
