@@ -31,7 +31,8 @@ const dryRun = hasFlag("dry-run");
 /** A cell as trimmed text ("" for an empty one; numbers such as a postal code become their digits). */
 const cell = (v: unknown): string => (v === null || v === undefined ? "" : String(v).trim());
 
-const sheets = await readXlsxFile(file, { getSheets: true });
+// `getSheets` returns every sheet as { sheet, data }; the package's type declarations do not list it.
+const sheets = (await readXlsxFile(file, { getSheets: true } as never)) as unknown as { sheet: string; data: unknown[][] }[];
 const data = sheets.find((s) => s.sheet === SHEET)?.data;
 if (!data) {
   console.error(`The workbook has no "${SHEET}" sheet. Found: ${sheets.map((s) => s.sheet).join(", ")}`);
@@ -87,8 +88,8 @@ try {
         const done = await tx.insert(globalContacts).values(rows.slice(i, i + CHUNK)).onConflictDoNothing().returning({ id: globalContacts.id });
         inserted += done.length;
       }
-      const [{ n }] = (await tx.execute(sql`SELECT count(*)::int AS n FROM global_contacts`)) as unknown as { n: number }[];
-      console.log(`global_contacts now holds ${n} row(s).`);
+      const [total] = (await tx.execute(sql`SELECT count(*)::int AS n FROM global_contacts`)) as unknown as { n: number }[];
+      console.log(`global_contacts now holds ${total?.n ?? 0} row(s).`);
       if (dryRun) throw new DryRun();
     });
   } catch (e) {
