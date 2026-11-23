@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Button, Card, Empty, FillPage, PageHeader, Pagination, TableCard } from "@/components/ui";
 import { MultiSelect } from "@/components/MultiSelect";
 import { useToast } from "@/hooks/useToast";
-import { JOBS, JOB_CATEGORIES, JOB_LOCATIONS, postedAgo, type Job } from "@/mock/jobs";
+import { HIRING_COMPANIES, JOBS, JOB_CATEGORIES, JOB_LOCATIONS, postedAgo, type Job } from "@/mock/jobs";
 
 const PAGE_SIZE = 25;
 
@@ -57,6 +57,26 @@ function JobCard({ job, saved, onSave, onHide }: { job: Job; saved: boolean; onS
         </div>
       </div>
     </article>
+  );
+}
+
+/** The "Hiring Companies" panel: small cards with the company name, its address and its industry. */
+function HiringCompanies() {
+  return (
+    <aside aria-label="Hiring Companies" className="flex min-h-[16rem] shrink-0 flex-col lg:min-h-0 lg:w-80">
+      <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <h2 className="shrink-0 border-b border-slate-200 px-4 py-3 text-base font-medium dark:border-slate-800">Hiring Companies</h2>
+        <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+          {HIRING_COMPANIES.map((c) => (
+            <li key={c.id} className="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+              <p className="font-medium leading-snug">{c.name}</p>
+              <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">{c.address}</p>
+              <p className="mt-1.5 inline-block rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">{c.industry}</p>
+            </li>
+          ))}
+        </ul>
+      </Card>
+    </aside>
   );
 }
 
@@ -125,6 +145,7 @@ export function Jobs() {
         </form>
       </Card>
 
+      <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row">
       <TableCard>
         {hidden.size > 0 && (
           <div className="flex shrink-0 items-center justify-end border-b border-slate-200 px-4 py-1.5 text-sm dark:border-slate-800">
@@ -145,6 +166,8 @@ export function Jobs() {
         </div>
         {matches.length > 0 && <Pagination page={current} pageCount={pageCount} total={matches.length} pageSize={PAGE_SIZE} onPage={setPage} />}
       </TableCard>
+      <HiringCompanies />
+      </div>
     </FillPage>
   );
 }

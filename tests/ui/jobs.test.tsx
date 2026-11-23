@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { fireEvent, screen, within } from "@testing-library/react";
 import { Jobs } from "../../src/client/pages/Jobs";
-import { JOBS, postedAgo } from "../../src/client/mock/jobs";
+import { HIRING_COMPANIES, JOBS, postedAgo } from "../../src/client/mock/jobs";
 import { renderAt } from "./harness";
 
 const cards = () => screen.getAllByRole("article");
@@ -96,6 +96,27 @@ describe("Jobs page (dummy data)", () => {
     }
     fireEvent.click(screen.getByRole("button", { name: "Reset" }));
     expect(cards()).toHaveLength(25);
+  });
+});
+
+describe("Hiring Companies panel", () => {
+  it("is a separate panel beside the jobs, with a small card per company: name, address and industry", () => {
+    renderAt(<Jobs />);
+    const panel = screen.getByRole("complementary", { name: "Hiring Companies" });
+    expect(within(panel).getByRole("heading", { name: "Hiring Companies" })).toBeTruthy();
+    const items = within(panel).getAllByRole("listitem");
+    expect(items).toHaveLength(HIRING_COMPANIES.length);
+    const first = HIRING_COMPANIES[0]!;
+    expect(within(items[0]!).getByText(first.name)).toBeTruthy();
+    expect(within(items[0]!).getByText(first.address)).toBeTruthy();
+    expect(within(items[0]!).getByText(first.industry)).toBeTruthy();
+  });
+
+  it("is not changed by the job filters", () => {
+    renderAt(<Jobs />);
+    pick("Category", /Plumbing/);
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    expect(within(screen.getByRole("complementary", { name: "Hiring Companies" })).getAllByRole("listitem")).toHaveLength(HIRING_COMPANIES.length);
   });
 });
 

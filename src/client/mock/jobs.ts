@@ -84,3 +84,24 @@ export function postedAgo(days: number): string {
   if (days < 30) return `${Math.floor(days / 7)}w ago`;
   return `${Math.floor(days / 30)}mo ago`;
 }
+
+/** MOCKUP: companies that are hiring, for the panel beside the job list. */
+export interface HiringCompany {
+  id: string;
+  name: string;
+  address: string;
+  industry: string;
+}
+
+export const HIRING_COMPANIES: readonly HiringCompany[] = [
+  { id: "hc-1", name: "Summit Group", address: "1200 Congress Ave, Austin, TX 78701", industry: "Construction" },
+  { id: "hc-2", name: "Northwind Services", address: "455 N Clark St, Chicago, IL 60654", industry: "Cleaning Services" },
+  { id: "hc-3", name: "Bluepeak Co", address: "88 Blake St, Denver, CO 80202", industry: "HVAC" },
+  { id: "hc-4", name: "Ironbridge Builders", address: "2100 Peachtree Rd NW, Atlanta, GA 30309", industry: "Construction" },
+  { id: "hc-5", name: "Harbor Works", address: "700 Brickell Ave, Miami, FL 33131", industry: "Plumbing" },
+  { id: "hc-6", name: "Evergreen Partners", address: "1500 4th Ave, Seattle, WA 98101", industry: "Landscaping" },
+  { id: "hc-7", name: "Redwood Supply", address: "3900 Howard Hughes Pkwy, Las Vegas, NV 89169", industry: "Roofing" },
+  { id: "hc-8", name: "Silverline Systems", address: "350 Fifth Ave, New York, NY 10118", industry: "Electrical" },
+  { id: "hc-9", name: "Brightpath Labs", address: "333 S Grand Ave, Los Angeles, CA 90071", industry: "Marketing" },
+  { id: "hc-10", name: "Granite Holdings", address: "2 N Central Ave, Phoenix, AZ 85004", industry: "Painting" },
+];
