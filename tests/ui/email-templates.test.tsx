@@ -115,19 +115,19 @@ describe("Email Templates page: the two tabs", () => {
 });
 
 describe("paging", () => {
-  const many = Array.from({ length: 23 }, (_, i) => ({ id: `t${i + 1}`, name: `Template ${String(i + 1).padStart(2, "0")}`, createdAt: T, updatedAt: T }));
+  const many = Array.from({ length: 120 }, (_, i) => ({ id: `t${i + 1}`, name: `Template ${String(i + 1).padStart(2, "0")}`, createdAt: T, updatedAt: T }));
 
-  it("shows 10 Available Templates per page and moves between pages", async () => {
+  it("shows 50 Available Templates per page and moves between pages", async () => {
     open(server({ availableReply: { json: { items: many } } }));
     await screen.findByText("Template 01", { selector: "td" });
-    expect(screen.getByText("1-10 of 23")).toBeTruthy();
-    expect(screen.queryByText("Template 11", { selector: "td" })).toBeNull();
+    expect(screen.getByText("1-50 of 120")).toBeTruthy();
+    expect(screen.queryByText("Template 51", { selector: "td" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    expect(await screen.findByText("Template 11", { selector: "td" })).toBeTruthy();
+    expect(await screen.findByText("Template 51", { selector: "td" })).toBeTruthy();
     expect(screen.queryByText("Template 01", { selector: "td" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Last page" }));
-    expect(await screen.findByText("Template 23", { selector: "td" })).toBeTruthy();
-    expect(screen.getByText("21-23 of 23")).toBeTruthy();
+    expect(await screen.findByText("Template 120", { selector: "td" })).toBeTruthy();
+    expect(screen.getByText("101-120 of 120")).toBeTruthy();
   });
 
   it("shows no pager when everything fits on one page", async () => {

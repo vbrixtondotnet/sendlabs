@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import type { AvailableTemplateDto, EmailTemplateSummaryDto } from "@shared/api";
-import { Badge, Button, Card, Empty, ErrorNotice, Field, LoadingRows, Modal, Notice, PageHeader, Pagination, Table, TextInput, Td, Th, fmtDate } from "@/components/ui";
+import { Badge, Button, Empty, ErrorNotice, Field, FillPage, LoadingRows, Modal, Notice, PageHeader, Pagination, Table, TableCard, TextInput, Td, Th, fmtDate } from "@/components/ui";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { RowActions, type RowAction } from "@/components/RowActions";
 import { useRole } from "@/hooks/useRole";
@@ -13,7 +13,7 @@ import {
   useRemoveAvailableTemplate, useRemoveEmailTemplate, useUpdateAvailableTemplate, useUpdateEmailTemplate,
 } from "@/services/emailTemplates";
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 50;
 
 /** Client-side paging for a list the API returns whole (at most 200 rows). Steps back if the current page empties. */
 function usePaged<T>(items: T[]) {
@@ -52,15 +52,15 @@ export function EmailTemplates() {
 
   if (isSuperAdmin) {
     return (
-      <>
+      <FillPage>
         <AvailableTab onPreview={setPreviewing} />
         <PreviewModal target={previewing} onClose={() => setPreviewing(null)} />
-      </>
+      </FillPage>
     );
   }
 
   return (
-    <>
+    <FillPage>
       <PageHeader title="Email Templates" description="Start a campaign from a ready-made message. Add the ones you want to My Templates." />
       <div role="tablist" aria-label="Email Templates" className="mb-4 flex gap-1 border-b border-slate-200 dark:border-slate-800">
         {TABS.map((t) => (
@@ -69,7 +69,7 @@ export function EmailTemplates() {
       </div>
       {tab === "Available Templates" ? <AvailableTab onPreview={setPreviewing} /> : <MyTemplatesTab onPreview={setPreviewing} />}
       <PreviewModal target={previewing} onClose={() => setPreviewing(null)} />
-    </>
+    </FillPage>
   );
 }
 
@@ -119,7 +119,7 @@ function AvailableTab({ onPreview }: { onPreview: (t: Target) => void }) {
         />
       )}
       {!isAdmin && !isSuperAdmin && <div className="mb-4"><Notice tone="info">Your role is read-only: you can look at the templates, and an Administrator adds them to My Templates.</Notice></div>}
-      <Card>
+      <TableCard>
         {available.isError ? (
           <div className="p-4"><ErrorNotice error={available.error} onRetry={() => void available.refetch()} /></div>
         ) : available.isPending ? (
@@ -127,7 +127,7 @@ function AvailableTab({ onPreview }: { onPreview: (t: Target) => void }) {
         ) : items.length === 0 ? (
           <Empty>No templates are available yet.</Empty>
         ) : (
-          <Table>
+          <Table fill>
             <thead><tr><Th>Template</Th><Th>{isSuperAdmin ? "Updated" : "Type"}</Th><Th className="text-right"><span className="sr-only">Actions</span></Th></tr></thead>
             <tbody>
               {paged.rows.map((t) => (
@@ -160,7 +160,7 @@ function AvailableTab({ onPreview }: { onPreview: (t: Target) => void }) {
           </Table>
         )}
         {paged.total > PAGE_SIZE && <Pagination page={paged.page} pageCount={paged.pageCount} total={paged.total} pageSize={PAGE_SIZE} onPage={paged.setPage} />}
-      </Card>
+      </TableCard>
       {isSuperAdmin && creating && (
         <TemplateFormModal
           title="Create template"
@@ -270,7 +270,7 @@ function MyTemplatesTab({ onPreview }: { onPreview: (t: Target) => void }) {
         {isAdmin && <Button variant="primary" onClick={() => setAdding(true)}>Create template</Button>}
       </div>
       {!isAdmin && <div className="mb-4"><Notice tone="info">Your role is read-only: you can look at My Templates, and an Administrator manages them.</Notice></div>}
-      <Card>
+      <TableCard>
         {list.isError ? (
           <div className="p-4"><ErrorNotice error={list.error} onRetry={() => void list.refetch()} /></div>
         ) : list.isPending ? (
@@ -278,7 +278,7 @@ function MyTemplatesTab({ onPreview }: { onPreview: (t: Target) => void }) {
         ) : items.length === 0 ? (
           <Empty>My Templates is empty, so campaigns offer no templates.{isAdmin ? " Add one from Available Templates, or create your own." : ""}</Empty>
         ) : (
-          <Table>
+          <Table fill>
             <thead><tr><Th>Template</Th><Th>Source</Th><Th>Added</Th><Th className="text-right"><span className="sr-only">Actions</span></Th></tr></thead>
             <tbody>
               {paged.rows.map((t) => (
@@ -302,7 +302,7 @@ function MyTemplatesTab({ onPreview }: { onPreview: (t: Target) => void }) {
           </Table>
         )}
         {paged.total > PAGE_SIZE && <Pagination page={paged.page} pageCount={paged.pageCount} total={paged.total} pageSize={PAGE_SIZE} onPage={paged.setPage} />}
-      </Card>
+      </TableCard>
       {isAdmin && adding && (
         <TemplateFormModal
           title="Create template"

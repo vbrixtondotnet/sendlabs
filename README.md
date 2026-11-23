@@ -349,7 +349,7 @@ To go back, redeploy the previous (D1) version: D1 is never modified by any of t
 
 **Loading the shared directory.** `npm run db:import:global-contacts` reads the "US Leads" sheet of `../assets/leads.xlsx` (outside the repository, never committed) into `global_contacts` (industry = category3, else category2, else Category; one row per business name). `-- --dry-run` previews it, `-- --replace` empties the table first, and running it again skips addresses already stored.
 
-**Table standard (UI).** Every table uses `Table` from `src/client/components/ui.tsx`: it scrolls on its own and keeps its header row pinned. A list page that is the point of the screen (Contacts, Campaigns, Search People) wraps itself in `FillPage` + `TableCard` and uses `<Table fill>`, so the page is exactly the window tall, only the table scrolls, and the pager (`Pagination`) sits under it; the data is paged by the server, 50 rows at a time. A table inside a longer page grows to 70% of the window height, then scrolls.
+**Table standard (UI).** Every table uses `Table` from `src/client/components/ui.tsx`: it scrolls on its own and keeps its header row pinned. A list page that is the point of the screen (Contacts, Campaigns, Search People) wraps itself in `FillPage` + `TableCard` and uses `<Table fill>`, so the page is exactly the window tall, only the table scrolls, and the pager (`Pagination`) sits under it; the data is paged by the server, 50 rows at a time. A table inside a longer page does not scroll by itself (the page does), so a screen never has two vertical scrollbars.
 
 ### Running it locally
 

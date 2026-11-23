@@ -193,15 +193,16 @@ export function ProgressBar({ value, max, tone = "brand" }: { value: number; max
 
 /* ---------- Tables ---------- */
 /**
- * THE table of the app. It scrolls on its own, in both directions, and its header row (`Th`) stays pinned while the rows move.
- *  - `fill`: for a list page that is the whole point of the screen (inside `FillPage` + `TableCard`). The table takes all the
- *    height that is left, and the pager sits under it.
- *  - default: for a table inside a longer page. It grows with its rows up to 70% of the window, then scrolls.
+ * THE table of the app, in one of two modes. There is never more than one vertical scrollbar on a screen:
+ *  - `fill`: for a list page that is the whole point of the screen (inside `FillPage` + `TableCard`). The page is exactly the
+ *    window tall, so the PAGE does not scroll; the table takes the height that is left, scrolls by itself and keeps its header
+ *    row (`Th`) pinned, and the pager sits under it.
+ *  - default: for a table inside a longer page. It only scrolls sideways when it has too many columns; the page scrolls.
  * Use `minWidth` (a Tailwind `min-w-[...]` class) when a table has many columns and should scroll sideways rather than squash.
  */
 export function Table({ children, fill = false, minWidth = "min-w-[640px]" }: { children: ReactNode; fill?: boolean; minWidth?: string }) {
   return (
-    <div className={`overflow-auto ${fill ? "min-h-0 flex-1" : "max-h-[70vh]"}`} tabIndex={0}>
+    <div className={fill ? "min-h-0 flex-1 overflow-auto" : "overflow-x-auto"} tabIndex={0}>
       <table className={`w-full text-left text-sm ${minWidth}`}>{children}</table>
     </div>
   );
@@ -217,7 +218,7 @@ export function FillPage({ children }: { children: ReactNode }) {
 
 /** The card of a `FillPage`: takes the height that is left and lets the table inside it scroll. */
 export function TableCard({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <Card className={`flex min-h-[24rem] min-w-0 flex-1 flex-col lg:min-h-0 ${className}`}>{children}</Card>;
+  return <Card className={`flex min-h-[24rem] min-w-0 flex-1 flex-col overflow-hidden lg:min-h-0 ${className}`}>{children}</Card>;
 }
 export const Th = ({ children, className = "" }: { children?: ReactNode; className?: string }) => (
   <th scope="col" className={`sticky top-0 z-10 whitespace-nowrap bg-white px-4 py-2.5 text-xs font-medium text-slate-500 dark:bg-slate-900 dark:text-slate-400 ${className}`}>
