@@ -8,7 +8,8 @@
  * Column TYPES are compared by family and the intentional differences are listed, not hidden:
  *   SQLite integer used for a millisecond timestamp or large number -> PostgreSQL bigint   (a 32-bit integer cannot hold them)
  *   SQLite integer used as 0/1 -> PostgreSQL boolean;   SQLite text holding JSON -> PostgreSQL jsonb
- * Tables dropped by later PostgreSQL migrations (REMOVED_TABLES) are left out of the original before comparing.
+ * Tables dropped by later PostgreSQL migrations (REMOVED_TABLES) are left out of the original before comparing, and tables
+ * those migrations added (ADDED_TABLES) are expected to exist only in PostgreSQL.
  * Exit code 0 when nothing else differs, 1 otherwise.
  *
  *   npm run db:compare
@@ -35,6 +36,8 @@ const emptyTable = (): Table => ({ columns: new Map(), indexes: new Map(), fks: 
 
 /** Features deleted since the D1 migrations were written: the PostgreSQL migrations drop these tables. */
 const REMOVED_TABLES = new Set(["personal_emails"]);
+/** Tables added by PostgreSQL migrations after the move, so the D1 structure has no counterpart for them. */
+const ADDED_TABLES = new Set(["global_contacts"]);
 
 /* ------------------------------ the original (SQLite) structure ------------------------------ */
 function readSqlite(): Map<string, Table> {
@@ -118,7 +121,7 @@ const sqlite = readSqlite();
 const pg = await readPostgres();
 
 for (const t of [...sqlite.keys()].filter((x) => !pg.has(x))) problems.push(`table ${t}: missing in PostgreSQL`);
-for (const t of [...pg.keys()].filter((x) => !sqlite.has(x))) problems.push(`table ${t}: only in PostgreSQL`);
+for (const t of [...pg.keys()].filter((x) => !sqlite.has(x) && !ADDED_TABLES.has(x))) problems.push(`table ${t}: only in PostgreSQL`);
 
 for (const [name, a] of sqlite) {
   const b = pg.get(name);
