@@ -60,8 +60,9 @@ describe("Jobs page: the live list", () => {
     expect(within(card).getByText("Candidates from: Worldwide")).toBeTruthy();
     expect(within(card).getByText("c# · .net 8 · sql server · azure")).toBeTruthy();
     expect(within(card).getByText(/Posted 2 hours ago/)).toBeTruthy();
-    expect(within(card).getByRole("link", { name: "Remotive" }).getAttribute("href")).toBe("https://remotive.com/remote-jobs/software-dev/job-1");
-    expect(screen.queryByText(/Jobs from/)).toBeNull(); // no source line in the header: each card names and links its own source
+    expect(within(card).queryByText(/via/)).toBeNull(); // no "via Remotive" on a card
+    expect(within(card).queryByRole("link")).toBeNull();
+    expect(screen.queryByText(/Jobs from/)).toBeNull(); // and no source line in the header either
   });
 
   it("copes with a missing logo, salary, location and link", async () => {
@@ -197,13 +198,14 @@ describe("Jobs page: both sources in one list", () => {
   const remoteArb = job({ id: "arbeitnow:r", title: "Sales Lead", companyName: "Gamma", companyLogo: "", remote: true, location: "Paris", salary: "", skills: ["Sales"], source: "Arbeitnow", url: "https://www.arbeitnow.com/jobs/companies/gamma/r" });
   const mixed: Handler = ({ path }) => side(path) ?? (path === "/api/jobs" ? reply([job(), berlin, remoteArb]) : undefined);
 
-  it("shows Remotive and Arbeitnow jobs as the same kind of card; Remotive's credits and links Remotive, Arbeitnow's has no link on the card", async () => {
+  it("shows Remotive and Arbeitnow jobs as the same kind of card, with no source line and no link on the card", async () => {
     stubApi(mixed);
     renderAt(<Jobs />);
     const rem = await screen.findByRole("article", { name: "Senior .NET Developer, Acme Corp" });
     const arbCard = screen.getByRole("article", { name: "Backend Engineer, Tulip" });
-    expect(within(rem).getByRole("link", { name: "Remotive" }).getAttribute("href")).toBe("https://remotive.com/remote-jobs/software-dev/job-1");
-    expect(within(arbCard).queryByText(/via/)).toBeNull(); // Arbeitnow jobs carry no "via" line
+    expect(within(rem).queryByText(/via/)).toBeNull(); // neither source is named on a card
+    expect(within(rem).queryByRole("link")).toBeNull();
+    expect(within(arbCard).queryByText(/via/)).toBeNull();
     expect(within(arbCard).queryByRole("link")).toBeNull();
     expect(within(arbCard).getByRole("button", { name: "Apply now: Backend Engineer" })).toBeTruthy();
     expect(screen.getByText("Showing 3 jobs")).toBeTruthy();

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { JobDto, JobsPageDto } from "@shared/api";
-import { REMOTIVE, safeApplyUrl } from "@shared/jobs";
+import { REMOTIVE } from "@shared/jobs";
 import { JOB_SORTS, type JobSort } from "@shared/schemas";
 import { Button, Card, Empty, ErrorNotice, Field, FillPage, Notice, PageHeader, Pagination, Select, TextInput } from "@/components/ui";
 import { JobApplyPanel } from "@/components/JobApplyPanel";
@@ -21,11 +21,9 @@ const PanelTitle = ({ children }: { children: string }) => (
   <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">{children}</h2>
 );
 
-/** One job as a card: title, company, kind / pay, where it can be done from, skills, how long ago, source, and View Job (the description panel) and Apply Now (the email panel). */
+/** One job as a card: title, company, kind / pay, where it can be done from, skills, how long ago, and View Job (the description panel) and Apply Now (the email panel). */
 function JobCard({ job, onView, onApply }: { job: JobDto; onView: () => void; onApply: () => void }) {
   const meta = [job.remote ? "Remote" : job.location || "Location not given", job.employmentType, job.salary].filter(Boolean).join(" · ");
-  // Checked again here, before the link is ever drawn: only an https address on a job source's own site can be opened.
-  const applyUrl = safeApplyUrl(job.url);
   return (
     <article className="rounded-2xl border border-slate-200 bg-white p-5 transition hover:shadow-md dark:border-slate-800 dark:bg-slate-900" aria-label={`${job.title}, ${job.companyName}`}>
       <div className="flex items-start gap-3">
@@ -40,17 +38,8 @@ function JobCard({ job, onView, onApply }: { job: JobDto; onView: () => void; on
       {job.remote && job.location && <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">{job.source === REMOTIVE.name ? "Candidates from" : "Based in"}: {job.location}</p>}
       {job.skills.length > 0 && <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{job.skills.slice(0, 8).join(" · ")}</p>}
       <div className="mt-3 flex items-center justify-between gap-3">
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          {postedAgo(job.publishedAt)}
-          {/* Remotive's terms: name Remotive as the source, and link to the job on Remotive. Arbeitnow only asks for a link back,
-              which Apply Now is, so its jobs carry no "via" line. */}
-          {job.source === REMOTIVE.name && (
-            <>
-              {postedAgo(job.publishedAt) && " · "}
-              via {applyUrl ? <a href={applyUrl} target="_blank" rel="noopener noreferrer" className="text-brand-700 hover:underline dark:text-brand-300">{job.source}</a> : job.source}
-            </>
-          )}
-        </p>
+        {/* Only how long ago. The source is named, and linked to, in the View Job panel. */}
+        <p className="text-sm text-slate-500 dark:text-slate-400">{postedAgo(job.publishedAt)}</p>
         <div className="flex shrink-0 items-center gap-2">
           <Button variant="secondary" className="cursor-pointer" onClick={onView} aria-label={`View job: ${job.title}`}>View Job</Button>
           <Button variant="primary" className="cursor-pointer" onClick={onApply} aria-label={`Apply now: ${job.title}`}>Apply Now</Button>
