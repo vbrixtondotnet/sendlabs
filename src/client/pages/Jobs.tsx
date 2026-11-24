@@ -40,9 +40,14 @@ function JobCard({ job }: { job: JobDto }) {
       <div className="mt-3 flex items-center justify-between gap-3">
         <p className="text-sm text-slate-500 dark:text-slate-400">
           {postedAgo(job.publishedAt)}
-          {postedAgo(job.publishedAt) && " · "}
-          {/* Remotive's terms: name Remotive as the source, and link to the job on Remotive. */}
-          via {applyUrl ? <a href={applyUrl} target="_blank" rel="noopener noreferrer" className="text-brand-700 hover:underline dark:text-brand-300">{job.source}</a> : job.source}
+          {/* Remotive's terms: name Remotive as the source, and link to the job on Remotive. Arbeitnow only asks for a link back,
+              which Apply Now is, so its jobs carry no "via" line. */}
+          {job.source === REMOTIVE.name && (
+            <>
+              {postedAgo(job.publishedAt) && " · "}
+              via {applyUrl ? <a href={applyUrl} target="_blank" rel="noopener noreferrer" className="text-brand-700 hover:underline dark:text-brand-300">{job.source}</a> : job.source}
+            </>
+          )}
         </p>
         {applyUrl ? (
           <a

@@ -94,13 +94,14 @@ describe("Jobs page: both sources in one list", () => {
   const remoteArb = job({ id: "arbeitnow:r", title: "Sales Lead", companyName: "Gamma", companyLogo: "", remote: true, location: "Paris", salary: "", skills: ["Sales"], source: "Arbeitnow", url: "https://www.arbeitnow.com/jobs/companies/gamma/r" });
   const mixed: Handler = ({ path }) => side(path) ?? (path === "/api/jobs" ? reply([job(), berlin, remoteArb]) : undefined);
 
-  it("shows Remotive and Arbeitnow jobs as the same kind of card, each crediting and linking its own source", async () => {
+  it("shows Remotive and Arbeitnow jobs as the same kind of card; Remotive's credits and links Remotive, Arbeitnow's links back through Apply Now", async () => {
     stubApi(mixed);
     renderAt(<Jobs />);
     const rem = await screen.findByRole("article", { name: "Senior .NET Developer, Acme Corp" });
     const arbCard = screen.getByRole("article", { name: "Backend Engineer, Tulip" });
     expect(within(rem).getByRole("link", { name: "Remotive" }).getAttribute("href")).toBe("https://remotive.com/remote-jobs/software-dev/job-1");
-    expect(within(arbCard).getByRole("link", { name: "Arbeitnow" }).getAttribute("href")).toBe("https://www.arbeitnow.com/jobs/companies/tulip/berlin");
+    expect(within(arbCard).queryByText(/via/)).toBeNull(); // Arbeitnow jobs carry no "via" line; Apply Now is the link back
+    expect(within(arbCard).queryByRole("link", { name: "Arbeitnow" })).toBeNull();
     expect(within(arbCard).getByRole("link", { name: "Apply now: Backend Engineer" }).getAttribute("href")).toBe("https://www.arbeitnow.com/jobs/companies/tulip/berlin");
     expect(screen.getByText("Showing 3 jobs")).toBeTruthy();
   });
