@@ -3,7 +3,7 @@ import { ARBEITNOW, JOBICY, REMOTIVE } from "../../shared/jobs";
 import type { JobListQuery } from "../../shared/schemas";
 import { JobSourceError } from "../lib/live-fetch";
 import { ArbeitnowJobService } from "./arbeitnow-jobs";
-import { JobicyJobService } from "./jobicy-jobs";
+import { JobicyJobService, MAX_GEOS, type JobicyFilter } from "./jobicy-jobs";
 import { RemotiveJobService } from "./remotive-jobs";
 
 /**
@@ -79,18 +79,43 @@ export class JobSearchService {
   constructor(private readonly sources: JobSources) {}
 
   /**
-   * One page of jobs for the filters. Keyword goes to Remotive as `search`, and the category to it as `category` when it is one of
-   * Remotive's; everything is then re-checked here on the merged list (Arbeitnow, and in practice Remotive too, ignore both).
-   * Location, Remote only, sort and paging are applied here. `signal` is the caller's: if it aborts the wait ends at once.
+   * What Jobicy is asked for, from the page's filters: the words as `tag`, the category as its `industry` when it is one of Jobicy's,
+   * and each chosen place that is one of Jobicy's as a `geo` (plus "anywhere", since a worldwide job suits any place). A place Jobicy
+   * does not know means it is also asked without a place, and the local check below picks out what matches.
+   */
+  private async jobicyFilter(q: JobListQuery, signal?: AbortSignal): Promise<JobicyFilter> {
+    const ref = await this.sources.jobicy.reference(signal);
+    const filter: JobicyFilter = {};
+    if (q.keyword) filter.keyword = q.keyword;
+    if (q.category) {
+      const want = normalize(q.category);
+      const industry = ref.industries.find((i) => normalize(i.name) === want || normalize(i.slug) === want);
+      if (industry) filter.industry = industry.slug;
+    }
+    if (q.locations.length > 0) {
+      const known = q.locations.map((l) => ref.locations.find((g) => normalize(g.name) === normalize(l))?.slug).filter((x): x is string => !!x);
+      const allKnown = known.length === q.locations.length;
+      filter.geos = [...known.slice(0, MAX_GEOS), ...(known.length > 0 ? ["anywhere"] : []), ...(allKnown ? [] : [""])];
+    }
+    return filter;
+  }
+
+  /**
+   * One page of jobs for the filters. The page's filters are sent to the sources that can use them: the keyword goes to Remotive as
+   * `search` and to Jobicy as `tag`; the category goes to Remotive as `category` (when it is one of Remotive's) and to Jobicy as
+   * `industry` (when it is one of Jobicy's); chosen places go to Jobicy as `geo`. Arbeitnow cannot filter (it ignores every parameter),
+   * so its list is kept whole. Everything is then re-checked here on the merged list; Location, Remote only, sort and paging are
+   * applied here too. `signal` is the caller's: if it aborts the wait ends at once.
    */
   async list(q: JobListQuery, signal?: AbortSignal): Promise<JobsPageDto> {
     const categories = await this.categories(signal).catch(() => [] as (JobCategoryDto & { remotive: boolean })[]);
     const chosen = categories.find((c) => c.value === q.category);
     const remotiveCategory = chosen?.remotive ? chosen.value : "";
+    const jobicyFilter = await this.jobicyFilter(q, signal);
     const { jobs, unavailable } = await fromAll([
       { name: REMOTIVE.name, run: () => this.sources.remotive.jobs(q.keyword ?? "", remotiveCategory, signal) },
       { name: ARBEITNOW.name, run: () => this.sources.arbeitnow.jobs(signal) },
-      { name: JOBICY.name, run: () => this.sources.jobicy.jobs(signal) },
+      { name: JOBICY.name, run: () => this.sources.jobicy.jobs(jobicyFilter, signal) },
     ]);
 
     const wanted = q.category ? [q.category, chosen?.label ?? ""].filter(Boolean).map(normalize) : [];
@@ -123,9 +148,10 @@ export class JobSearchService {
     const [theirs, arbeit, jobicy] = await Promise.all([
       this.sources.remotive.categories(signal).catch((e) => { if (e instanceof JobSourceError && e.kind === "aborted") throw e; return [] as JobCategoryDto[]; }),
       this.sources.arbeitnow.jobs(signal).catch((e) => { if (e instanceof JobSourceError && e.kind === "aborted") throw e; return [] as JobDto[]; }),
-      this.sources.jobicy.jobs(signal).catch((e) => { if (e instanceof JobSourceError && e.kind === "aborted") throw e; return [] as JobDto[]; }),
+      this.sources.jobicy.jobs({}, signal).catch((e) => { if (e instanceof JobSourceError && e.kind === "aborted") throw e; return [] as JobDto[]; }),
     ]);
     const jobs = [...arbeit, ...jobicy];
+    const industries = (await this.sources.jobicy.reference(signal)).industries;
     if (theirs.length === 0 && jobs.length === 0) throw new JobSourceError("Jobs", "network", "No job source could be reached");
     const out: (JobCategoryDto & { remotive: boolean })[] = theirs.map((c) => ({ ...c, remotive: true }));
     const known = new Set(theirs.flatMap((c) => [normalize(c.value), normalize(c.label)]));
@@ -134,6 +160,8 @@ export class JobSearchService {
     for (const [name] of [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).filter(([, n]) => n >= MIN_TOPIC_JOBS).slice(0, 30)) {
       if (!known.has(normalize(name))) { known.add(normalize(name)); out.push({ value: name, label: name, remotive: false }); }
     }
+    // All of Jobicy's industries are offered (choosing one asks Jobicy for exactly that industry).
+    for (const i of industries) if (!known.has(normalize(i.name))) { known.add(normalize(i.name)); out.push({ value: i.name, label: i.name, remotive: false }); }
     return out.sort((a, b) => a.label.localeCompare(b.label));
   }
 
@@ -153,7 +181,7 @@ export class JobSearchService {
     const { jobs } = await fromAll([
       { name: REMOTIVE.name, run: () => this.sources.remotive.jobs("", "", signal) },
       { name: ARBEITNOW.name, run: () => this.sources.arbeitnow.jobs(signal) },
-      { name: JOBICY.name, run: () => this.sources.jobicy.jobs(signal) },
+      { name: JOBICY.name, run: () => this.sources.jobicy.jobs({}, signal) },
     ]);
     const counts = new Map<string, number>();
     for (const j of jobs) for (const t of tokens(j.location)) counts.set(t, (counts.get(t) ?? 0) + 1);

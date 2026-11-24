@@ -61,7 +61,7 @@ const jb = (id: number, over: Record<string, unknown> = {}) => ({
 });
 
 /** A stand-in for all three sources: records every request URL, answers from `remotive` / `arbeitnow`, and each can fail or be held back. */
-function world(initial: { remotive?: unknown[]; arbeitnow?: unknown[]; jobicy?: unknown[] } = {}) {
+function world(initial: { remotive?: unknown[]; arbeitnow?: unknown[]; jobicy?: unknown[]; jobicyReference?: boolean } = {}) {
   const state = {
     remotive: (initial.remotive ?? []) as unknown[],
     arbeitnow: (initial.arbeitnow ?? []) as unknown[],
@@ -78,7 +78,11 @@ function world(initial: { remotive?: unknown[]; arbeitnow?: unknown[]; jobicy?: 
     const url = String(input);
     state.calls.push(url);
     if (state.gate) await state.gate;
-    if (url.startsWith("https://jobicy.com/")) return state.failJobicy ? state.failJobicy() : json({ apiVersion: "2", jobCount: state.jobicy.length, jobs: state.jobicy });
+    if (url.startsWith("https://jobicy.com/")) {
+      if (url.includes("get=industries")) return json({ industries: !initial.jobicyReference ? [] : [{ industryName: "Marketing &amp; Sales", industrySlug: "marketing" }, { industryName: "Legal &amp; Compliance", industrySlug: "legal" }] });
+      if (url.includes("get=locations")) return json({ locations: !initial.jobicyReference ? [] : [{ geoName: "Anywhere", geoSlug: "anywhere" }, { geoName: "USA", geoSlug: "usa" }, { geoName: "Germany", geoSlug: "germany" }] });
+      return state.failJobicy ? state.failJobicy() : json({ apiVersion: "2", jobCount: state.jobicy.length, jobs: state.jobicy });
+    }
     if (url.startsWith("https://www.arbeitnow.com/")) return state.failArbeitnow ? state.failArbeitnow() : json({ data: state.arbeitnow, links: {}, meta: {} });
     if (state.failRemotive) return state.failRemotive();
     return json(url.includes("/categories") ? { jobs: state.categories } : { "job-count": state.remotive.length, jobs: state.remotive });
@@ -193,19 +197,18 @@ describe("Jobicy", () => {
     const { state, fetchFn } = world({ remotive: [rem(1)], arbeitnow: [arb("a")], jobicy: [jb(1, { pubDate: "2026-11-25 10:00:00" })] });
     const s = makeSearch(fetchFn);
     expect((await ids(s))[0]).toBe("jobicy:1");
-    expect(state.calls.filter((c) => c.startsWith("https://jobicy.com/api/v2/remote-jobs"))).toEqual(["https://jobicy.com/api/v2/remote-jobs?count=100"]);
+    expect(state.calls.filter((c) => c.startsWith("https://jobicy.com/api/v2/remote-jobs") && !c.includes("get="))).toEqual(["https://jobicy.com/api/v2/remote-jobs?count=100"]);
     expect(await s.description("jobicy:1")).toEqual([{ type: "paragraph", text: "Jobicy description" }]);
     expect(await s.description("jobicy:nope")).toBeNull();
-    expect((await s.categories()).map((c) => c.label)).not.toContain("Marketing & Sales"); // one job is too few to become a category
   });
 
-  it("keeps the list for an hour, and the others still answer when it fails", async () => {
+  it("keeps a search for ten minutes, and the others still answer when it fails", async () => {
     let t = 1_000_000;
     const { count, state, fetchFn } = world({ remotive: [rem(1)], jobicy: [jb(1)] });
     const s = makeSearch(fetchFn, { now: () => t });
     await s.list(q());
-    await s.list(q({ keyword: "zzz" }));
-    expect(count("jobicy.com")).toBe(1);
+    await s.list(q());
+    expect(count("jobicy.com/api/v2/remote-jobs?count")).toBe(1);
     state.failJobicy = () => new Response("nope", { status: 500 });
     const other = makeSearch(fetchFn, { now: () => t });
     const r = await other.list(q());
@@ -217,8 +220,34 @@ describe("Jobicy", () => {
     let t = 1_000_000;
     const { count, fetchFn } = world({ jobicy: [jb(1)] });
     const svc = makeJobicy(fetchFn, { now: () => t });
-    for (let i = 0; i < JOB_CAP + 3; i++) { t += 61 * 60_000; await svc.jobs(); } // each call is past the hour, so each is a real request...
-    expect(count("jobicy.com")).toBe(JOB_CAP + 3);
+    for (let i = 0; i < JOB_CAP; i++) { t += 11 * 60_000 / JOB_CAP; await svc.jobs({ keyword: `k${i}` }); } // each search is new: a real request
+    expect(count("jobicy.com")).toBe(JOB_CAP);
+    await expect(svc.jobs({ keyword: "one too many" })).rejects.toMatchObject({ kind: "rate_limit" });
+  });
+
+  it("passes the page's filters to Jobicy: the words as tag, the category as industry, each place as geo", async () => {
+    const { state, fetchFn } = world({ jobicy: [jb(1, { jobGeo: "USA" }), jb(2, { jobGeo: "Germany" })], jobicyReference: true });
+    const s = makeSearch(fetchFn);
+    // (the plain list is also asked for once, to build the category choices: that one is not a filter)
+    const asked = () => state.calls.filter((c) => c.includes("remote-jobs?count") && c !== "https://jobicy.com/api/v2/remote-jobs?count=100");
+    await s.list(q({ keyword: "marketing", category: "Marketing & Sales", locations: "USA" }));
+    expect(asked()).toEqual([
+      "https://jobicy.com/api/v2/remote-jobs?count=100&geo=usa&industry=marketing&tag=marketing",
+      "https://jobicy.com/api/v2/remote-jobs?count=100&geo=anywhere&industry=marketing&tag=marketing",
+    ]);
+    state.calls.length = 0;
+    await s.list(q({ locations: "USA,Germany" }));
+    expect(asked().map((c) => /geo=([a-z]*)/.exec(c)?.[1])).toEqual(["usa", "germany", "anywhere"]);
+    state.calls.length = 0;
+    await s.list(q({ locations: "Narnia" })); // not a place Jobicy knows: asked without one, and checked here
+    expect(asked()).toEqual([]); // no geo request: only the plain list
+  });
+
+  it("offers all of Jobicy's industries as categories, and a search by one returns only Jobicy's answer for it", async () => {
+    const { fetchFn } = world({ jobicy: [jb(1, { jobIndustry: ["Marketing &amp; Sales"] })], jobicyReference: true });
+    const s = makeSearch(fetchFn);
+    expect((await s.categories()).map((c) => c.label)).toEqual(expect.arrayContaining(["Marketing & Sales", "Legal & Compliance"]));
+    expect(await ids(s, { category: "Marketing & Sales" })).toEqual(["jobicy:1"]);
   });
 });
 
