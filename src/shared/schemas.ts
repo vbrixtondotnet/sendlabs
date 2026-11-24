@@ -251,6 +251,15 @@ export const peopleSearchQuery = pageQuery.extend({
 });
 export type PeopleSearchQuery = z.infer<typeof peopleSearchQuery>;
 
+/* ------------------------------ jobs ------------------------------ */
+
+export const jobListQuery = pageQuery.extend({
+  keyword: optionalQuery(z.string().trim().max(100)),
+  categories: csvList(30),
+  locations: csvList(30),
+});
+export type JobListQuery = z.infer<typeof jobListQuery>;
+
 /** Adding an address to the test-send allowlist. */
 export const testRecipientCreateSchema = z.strictObject({ email });
 export type TestRecipientCreate = z.infer<typeof testRecipientCreateSchema>;

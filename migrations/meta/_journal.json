@@ -36,6 +36,13 @@
       "when": 1795454582889,
       "tag": "0004_credits",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795483742717,
+      "tag": "0005_remotive_jobs",
+      "breakpoints": true
     }
   ]
 }

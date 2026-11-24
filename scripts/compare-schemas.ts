@@ -37,7 +37,7 @@ const emptyTable = (): Table => ({ columns: new Map(), indexes: new Map(), fks: 
 /** Features deleted since the D1 migrations were written: the PostgreSQL migrations drop these tables. */
 const REMOVED_TABLES = new Set(["personal_emails"]);
 /** Tables added by PostgreSQL migrations after the move, so the D1 structure has no counterpart for them. */
-const ADDED_TABLES = new Set(["global_contacts"]);
+const ADDED_TABLES = new Set(["global_contacts", "global_jobs", "job_sources"]);
 
 /* ------------------------------ the original (SQLite) structure ------------------------------ */
 function readSqlite(): Map<string, Table> {

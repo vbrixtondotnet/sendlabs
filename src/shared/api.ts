@@ -213,6 +213,48 @@ export interface AddContactResultDto {
   credits: number;
 }
 
+/** One job in the Jobs list. The source's description is not included: it is HTML from outside and is never shown. */
+export interface JobDto {
+  id: string;
+  title: string;
+  companyName: string;
+  /** The company's logo address (https), or "". */
+  companyLogo: string;
+  category: string;
+  /** "Full-time", "Part-time", "Contract"... */
+  employmentType: string;
+  /** Where the person may work from: "Worldwide", "USA, Canada"... */
+  location: string;
+  salary: string;
+  skills: string[];
+  /** The job's page at its source: where Apply goes. */
+  url: string;
+  /** The source's name ("Remotive"), which must be shown with the job. */
+  source: string;
+  /** ISO time the source published it, or null. */
+  publishedAt: string | null;
+}
+
+/** A company that has jobs listed, for the Hiring Companies panel. */
+export interface JobCompanyDto {
+  name: string;
+  logo: string;
+  /** The category most of its jobs are in. */
+  category: string;
+  openPositions: number;
+}
+
+/** The result of a synchronization with a job source. */
+export interface JobSyncDto {
+  source: string;
+  /** Jobs the source returned. */
+  fetched: number;
+  created: number;
+  updated: number;
+  /** Jobs that are no longer listed by the source. */
+  deactivated: number;
+}
+
 /** A template in My Templates. The body is left out (it is large): fetch one template to get it. */
 export interface EmailTemplateSummaryDto {
   id: string;
