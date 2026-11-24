@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import type { JobDto } from "@shared/api";
 import { ATTACHMENT_ACCEPT, MAX_ATTACHMENTS, MAX_TOTAL_ATTACHMENT_BYTES, attachmentProblem, formatBytes } from "@shared/email-attachments";
-import { safeApplyUrl } from "@shared/jobs";
 import { isValidEmail } from "@shared/email";
 import { Button, Field, Notice, SlidePanel, TextArea, TextInput } from "@/components/ui";
 import { useRole } from "@/hooks/useRole";
@@ -57,7 +56,6 @@ export function JobApplyPanel({ job, open = true, onClose, onExited }: { job: Jo
   const connected = sender.data?.sender?.status === "Connected";
   const total = files.reduce((n, f) => n + f.size, 0);
   const valid = isValidEmail(to.trim().toLowerCase()) && subject.trim() !== "" && body.trim() !== "";
-  const postingUrl = safeApplyUrl(job.url);
 
   const addFiles = (picked: FileList | null) => {
     if (!picked) return;
@@ -101,13 +99,6 @@ export function JobApplyPanel({ job, open = true, onClose, onExited }: { job: Jo
         </>
       }
     >
-      {postingUrl && (
-        <p className="mb-4 text-sm">
-          <a href={postingUrl} target="_blank" rel="noopener noreferrer" className="text-brand-700 hover:underline dark:text-brand-300">View the original job posting</a>
-          <span className="text-slate-500 dark:text-slate-400"> (opens in a new tab)</span>
-        </p>
-      )}
-
       {!canEdit && <div className="mb-4"><Notice tone="warn" title="Your role cannot send email">You can read the jobs, but an Administrator or Campaign Manager sends the email.</Notice></div>}
       {canEdit && !sender.isPending && !connected && (
         <div className="mb-4">

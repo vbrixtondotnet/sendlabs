@@ -1,6 +1,7 @@
 import { z } from "zod";
-import type { JobDto } from "../../shared/api";
+import type { JobDescriptionBlock, JobDto } from "../../shared/api";
 import { ARBEITNOW, safeApplyUrl } from "../../shared/jobs";
+import { toDescriptionBlocks } from "../lib/job-description";
 import { HourlyCap, JobSourceError, getJson, once, untilAborted } from "../lib/live-fetch";
 
 /**
@@ -29,6 +30,7 @@ const remoteJob = z.object({
   tags: z.array(z.string()).nullish(),
   job_types: z.array(z.string()).nullish(),
   location: z.string().nullish(),
+  description: z.string().nullish(),
   created_at: z.union([z.number(), z.string()]).nullish(),
 });
 const remoteJobs = z.object({ data: z.array(z.unknown()) });
@@ -77,7 +79,8 @@ export function mapArbeitnowJob(input: z.input<typeof remoteJob>): JobDto {
 }
 
 export class ArbeitnowCache {
-  list: { at: number; jobs: JobDto[] } | null = null;
+  /** The list, with each job's description already reduced to plain text blocks (Arbeitnow's are up to 40 KB of escaped HTML each). */
+  list: { at: number; jobs: JobDto[]; descriptions: Map<string, JobDescriptionBlock[]> } | null = null;
   readonly inFlight = new Map<string, Promise<unknown>>();
   cap = new HourlyCap(ARBEITNOW.name, MAX_UPSTREAM_PER_HOUR);
 
@@ -123,6 +126,7 @@ export class ArbeitnowJobService {
         once(this.cache.inFlight, "list", async () => {
           const seen = new Set<string>();
           const out: JobDto[] = [];
+          const descriptions = new Map<string, JobDescriptionBlock[]>();
           for (let page = 1; page <= PAGES; page++) {
             this.cache.cap.take(this.now());
             const body = remoteJobs.safeParse(await getJson(ARBEITNOW.name, this.deps.fetch, `${ARBEITNOW.endpoint}?page=${page}`, this.timeoutMs));
@@ -134,9 +138,10 @@ export class ArbeitnowJobService {
               if (job.title === "" || seen.has(job.id)) continue;
               seen.add(job.id);
               out.push(job);
+              descriptions.set(job.id, toDescriptionBlocks(parsed.data.description));
             }
           }
-          this.cache.list = { at: this.now(), jobs: out };
+          this.cache.list = { at: this.now(), jobs: out, descriptions };
           return out;
         }),
         signal,
@@ -146,5 +151,11 @@ export class ArbeitnowJobService {
       if (hit) return hit.jobs; // an old copy beats an error
       throw e;
     }
+  }
+
+  /** The description of one of Arbeitnow's jobs (by its `arbeitnow:<slug>`) as plain text blocks, or null when it is no longer listed. */
+  async description(id: string, signal?: AbortSignal): Promise<JobDescriptionBlock[] | null> {
+    await this.jobs(signal); // from memory when it is fresh, else fetched again
+    return this.cache.list?.descriptions.get(id) ?? null;
   }
 }

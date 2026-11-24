@@ -95,6 +95,103 @@ describe("Jobs page: the live list", () => {
   });
 });
 
+describe("Jobs page: View Job", () => {
+  const described: Handler = ({ path, query }) =>
+    side(path)
+    ?? (path === "/api/me" ? { json: meDto() } : path === "/api/sender" ? { json: senderStatus() } : undefined)
+    ?? (path === "/api/jobs/description"
+      ? { json: { id: query.get("id"), blocks: [{ type: "heading", text: "About the role" }, { type: "paragraph", text: "You will build great things." }, { type: "list", ordered: false, items: ["React", "Node"] }, { type: "list", ordered: true, items: ["Apply", "Interview"] }] } }
+      : path === "/api/jobs" ? reply([job(), job({ id: "2", title: "UI/UX Designer", companyName: "Beta LLC", source: "Arbeitnow", url: "https://www.arbeitnow.com/jobs/companies/beta/x" })]) : undefined);
+
+  it("puts a View Job button at the left of Apply Now on every card", async () => {
+    stubApi(described);
+    renderAt(<Jobs />);
+    const card = await screen.findByRole("article", { name: "Senior .NET Developer, Acme Corp" });
+    const buttons = within(card).getAllByRole("button");
+    const names = buttons.map((b) => b.textContent);
+    expect(names).toEqual(["View Job", "Apply Now"]);
+    expect(buttons[0]!.compareDocumentPosition(buttons[1]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy(); // View Job comes first
+    expect(buttons[0]!.parentElement).toBe(buttons[1]!.parentElement); // side by side
+  });
+
+  it("opens a panel with the job's title and description, loaded for that job", async () => {
+    const calls = stubApi(described);
+    renderAt(<Jobs />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: "View job: Senior .NET Developer" }));
+    const panel = await screen.findByRole("dialog", { name: "Senior .NET Developer" });
+    expect(panel.className).toContain("slide-in-right");
+    expect(within(panel).getByText("Acme Corp")).toBeTruthy();
+    expect(within(panel).getByText("Remote · Full-time · $3,000-$5,000")).toBeTruthy();
+    expect(await within(panel).findByText("You will build great things.")).toBeTruthy();
+    expect(within(panel).getByRole("heading", { name: "About the role" })).toBeTruthy();
+    expect(within(panel).getAllByRole("list")[0]!.tagName).toBe("UL");
+    expect(within(panel).getAllByRole("list")[1]!.tagName).toBe("OL");
+    expect(within(panel).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["React", "Node", "Apply", "Interview"]);
+    expect(calls.find((c) => c.path === "/api/jobs/description")!.query.get("id")).toBe("1");
+  });
+
+  it("shows a placeholder while the description loads, and an error with Try again if it cannot", async () => {
+    let up = false;
+    const calls = stubApi((call) => (call.path === "/api/jobs/description" ? (up ? described(call) : { status: 502, json: { error: { code: "JOB_SOURCE_UNAVAILABLE", message: "Remotive answered 500" } } }) : described(call)));
+    renderAt(<Jobs />);
+    fireEvent.click(await screen.findByRole("button", { name: "View job: Senior .NET Developer" }));
+    const panel = await screen.findByRole("dialog", { name: "Senior .NET Developer" });
+    expect(within(panel).getByRole("status", { name: "Loading the description" })).toBeTruthy();
+    expect(await within(panel).findByText("Remotive answered 500")).toBeTruthy();
+    up = true;
+    fireEvent.click(within(panel).getByRole("button", { name: "Try again" }));
+    expect(await within(panel).findByText("You will build great things.")).toBeTruthy();
+    expect(calls.filter((c) => c.path === "/api/jobs/description")).toHaveLength(2);
+  });
+
+  it("says so when a job has no description", async () => {
+    stubApi((call) => (call.path === "/api/jobs/description" ? { json: { id: "1", blocks: [] } } : described(call)));
+    renderAt(<Jobs />);
+    fireEvent.click(await screen.findByRole("button", { name: "View job: Senior .NET Developer" }));
+    expect(await screen.findByText("This job has no description.")).toBeTruthy();
+  });
+
+  it("has an Apply Now button inside, which closes the panel and opens the email panel for the same job", async () => {
+    stubApi(described);
+    renderAt(<Jobs />);
+    fireEvent.click(await screen.findByRole("button", { name: "View job: Senior .NET Developer" }));
+    const view = await screen.findByRole("dialog", { name: "Senior .NET Developer" });
+    fireEvent.click(within(view).getByRole("button", { name: "Apply now: Senior .NET Developer" }));
+    const apply = await screen.findByRole("dialog", { name: "Apply by email" });
+    expect(within(apply).getByText("Senior .NET Developer · Acme Corp")).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: "Senior .NET Developer" })).toBeNull(); // the description panel is on its way out (hidden at once)
+    await waitFor(() => expect(document.querySelectorAll("aside[role=dialog]")).toHaveLength(1), { timeout: 1500 });
+  });
+
+  it("closes with the X, Escape or a click on the dimmed page, sliding out", async () => {
+    stubApi(described);
+    renderAt(<Jobs />);
+    fireEvent.click(await screen.findByRole("button", { name: "View job: Senior .NET Developer" }));
+    const panel = await screen.findByRole("dialog", { name: "Senior .NET Developer" });
+    fireEvent.click(within(panel).getByRole("button", { name: "Close panel" }));
+    expect(document.querySelector("aside[role=dialog]")!.className).toContain("slide-out-right");
+    await waitFor(() => expect(document.querySelector("aside[role=dialog]")).toBeNull(), { timeout: 1500 });
+    fireEvent.click(screen.getByRole("button", { name: "View job: Senior .NET Developer" }));
+    await screen.findByRole("dialog", { name: "Senior .NET Developer" });
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => expect(document.querySelector("aside[role=dialog]")).toBeNull(), { timeout: 1500 });
+  });
+
+  it("names Remotive as the source and links to the job there, for a Remotive job only", async () => {
+    stubApi(described);
+    renderAt(<Jobs />);
+    fireEvent.click(await screen.findByRole("button", { name: "View job: Senior .NET Developer" }));
+    const panel = await screen.findByRole("dialog", { name: "Senior .NET Developer" });
+    expect(within(panel).getByRole("link", { name: "Remotive" }).getAttribute("href")).toBe("https://remotive.com/remote-jobs/software-dev/job-1");
+    fireEvent.click(within(panel).getByRole("button", { name: "Close panel" }));
+    await waitFor(() => expect(document.querySelector("aside[role=dialog]")).toBeNull(), { timeout: 1500 });
+    fireEvent.click(screen.getByRole("button", { name: "View job: UI/UX Designer" }));
+    const other = await screen.findByRole("dialog", { name: "UI/UX Designer" });
+    expect(within(other).queryByRole("link")).toBeNull();
+  });
+});
+
 describe("Jobs page: both sources in one list", () => {
   const berlin = job({ id: "arbeitnow:berlin", title: "Backend Engineer", companyName: "Tulip", companyLogo: "", category: "Engineering", remote: false, location: "Berlin", salary: "", skills: ["Engineering"], source: "Arbeitnow", url: "https://www.arbeitnow.com/jobs/companies/tulip/berlin" });
   const remoteArb = job({ id: "arbeitnow:r", title: "Sales Lead", companyName: "Gamma", companyLogo: "", remote: true, location: "Paris", salary: "", skills: ["Sales"], source: "Arbeitnow", url: "https://www.arbeitnow.com/jobs/companies/gamma/r" });

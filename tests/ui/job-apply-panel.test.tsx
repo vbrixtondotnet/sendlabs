@@ -42,7 +42,8 @@ describe("the Apply panel", () => {
     fireEvent.click(within(p).getByRole("button", { name: "Close panel" }));
     fireEvent.keyDown(window, { key: "Escape" });
     expect(closed).toBe(2);
-    expect(within(p).getByRole("link", { name: "View the original job posting" }).getAttribute("href")).toBe(job.url);
+    expect(within(p).queryByText(/View the original job posting/)).toBeNull(); // that link now lives in the View Job panel, not here
+    expect(within(p).queryByRole("link")).toBeNull();
   });
 
   it("has To, Subject, Message and Attachments, and no CC or BCC", async () => {

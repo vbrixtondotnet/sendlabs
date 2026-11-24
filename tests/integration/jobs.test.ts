@@ -462,3 +462,81 @@ describe("the Jobs API", () => {
     });
   });
 });
+
+describe("job descriptions (the View Job panel)", () => {
+  beforeEach(() => { sharedRemotiveCache.clear(); sharedArbeitnowCache.clear(); });
+
+  const REM_HTML = `<p style="${"--tw-x: 0; ".repeat(500)}"><strong>About us</strong> We build tools.</p><ul><li>React</li><li>Node</li></ul><script>alert(1)</script>`;
+  const ARB_HTML = "&lt;h2&gt;The role&lt;/h2&gt;&lt;p&gt;Work in Munich.&lt;/p&gt;";
+
+  const withWorld = async <T,>(run: (hh: Harness, w: ReturnType<typeof world>) => Promise<T>): Promise<T> => {
+    const w = world({ remotive: [rem(1, { description: REM_HTML })], arbeitnow: [arb("munich-dev", { description: ARB_HTML })] });
+    const hh = await startHarness({ fetch: w.fetchFn });
+    try {
+      return await run(hh, w);
+    } finally {
+      await hh.dispose();
+    }
+  };
+
+  it("returns a job's description as plain text blocks, for a job of either source, and never markup", async () => {
+    await withWorld(async (hh) => {
+      await hh.api("GET", "/api/jobs"); // the list is what fills the memory the description is read from
+      const r = await hh.api("GET", "/api/jobs/description?id=remotive:1");
+      expect(r.status).toBe(200);
+      expect(r.json).toEqual({
+        id: "remotive:1",
+        blocks: [{ type: "paragraph", text: "About us We build tools." }, { type: "list", ordered: false, items: ["React", "Node"] }],
+      });
+      expect(JSON.stringify(r.json)).not.toMatch(/<|script|alert|--tw/);
+      const a = await hh.api("GET", "/api/jobs/description?id=arbeitnow:munich-dev");
+      expect(a.json.blocks).toEqual([{ type: "heading", text: "The role" }, { type: "paragraph", text: "Work in Munich." }]);
+    });
+  });
+
+  it("is not part of the list: the list stays light, however long the descriptions are", async () => {
+    await withWorld(async (hh) => {
+      const list = await hh.api("GET", "/api/jobs");
+      expect(JSON.stringify(list.json)).not.toMatch(/We build tools|Work in Munich|blocks|description/);
+    });
+  });
+
+  it("fetches the list again by itself when its memory has been cleared (a description asked for after the cache expired)", async () => {
+    await withWorld(async (hh, w) => {
+      await hh.api("GET", "/api/jobs");
+      sharedRemotiveCache.clear();
+      sharedArbeitnowCache.clear();
+      const before = w.state.calls.length;
+      const r = await hh.api("GET", "/api/jobs/description?id=remotive:1");
+      expect(r.status).toBe(200);
+      expect(w.state.calls.length).toBeGreaterThan(before);
+    });
+  });
+
+  it("answers 404 for a job that is no longer listed or an id that is not ours, and 400 for none", async () => {
+    await withWorld(async (hh) => {
+      expect((await hh.api("GET", "/api/jobs/description?id=remotive:999")).status).toBe(404);
+      expect((await hh.api("GET", "/api/jobs/description?id=arbeitnow:nope")).status).toBe(404);
+      expect((await hh.api("GET", "/api/jobs/description?id=other:1")).status).toBe(404);
+      expect((await hh.api("GET", "/api/jobs/description")).status).toBe(400);
+      expect((await hh.api("GET", `/api/jobs/description?id=${"x".repeat(301)}`)).status).toBe(400);
+      expect((await hh.anonymous.api("GET", "/api/jobs/description?id=remotive:1")).status).toBe(401);
+    });
+  });
+
+  it("is a 502 when the source cannot be reached and nothing is remembered", async () => {
+    await withWorld(async (hh, w) => {
+      w.state.failRemotive = () => new Response("x", { status: 500 });
+      const r = await hh.api("GET", "/api/jobs/description?id=remotive:1");
+      expect(r.status).toBe(502);
+      expect(r.json.error.code).toBe("JOB_SOURCE_UNAVAILABLE");
+    });
+  });
+
+  it("keeps a description small in memory: a job with 40 KB of styled HTML is a few hundred bytes", async () => {
+    const w = world({ remotive: [rem(1, { description: `<p style="${"a: b; ".repeat(8000)}">Hi</p>` })] });
+    const svc = makeRemotive(w.fetchFn);
+    await svc.jobs("", "");
+    expect(JSON.stringify(await svc.description("remotive:1"))).toBe('[{"type":"paragraph","text":"Hi"}]');
+  });
+});

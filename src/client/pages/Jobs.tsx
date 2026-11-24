@@ -4,6 +4,7 @@ import { REMOTIVE, safeApplyUrl } from "@shared/jobs";
 import { JOB_SORTS, type JobSort } from "@shared/schemas";
 import { Button, Card, Empty, ErrorNotice, Field, FillPage, Notice, PageHeader, Pagination, Select, TextInput } from "@/components/ui";
 import { JobApplyPanel } from "@/components/JobApplyPanel";
+import { JobDetailsPanel } from "@/components/JobDetailsPanel";
 import { MultiSelect } from "@/components/MultiSelect";
 import { HIRING_COMPANIES, type HiringCompany } from "@/data/hiringCompanies";
 import { useDebounced } from "@/hooks/useDebounced";
@@ -20,8 +21,8 @@ const PanelTitle = ({ children }: { children: string }) => (
   <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">{children}</h2>
 );
 
-/** One job as a card: title, company, kind / pay, where it can be done from, skills, how long ago, source, and Apply Now (which opens the email panel). */
-function JobCard({ job, onApply }: { job: JobDto; onApply: () => void }) {
+/** One job as a card: title, company, kind / pay, where it can be done from, skills, how long ago, source, and View Job (the description panel) and Apply Now (the email panel). */
+function JobCard({ job, onView, onApply }: { job: JobDto; onView: () => void; onApply: () => void }) {
   const meta = [job.remote ? "Remote" : job.location || "Location not given", job.employmentType, job.salary].filter(Boolean).join(" · ");
   // Checked again here, before the link is ever drawn: only an https address on a job source's own site can be opened.
   const applyUrl = safeApplyUrl(job.url);
@@ -50,7 +51,10 @@ function JobCard({ job, onApply }: { job: JobDto; onApply: () => void }) {
             </>
           )}
         </p>
-        <Button variant="primary" className="cursor-pointer" onClick={onApply} aria-label={`Apply now: ${job.title}`}>Apply Now</Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button variant="secondary" className="cursor-pointer" onClick={onView} aria-label={`View job: ${job.title}`}>View Job</Button>
+          <Button variant="primary" className="cursor-pointer" onClick={onApply} aria-label={`Apply now: ${job.title}`}>Apply Now</Button>
+        </div>
       </div>
     </article>
   );
@@ -105,6 +109,8 @@ export function Jobs() {
   const [page, setPage] = useState(1);
   const [applying, setApplying] = useState<JobDto | null>(null); // the job whose Apply panel is showing (it stays until it has slid out)
   const [applyOpen, setApplyOpen] = useState(false);
+  const [viewing, setViewing] = useState<JobDto | null>(null); // the job whose description panel is showing
+  const [viewOpen, setViewOpen] = useState(false);
 
   const typed = useDebounced(draft.keyword.trim(), KEYWORD_DEBOUNCE_MS);
   useEffect(() => { setKeyword(typed); setPage(1); }, [typed]);
@@ -198,7 +204,7 @@ export function Jobs() {
               <div className={`min-h-0 flex-1 overflow-y-auto p-4 transition-opacity ${jobs.isPlaceholderData ? "opacity-60" : ""}`} role="list" aria-label="Jobs">
                 <div className="space-y-3">
                   {data.items.map((j) => (
-                    <div role="listitem" key={j.id}><JobCard job={j} onApply={() => { setApplying(j); setApplyOpen(true); }} /></div>
+                    <div role="listitem" key={j.id}><JobCard job={j} onView={() => { setViewing(j); setViewOpen(true); }} onApply={() => { setApplying(j); setApplyOpen(true); }} /></div>
                   ))}
                 </div>
                 {total === 0 && <Empty>{filtered ? "No jobs match your filters. Try removing one." : "No jobs are available right now."}</Empty>}
@@ -219,7 +225,17 @@ export function Jobs() {
           </Card>
         </aside>
       </div>
-      {applying && <JobApplyPanel key={applying.id} job={applying} open={applyOpen} onClose={() => setApplyOpen(false)} onExited={() => setApplying(null)} />}
+      {viewing && (
+        <JobDetailsPanel
+          key={`view-${viewing.id}`} // the two panels are siblings: their keys must differ even for the same job
+          job={viewing}
+          open={viewOpen}
+          onClose={() => setViewOpen(false)}
+          onExited={() => setViewing(null)}
+          onApply={() => { setViewOpen(false); setApplying(viewing); setApplyOpen(true); }} // this panel slides out as the email panel slides in
+        />
+      )}
+      {applying && <JobApplyPanel key={`apply-${applying.id}`} job={applying} open={applyOpen} onClose={() => setApplyOpen(false)} onExited={() => setApplying(null)} />}
     </FillPage>
   );
 }

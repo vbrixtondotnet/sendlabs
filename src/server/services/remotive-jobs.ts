@@ -1,6 +1,7 @@
 import { z } from "zod";
-import type { JobCategoryDto, JobDto } from "../../shared/api";
+import type { JobCategoryDto, JobDescriptionBlock, JobDto } from "../../shared/api";
 import { REMOTIVE, safeApplyUrl } from "../../shared/jobs";
+import { toDescriptionBlocks } from "../lib/job-description";
 import { HourlyCap, JobSourceError, getJson, once, untilAborted } from "../lib/live-fetch";
 
 /**
@@ -37,6 +38,7 @@ const remoteJob = z.object({
   publication_date: z.string().nullish(),
   candidate_required_location: z.string().nullish(),
   salary: z.string().nullish(),
+  description: z.string().nullish(),
 });
 const remoteJobs = z.object({ jobs: z.array(z.unknown()) });
 const remoteCategories = z.object({ jobs: z.array(z.object({ name: z.string(), slug: z.string() }).passthrough()) });
@@ -83,7 +85,8 @@ export function mapRemotiveJob(input: z.input<typeof remoteJob>): JobDto {
 
 /** What the service remembers between requests. A Worker keeps it for as long as that instance lives, so it is only ever a saving. */
 export class RemotiveCache {
-  readonly lists = new Map<string, { at: number; jobs: JobDto[] }>();
+  /** Each list with its jobs' descriptions, already reduced to plain text blocks (a few KB each, not Remotive's tens of KB of styled HTML). */
+  readonly lists = new Map<string, { at: number; jobs: JobDto[]; descriptions: Map<string, JobDescriptionBlock[]> }>();
   categories: { at: number; items: JobCategoryDto[] } | null = null;
   readonly inFlight = new Map<string, Promise<unknown>>();
   cap = new HourlyCap(REMOTIVE.name, MAX_UPSTREAM_PER_HOUR);
@@ -148,6 +151,7 @@ export class RemotiveJobService {
           if (!body.success) throw new JobSourceError(REMOTIVE.name, "parse", "Remotive's answer was not the expected shape");
           const seen = new Set<string>();
           const out: JobDto[] = [];
+          const descriptions = new Map<string, JobDescriptionBlock[]>();
           for (const raw of body.data.jobs) {
             const parsed = remoteJob.safeParse(raw);
             if (!parsed.success) continue; // one odd job does not spoil the rest
@@ -155,8 +159,9 @@ export class RemotiveJobService {
             if (job.title === "" || seen.has(job.id)) continue;
             seen.add(job.id);
             out.push(job);
+            descriptions.set(job.id, toDescriptionBlocks(parsed.data.description));
           }
-          this.cache.lists.set(key, { at: this.now(), jobs: out });
+          this.cache.lists.set(key, { at: this.now(), jobs: out, descriptions });
           while (this.cache.lists.size > MAX_CACHE_ENTRIES) this.cache.lists.delete(this.cache.lists.keys().next().value!);
           return out;
         }),
@@ -168,6 +173,18 @@ export class RemotiveJobService {
       if (fallback) return fallback.jobs; // an old copy beats an error
       throw e;
     }
+  }
+
+  /**
+   * The description of one of Remotive's jobs (by its `remotive:<id>`), as plain text blocks, from the lists already in memory; if
+   * none holds it (they expired), the unfiltered list is fetched again once. Null when Remotive no longer lists the job.
+   */
+  async description(id: string, signal?: AbortSignal): Promise<JobDescriptionBlock[] | null> {
+    const find = () => { for (const entry of this.cache.lists.values()) { const d = entry.descriptions.get(id); if (d) return d; } return null; };
+    const known = find();
+    if (known) return known;
+    await this.jobs("", "", signal);
+    return find();
   }
 
   /** Remotive's own category list (the value its API takes, and the name people read), kept a day. */

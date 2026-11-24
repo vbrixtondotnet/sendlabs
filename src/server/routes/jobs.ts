@@ -41,6 +41,14 @@ jobRoutes.get("/categories", async (c) => {
   const items = await viaSources(() => service(c).categories(c.req.raw.signal));
   return c.json({ items: items.map(({ value, label }) => ({ value, label })) });
 });
+/** The description of one job, for the View Job panel: plain text blocks, never markup. `?id=remotive:123`. */
+jobRoutes.get("/description", async (c) => {
+  const id = (c.req.query("id") ?? "").trim();
+  if (id === "" || id.length > 300) throw new ApiError(400, "VALIDATION_ERROR", "Validation failed", [{ path: "id", message: "A job id is required" }]);
+  const blocks = await viaSources(() => service(c).description(id, c.req.raw.signal));
+  if (!blocks) throw new ApiError(404, "NOT_FOUND", "This job is no longer listed");
+  return c.json({ id, blocks });
+});
 jobRoutes.get("/locations", async (c) => c.json({ items: await viaSources(() => service(c).locations(c.req.raw.signal)) }));
 
 /**

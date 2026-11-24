@@ -1,4 +1,4 @@
-import type { JobCategoryDto, JobDto, JobsPageDto } from "../../shared/api";
+import type { JobCategoryDto, JobDescriptionBlock, JobDto, JobsPageDto } from "../../shared/api";
 import { ARBEITNOW, REMOTIVE } from "../../shared/jobs";
 import type { JobListQuery } from "../../shared/schemas";
 import { JobSourceError } from "../lib/live-fetch";
@@ -130,6 +130,16 @@ export class JobSearchService {
       if (!known.has(normalize(name))) { known.add(normalize(name)); out.push({ value: name, label: name, remotive: false }); }
     }
     return out.sort((a, b) => a.label.localeCompare(b.label));
+  }
+
+  /**
+   * The description of one job, from the source its id names ("remotive:123", "arbeitnow:some-slug"), as plain text blocks. Null when
+   * the id is not one of ours or the source no longer lists the job.
+   */
+  async description(id: string, signal?: AbortSignal): Promise<JobDescriptionBlock[] | null> {
+    if (id.startsWith("remotive:")) return this.sources.remotive.description(id, signal);
+    if (id.startsWith("arbeitnow:")) return this.sources.arbeitnow.description(id, signal);
+    return null;
   }
 
   /** The choices of the Location filter: the places the jobs name (both sources), most common first, at most 150. */

@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
-import type { JobCategoryDto, JobsPageDto } from "@shared/api";
+import type { JobCategoryDto, JobDescriptionDto, JobsPageDto } from "@shared/api";
 import type { JobSort } from "@shared/schemas";
 import { api, withQuery } from "./http";
 
@@ -79,5 +79,15 @@ export function useSendApplicationEmail() {
       for (const f of input.attachments) form.append("attachments", f, f.name);
       return api<{ sent: boolean; attachments: number }>("POST", "/api/jobs/apply-email", form);
     },
+  });
+}
+
+/** The description of one job, loaded when its View Job panel opens (the list does not carry descriptions: there are hundreds of them). */
+export function useJobDescription(id: string) {
+  return useQuery({
+    queryKey: ["jobs", "description", id],
+    queryFn: ({ signal }) => api<JobDescriptionDto>("GET", withQuery("/api/jobs/description", { id }), undefined, signal),
+    staleTime: 10 * 60_000,
+    retry: false,
   });
 }

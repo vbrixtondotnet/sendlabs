@@ -238,6 +238,18 @@ export interface JobDto {
   publishedAt: string | null;
 }
 
+/** One piece of a job's description, as plain text: the page draws it with ordinary elements (a description is never shown as markup). */
+export type JobDescriptionBlock =
+  | { type: "heading"; text: string }
+  | { type: "paragraph"; text: string }
+  | { type: "list"; ordered: boolean; items: string[] };
+
+/** What the View Job panel shows besides the job it was opened from. */
+export interface JobDescriptionDto {
+  id: string;
+  blocks: JobDescriptionBlock[];
+}
+
 /** A page of jobs, plus the sources that could not be reached for it (the others are still shown). */
 export interface JobsPageDto extends Page<JobDto> {
   unavailable: string[];
