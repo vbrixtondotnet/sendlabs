@@ -5,6 +5,7 @@ import { JobSourceError } from "../../src/server/lib/live-fetch";
 import { ArbeitnowCache, ArbeitnowJobService, sharedArbeitnowCache, LIST_TTL_MS as ARB_TTL, MAX_UPSTREAM_PER_HOUR as ARB_CAP, employmentTypeOf, mapArbeitnowJob } from "../../src/server/services/arbeitnow-jobs";
 import { JobSearchService, isOpenToAnyone, matchesKeyword, matchesLocation } from "../../src/server/services/job-search";
 import { LIST_TTL_MS, MAX_UPSTREAM_PER_HOUR, RemotiveCache, RemotiveJobService, mapRemotiveJob, sharedRemotiveCache } from "../../src/server/services/remotive-jobs";
+import { JobicyCache, JobicyJobService, sharedJobicyCache, MAX_UPSTREAM_PER_HOUR as JOB_CAP, mapJobicyJob, salaryOf } from "../../src/server/services/jobicy-jobs";
 import { startHarness, type Harness } from "./harness";
 
 /** A job as Remotive's API sends it. */
@@ -39,15 +40,37 @@ const arb = (slug: string, over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-/** A stand-in for both sources: records every request URL, answers from `remotive` / `arbeitnow`, and each can fail or be held back. */
-function world(initial: { remotive?: unknown[]; arbeitnow?: unknown[] } = {}) {
+/** A job as Jobicy's API sends it (pubDate has no zone: UTC). */
+const jb = (id: number, over: Record<string, unknown> = {}) => ({
+  id,
+  url: `https://jobicy.com/jobs/${id}-role-${id}`,
+  jobTitle: `Jobicy role ${id}`,
+  companyName: "Globex &amp; Co",
+  companyLogo: `https://jobicy.com/data/logo/${id}.png`,
+  jobIndustry: ["Marketing &amp; Sales"],
+  jobType: ["Full-Time"],
+  jobGeo: "Anywhere",
+  jobLevel: "Senior",
+  jobDescription: "<p>Jobicy description</p>",
+  pubDate: "2026-11-20 09:30:00",
+  salaryMin: 60000,
+  salaryMax: 80000,
+  salaryCurrency: "USD",
+  salaryPeriod: "yearly",
+  ...over,
+});
+
+/** A stand-in for all three sources: records every request URL, answers from `remotive` / `arbeitnow`, and each can fail or be held back. */
+function world(initial: { remotive?: unknown[]; arbeitnow?: unknown[]; jobicy?: unknown[] } = {}) {
   const state = {
     remotive: (initial.remotive ?? []) as unknown[],
     arbeitnow: (initial.arbeitnow ?? []) as unknown[],
+    jobicy: (initial.jobicy ?? []) as unknown[],
     categories: [{ id: 1, name: "Software Development", slug: "software-dev" }, { id: 2, name: "Customer Service", slug: "customer-support" }],
     calls: [] as string[],
     failRemotive: null as null | (() => Response),
     failArbeitnow: null as null | (() => Response),
+    failJobicy: null as null | (() => Response),
     gate: null as null | Promise<void>,
   };
   const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
@@ -55,6 +78,7 @@ function world(initial: { remotive?: unknown[]; arbeitnow?: unknown[] } = {}) {
     const url = String(input);
     state.calls.push(url);
     if (state.gate) await state.gate;
+    if (url.startsWith("https://jobicy.com/")) return state.failJobicy ? state.failJobicy() : json({ apiVersion: "2", jobCount: state.jobicy.length, jobs: state.jobicy });
     if (url.startsWith("https://www.arbeitnow.com/")) return state.failArbeitnow ? state.failArbeitnow() : json({ data: state.arbeitnow, links: {}, meta: {} });
     if (state.failRemotive) return state.failRemotive();
     return json(url.includes("/categories") ? { jobs: state.categories } : { "job-count": state.remotive.length, jobs: state.remotive });
@@ -67,7 +91,8 @@ type Opts = { now?: () => number; timeoutMs?: number };
 const makeRemotive = (f: typeof fetch, o: Opts = {}) => new RemotiveJobService({ fetch: f, cache: new RemotiveCache(), ...(o.now ? { now: o.now } : {}), ...(o.timeoutMs ? { timeoutMs: o.timeoutMs } : {}) });
 const makeArbeitnow = (f: typeof fetch, o: Opts = {}) => new ArbeitnowJobService({ fetch: f, cache: new ArbeitnowCache(), ...(o.now ? { now: o.now } : {}), ...(o.timeoutMs ? { timeoutMs: o.timeoutMs } : {}) });
 /** The merged search, with caches of its own so tests never share what they remembered. */
-const makeSearch = (f: typeof fetch, o: Opts = {}) => new JobSearchService({ remotive: makeRemotive(f, o), arbeitnow: makeArbeitnow(f, o) });
+const makeJobicy = (f: typeof fetch, o: Opts = {}) => new JobicyJobService({ fetch: f, cache: new JobicyCache(), ...(o.now ? { now: o.now } : {}), ...(o.timeoutMs ? { timeoutMs: o.timeoutMs } : {}) });
+const makeSearch = (f: typeof fetch, o: Opts = {}) => new JobSearchService({ remotive: makeRemotive(f, o), arbeitnow: makeArbeitnow(f, o), jobicy: makeJobicy(f, o) });
 const q = (o: Record<string, unknown> = {}) => jobListQuery.parse(o);
 const ids = async (s: JobSearchService, o: Record<string, unknown> = {}) => (await s.list(q(o))).items.map((j) => j.id);
 
@@ -143,6 +168,57 @@ describe("mapping Arbeitnow's job", () => {
       [["Befristeter arbeitsvertrag"], "Contract"], [["Experienced", "Mid", "Entry"], ""], [["berufserfahren"], ""], [[], ""], [["Experienced", "Full Time"], "Full-time"],
     ];
     for (const [types, want] of cases) expect(employmentTypeOf(types), types.join("|")).toBe(want);
+  });
+});
+
+describe("Jobicy", () => {
+  it("maps its job to the app's JobDto: entities decoded, UTC time, pay line, remote, its own link", () => {
+    expect(mapJobicyJob(jb(5) as never)).toEqual({
+      id: "jobicy:5", title: "Jobicy role 5", companyName: "Globex & Co", companyLogo: "https://jobicy.com/data/logo/5.png", category: "Marketing & Sales", employmentType: "Full-time",
+      remote: true, location: "Anywhere", salary: "USD 60,000 - 80,000 / year", skills: ["Marketing & Sales"], url: "https://jobicy.com/jobs/5-role-5", source: "Jobicy",
+      publishedAt: "2026-11-20T09:30:00.000Z",
+    });
+  });
+
+  it("copes with missing fields, and only links to its own site", () => {
+    expect(mapJobicyJob({ id: 9, jobTitle: "T" } as never)).toMatchObject({ id: "jobicy:9", companyName: "", salary: "", location: "", skills: [], publishedAt: null, url: "", employmentType: "" });
+    expect(mapJobicyJob(jb(1, { url: "https://evil.example/jobicy.com" }) as never).url).toBe("");
+    expect(mapJobicyJob(jb(2, { url: "http://jobicy.com/x" }) as never).url).toBe("");
+    expect(mapJobicyJob(jb(3, { jobType: ["Part-Time"] }) as never).employmentType).toBe("Part-time");
+    expect(salaryOf({ salaryMin: 0, salaryMax: 0 })).toBe("");
+    expect(salaryOf({ salaryMin: 50, salaryMax: 50, salaryCurrency: "EUR", salaryPeriod: "hourly" })).toBe("EUR 50 / hour");
+  });
+
+  it("is merged with the other sources, newest first, and its description is read from memory", async () => {
+    const { state, fetchFn } = world({ remotive: [rem(1)], arbeitnow: [arb("a")], jobicy: [jb(1, { pubDate: "2026-11-25 10:00:00" })] });
+    const s = makeSearch(fetchFn);
+    expect((await ids(s))[0]).toBe("jobicy:1");
+    expect(state.calls.filter((c) => c.startsWith("https://jobicy.com/api/v2/remote-jobs"))).toEqual(["https://jobicy.com/api/v2/remote-jobs?count=100"]);
+    expect(await s.description("jobicy:1")).toEqual([{ type: "paragraph", text: "Jobicy description" }]);
+    expect(await s.description("jobicy:nope")).toBeNull();
+    expect((await s.categories()).map((c) => c.label)).not.toContain("Marketing & Sales"); // one job is too few to become a category
+  });
+
+  it("keeps the list for an hour, and the others still answer when it fails", async () => {
+    let t = 1_000_000;
+    const { count, state, fetchFn } = world({ remotive: [rem(1)], jobicy: [jb(1)] });
+    const s = makeSearch(fetchFn, { now: () => t });
+    await s.list(q());
+    await s.list(q({ keyword: "zzz" }));
+    expect(count("jobicy.com")).toBe(1);
+    state.failJobicy = () => new Response("nope", { status: 500 });
+    const other = makeSearch(fetchFn, { now: () => t });
+    const r = await other.list(q());
+    expect(r.unavailable).toEqual(["Jobicy"]);
+    expect(r.items.some((j) => j.source === "Remotive")).toBe(true);
+  });
+
+  it("is capped per hour", async () => {
+    let t = 1_000_000;
+    const { count, fetchFn } = world({ jobicy: [jb(1)] });
+    const svc = makeJobicy(fetchFn, { now: () => t });
+    for (let i = 0; i < JOB_CAP + 3; i++) { t += 61 * 60_000; await svc.jobs(); } // each call is past the hour, so each is a real request...
+    expect(count("jobicy.com")).toBe(JOB_CAP + 3);
   });
 });
 
@@ -342,10 +418,12 @@ describe("when a source fails", () => {
     const w = world({ remotive: [rem(1)], arbeitnow: [arb("a")] });
     w.state.failRemotive = () => new Response("x", { status: 500 });
     w.state.failArbeitnow = () => new Response("x", { status: 500 });
+    w.state.failJobicy = () => new Response("x", { status: 500 });
     const s = makeSearch(w.fetchFn);
     await expect(s.list(q())).rejects.toBeInstanceOf(JobSourceError);
     w.state.failRemotive = null;
     w.state.failArbeitnow = null;
+    w.state.failJobicy = null;
     expect((await s.list(q())).total).toBe(2);
   });
 
@@ -500,6 +578,8 @@ describe("the Jobs API", () => {
       expect(partial.status).toBe(200);
       expect(partial.json.unavailable).toEqual(["Arbeitnow"]);
       w.state.failRemotive = () => new Response("x", { status: 500 });
+      w.state.failJobicy = () => new Response("x", { status: 500 });
+      sharedJobicyCache.clear();
       sharedRemotiveCache.clear(); // no earlier good copy of either source: nothing to show
       sharedArbeitnowCache.clear();
       const bad = await hh.jobSeeker.api("GET", "/api/jobs");

@@ -10,7 +10,7 @@ import { sendApplicationEmail } from "../services/job-application-email";
 import { JobSearchService, jobSources } from "../services/job-search";
 
 /**
- * Jobs, live from Remotive and Arbeitnow, merged: nothing is stored. The browser asks us, we ask the sources (each with a timeout, a
+ * Jobs, live from Remotive, Arbeitnow and Jobicy, merged: nothing is stored. The browser asks us, we ask the sources (each with a timeout, a
  * short in-memory cache, one shared request for identical searches and an hourly cap: see their services), filter / sort / page the
  * merged list and send it back. Open to every signed-in account: the jobs belong to no account. The request's own abort signal is passed
  * on, so a search the page has already replaced stops being waited for.

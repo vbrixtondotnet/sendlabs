@@ -13,7 +13,7 @@ export interface JobFilters {
 }
 
 /**
- * One page of live jobs, from Remotive and Arbeitnow merged. Our server asks them (the browser never does), filters, sorts and pages them. React Query hands the
+ * One page of live jobs, from Remotive, Arbeitnow and Jobicy merged. Our server asks them (the browser never does), filters, sorts and pages them. React Query hands the
  * request an abort signal, so a search that has already been replaced is cancelled instead of finished.
  */
 export function useJobs(filters: JobFilters, page: number, pageSize: number) {

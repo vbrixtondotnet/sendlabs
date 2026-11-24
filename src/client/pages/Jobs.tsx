@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { JobDto, JobsPageDto } from "@shared/api";
-import { REMOTIVE } from "@shared/jobs";
+import { CANDIDATE_LOCATION_SOURCES } from "@shared/jobs";
 import { JOB_SORTS, type JobSort } from "@shared/schemas";
 import { Button, Card, Empty, ErrorNotice, Field, FillPage, Notice, PageHeader, Pagination, Select, TextInput } from "@/components/ui";
 import { JobApplyPanel } from "@/components/panels/JobApplyPanel";
@@ -34,8 +34,8 @@ function JobCard({ job, onView, onApply }: { job: JobDto; onView: () => void; on
         </div>
       </div>
       <p className="mt-3 text-slate-700 dark:text-slate-200">{meta}</p>
-      {/* On Remotive the location is where candidates may be; on Arbeitnow it is where the job is (shown in the line above unless the job is remote) */}
-      {job.remote && job.location && <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">{job.source === REMOTIVE.name ? "Candidates from" : "Based in"}: {job.location}</p>}
+      {/* On Remotive and Jobicy the location is where candidates may be; on Arbeitnow it is where the job is (shown in the line above unless the job is remote) */}
+      {job.remote && job.location && <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">{CANDIDATE_LOCATION_SOURCES.includes(job.source) ? "Candidates from" : "Based in"}: {job.location}</p>}
       {job.skills.length > 0 && <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{job.skills.slice(0, 8).join(" · ")}</p>}
       <div className="mt-3 flex items-center justify-between gap-3">
         {/* Only how long ago. The source is named, and linked to, in the View Job panel. */}
