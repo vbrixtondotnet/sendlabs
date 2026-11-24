@@ -67,3 +67,20 @@ export async function getJson(source: string, doFetch: typeof fetch, url: string
     throw new JobSourceError(source, "parse", `${source}'s answer was not valid JSON`);
   }
 }
+
+/** One POST of a JSON body with a timeout, mapped to JobSourceError, returning the parsed JSON. The address (which may hold a key) is never put in a message. */
+export async function postJson(source: string, doFetch: typeof fetch, url: string, body: unknown, timeoutMs: number): Promise<unknown> {
+  let res: Response;
+  try {
+    res = await doFetch(url, { method: "POST", headers: { accept: "application/json", "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs) });
+  } catch (e) {
+    const timedOut = e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
+    throw new JobSourceError(source, timedOut ? "timeout" : "network", timedOut ? `${source} did not answer within ${timeoutMs / 1000} seconds` : `Could not reach ${source}`);
+  }
+  if (!res.ok) throw new JobSourceError(source, "http", `${source} answered ${res.status}`, res.status);
+  try {
+    return await res.json();
+  } catch {
+    throw new JobSourceError(source, "parse", `${source}'s answer was not valid JSON`);
+  }
+}

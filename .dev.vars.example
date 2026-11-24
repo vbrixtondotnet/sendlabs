@@ -35,3 +35,6 @@ TOKEN_ENCRYPTION_KEY=generate-with-openssl-rand-base64-32
 # The public HTTPS address the unsubscribe links in campaign emails point at (Gmail only shows its Unsubscribe button for a public
 # HTTPS address). APP_BASE_URL stays http://localhost:5173 for sign-in. /unsubscribe/* and /api/unsubscribe/* must reach this app.
 # UNSUBSCRIBE_BASE_URL=https://sabertoothsoftwarelabs.net
+
+# Jobs: Jooble is used as an extra job source when this key is set (free key: https://jooble.org/api/about). Optional.
+# JOOBLE_API_KEY=your-jooble-key

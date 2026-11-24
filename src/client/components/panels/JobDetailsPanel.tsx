@@ -1,5 +1,5 @@
 import type { JobDescriptionBlock, JobDto } from "@shared/api";
-import { CANDIDATE_LOCATION_SOURCES, CREDITED_SOURCES, safeApplyUrl } from "@shared/jobs";
+import { CANDIDATE_LOCATION_SOURCES, CREDITED_SOURCES, safeApplyUrl, shortLocation } from "@shared/jobs";
 import { Button, ErrorNotice } from "@/components/ui";
 import { SlidePanel } from "@/components/SlidePanel";
 import { postedAgo } from "@/lib/jobs";
@@ -49,7 +49,7 @@ export function JobDetailsPanel({ job, open = true, onClose, onExited, onApply }
     >
       <div className="mb-5 space-y-1 border-b border-slate-200 pb-4 dark:border-slate-800">
         <p className="text-slate-800 dark:text-slate-100">{meta}</p>
-        {job.remote && job.location && <p className="text-sm text-slate-500 dark:text-slate-400">{CANDIDATE_LOCATION_SOURCES.includes(job.source) ? "Candidates from" : "Based in"}: {job.location}</p>}
+        {job.remote && job.location && <p className="text-sm text-slate-500 dark:text-slate-400">{CANDIDATE_LOCATION_SOURCES.includes(job.source) ? "Candidates from" : "Based in"}: {shortLocation(job.location)}</p>}
         {job.skills.length > 0 && <p className="text-sm text-slate-600 dark:text-slate-300">{job.skills.slice(0, 12).join(" · ")}</p>}
         {(postedLine || CREDITED_SOURCES.includes(job.source)) && (
           <p className="text-sm text-slate-500 dark:text-slate-400">

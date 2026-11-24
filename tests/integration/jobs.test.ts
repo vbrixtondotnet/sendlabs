@@ -6,6 +6,9 @@ import { ArbeitnowCache, ArbeitnowJobService, sharedArbeitnowCache, LIST_TTL_MS 
 import { JobSearchService, isOpenToAnyone, matchesKeyword, matchesLocation } from "../../src/server/services/job-search";
 import { LIST_TTL_MS, MAX_UPSTREAM_PER_HOUR, RemotiveCache, RemotiveJobService, mapRemotiveJob, sharedRemotiveCache } from "../../src/server/services/remotive-jobs";
 import { JobicyCache, JobicyJobService, sharedJobicyCache, MAX_UPSTREAM_PER_HOUR as JOB_CAP, mapJobicyJob, salaryOf } from "../../src/server/services/jobicy-jobs";
+import { HimalayasCache, HimalayasJobService, mapHimalayasJob, sharedHimalayasCache } from "../../src/server/services/himalayas-jobs";
+import { JoobleCache, JoobleJobService, mapJoobleJob } from "../../src/server/services/jooble-jobs";
+import { shortLocation } from "../../src/shared/jobs";
 import { startHarness, type Harness } from "./harness";
 
 /** A job as Remotive's API sends it. */
@@ -60,12 +63,51 @@ const jb = (id: number, over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-/** A stand-in for all three sources: records every request URL, answers from `remotive` / `arbeitnow`, and each can fail or be held back. */
-function world(initial: { remotive?: unknown[]; arbeitnow?: unknown[]; jobicy?: unknown[]; jobicyReference?: boolean } = {}) {
+/** A job as Himalayas's search sends it (pubDate is in seconds). */
+const him = (slug: string, over: Record<string, unknown> = {}) => ({
+  title: `Himalayas role ${slug}`,
+  companyName: "Virtual Assist",
+  companyLogo: "https://cdn-images.himalayas.app/abc",
+  employmentType: "Full Time",
+  minSalary: 8000,
+  maxSalary: 12000,
+  currency: "USD",
+  salaryPeriod: "monthly",
+  locationRestrictions: ["Philippines", "India"],
+  categories: ["Virtual-Assistant", "Administrative-Support"],
+  parentCategories: ["Human Resources"],
+  description: "<p>Himalayas description</p>",
+  pubDate: Date.UTC(2026, 10, 24, 10) / 1000,
+  applicationLink: `https://himalayas.app/companies/virtual-assist/jobs/${slug}?utm_source=api`,
+  guid: `https://himalayas.app/companies/virtual-assist/jobs/${slug}`,
+  ...over,
+});
+
+/** A job as Jooble sends it. */
+const joo = (n: number, over: Record<string, unknown> = {}) => ({
+  id: 4000000000000000000 + n,
+  title: `Jooble <b>role</b> ${n}`,
+  location: "Manila, Philippines",
+  snippet: "Work from home as a &nbsp;virtual assistant",
+  salary: "PHP 25,000",
+  source: "example.com",
+  type: "Full-time",
+  link: `https://jooble.org/desc/${n}`,
+  company: "Acme PH",
+  updated: "2026-11-24T10:30:00.0000000",
+  ...over,
+});
+
+/** A stand-in for all the sources: records every request URL, answers from `remotive` / `arbeitnow`, and each can fail or be held back. */
+function world(initial: { remotive?: unknown[]; arbeitnow?: unknown[]; jobicy?: unknown[]; himalayas?: unknown[]; jooble?: unknown[]; jobicyReference?: boolean } = {}) {
   const state = {
     remotive: (initial.remotive ?? []) as unknown[],
     arbeitnow: (initial.arbeitnow ?? []) as unknown[],
     jobicy: (initial.jobicy ?? []) as unknown[],
+    himalayas: (initial.himalayas ?? []) as unknown[],
+    jooble: (initial.jooble ?? []) as unknown[],
+    joobleBodies: [] as unknown[],
+    failHimalayas: null as null | (() => Response),
     categories: [{ id: 1, name: "Software Development", slug: "software-dev" }, { id: 2, name: "Customer Service", slug: "customer-support" }],
     calls: [] as string[],
     failRemotive: null as null | (() => Response),
@@ -74,10 +116,15 @@ function world(initial: { remotive?: unknown[]; arbeitnow?: unknown[]; jobicy?: 
     gate: null as null | Promise<void>,
   };
   const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
-  const fetchFn = (async (input: string | URL | Request) => {
+  const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
     state.calls.push(url);
     if (state.gate) await state.gate;
+    if (url.startsWith("https://himalayas.app/")) return state.failHimalayas ? state.failHimalayas() : json({ totalCount: state.himalayas.length, jobs: state.himalayas });
+    if (url.startsWith("https://jooble.org/api/")) {
+      state.joobleBodies.push(JSON.parse(String(init?.body ?? "{}")));
+      return json({ totalCount: state.jooble.length, jobs: state.jooble });
+    }
     if (url.startsWith("https://jobicy.com/")) {
       if (url.includes("get=industries")) return json({ industries: !initial.jobicyReference ? [] : [{ industryName: "Marketing &amp; Sales", industrySlug: "marketing" }, { industryName: "Legal &amp; Compliance", industrySlug: "legal" }] });
       if (url.includes("get=locations")) return json({ locations: !initial.jobicyReference ? [] : [{ geoName: "Anywhere", geoSlug: "anywhere" }, { geoName: "USA", geoSlug: "usa" }, { geoName: "Germany", geoSlug: "germany" }] });
@@ -96,7 +143,10 @@ const makeRemotive = (f: typeof fetch, o: Opts = {}) => new RemotiveJobService({
 const makeArbeitnow = (f: typeof fetch, o: Opts = {}) => new ArbeitnowJobService({ fetch: f, cache: new ArbeitnowCache(), ...(o.now ? { now: o.now } : {}), ...(o.timeoutMs ? { timeoutMs: o.timeoutMs } : {}) });
 /** The merged search, with caches of its own so tests never share what they remembered. */
 const makeJobicy = (f: typeof fetch, o: Opts = {}) => new JobicyJobService({ fetch: f, cache: new JobicyCache(), ...(o.now ? { now: o.now } : {}), ...(o.timeoutMs ? { timeoutMs: o.timeoutMs } : {}) });
-const makeSearch = (f: typeof fetch, o: Opts = {}) => new JobSearchService({ remotive: makeRemotive(f, o), arbeitnow: makeArbeitnow(f, o), jobicy: makeJobicy(f, o) });
+const makeHimalayas = (f: typeof fetch, o: Opts = {}) => new HimalayasJobService({ fetch: f, cache: new HimalayasCache(), ...(o.now ? { now: o.now } : {}), ...(o.timeoutMs ? { timeoutMs: o.timeoutMs } : {}) });
+const makeJooble = (f: typeof fetch, o: Opts = {}) => new JoobleJobService({ fetch: f, apiKey: "secret-key-123", cache: new JoobleCache(), ...(o.now ? { now: o.now } : {}), ...(o.timeoutMs ? { timeoutMs: o.timeoutMs } : {}) });
+const makeSearch = (f: typeof fetch, o: Opts = {}, withJooble = false) =>
+  new JobSearchService({ remotive: makeRemotive(f, o), arbeitnow: makeArbeitnow(f, o), jobicy: makeJobicy(f, o), himalayas: makeHimalayas(f, o), ...(withJooble ? { jooble: makeJooble(f, o) } : {}) });
 const q = (o: Record<string, unknown> = {}) => jobListQuery.parse(o);
 const ids = async (s: JobSearchService, o: Record<string, unknown> = {}) => (await s.list(q(o))).items.map((j) => j.id);
 
@@ -248,6 +298,86 @@ describe("Jobicy", () => {
     const s = makeSearch(fetchFn);
     expect((await s.categories()).map((c) => c.label)).toEqual(expect.arrayContaining(["Marketing & Sales", "Legal & Compliance"]));
     expect(await ids(s, { category: "Marketing & Sales" })).toEqual(["jobicy:1"]);
+  });
+});
+
+describe("Himalayas", () => {
+  it("maps its job: remote, open to the countries it lists, pay line, broad category, its own link", () => {
+    expect(mapHimalayasJob(him("va") as never)).toEqual({
+      id: "himalayas:companies/virtual-assist/jobs/va", title: "Himalayas role va", companyName: "Virtual Assist", companyLogo: "https://cdn-images.himalayas.app/abc",
+      category: "Human Resources", employmentType: "Full-time", remote: true, location: "Philippines, India", salary: "USD 8,000 - 12,000 / month",
+      skills: ["Human Resources", "Virtual Assistant", "Administrative Support"], url: "https://himalayas.app/companies/virtual-assist/jobs/va?utm_source=api",
+      source: "Himalayas", publishedAt: "2026-11-24T10:00:00.000Z",
+    });
+    expect(mapHimalayasJob(him("x", { locationRestrictions: [], applicationLink: "https://evil.example/himalayas.app" }) as never)).toMatchObject({ location: "", url: "" });
+    expect(mapHimalayasJob(him("y", { employmentType: "Contractor" }) as never).employmentType).toBe("Contract");
+  });
+
+  it("passes the keyword as q and each place as country, two pages at most, and merges with the others", async () => {
+    const full = Array.from({ length: 20 }, (_, i) => him(`job${i}`));
+    const { state, fetchFn } = world({ himalayas: full });
+    const s = makeSearch(fetchFn);
+    const r = await s.list(q({ keyword: "virtual assistant", locations: "Philippines,India", pageSize: 100 }));
+    const asked = state.calls.filter((c) => c.startsWith("https://himalayas.app/"));
+    expect(asked.filter((c) => c.includes("q=virtual+assistant") && c.includes("country=Philippines"))).toHaveLength(2); // page 1 and 2 (page 1 was full)
+    expect(asked.some((c) => c.includes("country=India"))).toBe(true);
+    expect(asked.some((c) => c.includes("page=2"))).toBe(true);
+    expect(r.items.every((j) => /virtual assistant/i.test(`${j.title} ${j.skills.join(" ")} ${j.companyName}`))).toBe(true);
+    expect(r.items.some((j) => j.source === "Himalayas")).toBe(true);
+    expect(await s.description("himalayas:companies/virtual-assist/jobs/job1")).toEqual([{ type: "paragraph", text: "Himalayas description" }]);
+  });
+
+  it("is not fatal when it fails, and shortens a long country list for display only", async () => {
+    const { state, fetchFn } = world({ remotive: [rem(1)] });
+    state.failHimalayas = () => new Response("x", { status: 500 });
+    const r = await makeSearch(fetchFn).list(q());
+    expect(r.unavailable).toEqual(["Himalayas"]);
+    expect(r.items.map((j) => j.id)).toEqual(["remotive:1"]);
+    expect(shortLocation("A, B, C")).toBe("A, B, C");
+    expect(shortLocation("A, B, C, D, E, F, G, H")).toBe("A, B, C, D, E +3 more");
+  });
+});
+
+describe("Jooble", () => {
+  it("maps its job: markup stripped, a stable id from the link, remote only when it says so", () => {
+    const a = mapJoobleJob(joo(1) as never);
+    expect(a).toMatchObject({ title: "Jooble role 1", companyName: "Acme PH", location: "Manila, Philippines", salary: "PHP 25,000", employmentType: "Full-time", source: "Jooble", url: "https://jooble.org/desc/1", remote: true, publishedAt: "2026-11-24T10:30:00.000Z" });
+    expect(mapJoobleJob(joo(1) as never).id).toBe(a.id);
+    expect(mapJoobleJob(joo(2) as never).id).not.toBe(a.id);
+    expect(mapJoobleJob(joo(3, { snippet: "On site in the office", title: "Cashier" }) as never).remote).toBe(false);
+    expect(mapJoobleJob(joo(4, { link: "https://evil.example/x" }) as never).url).toBe("");
+  });
+
+  it("is only used when there is a key", async () => {
+    const { state, fetchFn } = world({ remotive: [rem(1)], jooble: [joo(1)] });
+    await makeSearch(fetchFn).list(q());
+    expect(state.calls.some((c) => c.startsWith("https://jooble.org/"))).toBe(false);
+    const { jobSources } = await import("../../src/server/services/job-search");
+    expect(jobSources(fetchFn).jooble).toBeUndefined();
+    expect(jobSources(fetchFn, { joobleApiKey: "  " }).jooble).toBeUndefined();
+    expect(jobSources(fetchFn, { joobleApiKey: "k" }).jooble).toBeDefined();
+  });
+
+  it("POSTs the keyword and each place; asks for 'remote' by default; skips itself when a category is chosen", async () => {
+    const { state, fetchFn } = world({ jooble: [joo(1)] });
+    const s = makeSearch(fetchFn, {}, true);
+    expect((await s.list(q())).items.some((j) => j.source === "Jooble")).toBe(true);
+    expect(state.joobleBodies.at(-1)).toMatchObject({ keywords: "remote" });
+    expect(state.calls.find((c) => c.startsWith("https://jooble.org/"))).toBe("https://jooble.org/api/secret-key-123");
+    state.joobleBodies.length = 0;
+    await s.list(q({ keyword: "virtual assistant", locations: "Philippines,India" }));
+    expect(state.joobleBodies).toEqual(expect.arrayContaining([{ keywords: "virtual assistant", location: "Philippines", page: "1" }, { keywords: "virtual assistant", location: "India", page: "1" }]));
+    state.joobleBodies.length = 0;
+    await s.list(q({ category: "Software Development" }));
+    expect(state.joobleBodies).toEqual([]);
+    expect(await s.description(mapJoobleJob(joo(1) as never).id)).toEqual([{ type: "paragraph", text: "Work from home as a virtual assistant" }]);
+  });
+
+  it("never puts its key in an error", async () => {
+    const fetchFn = (async () => new Response("denied", { status: 403 })) as typeof fetch;
+    const err = await makeJooble(fetchFn).jobs().catch((e) => e as Error);
+    expect(err).toMatchObject({ name: "JobSourceError", kind: "http" });
+    expect((err as Error).message).not.toContain("secret-key-123");
   });
 });
 
@@ -448,11 +578,13 @@ describe("when a source fails", () => {
     w.state.failRemotive = () => new Response("x", { status: 500 });
     w.state.failArbeitnow = () => new Response("x", { status: 500 });
     w.state.failJobicy = () => new Response("x", { status: 500 });
+    w.state.failHimalayas = () => new Response("x", { status: 500 });
     const s = makeSearch(w.fetchFn);
     await expect(s.list(q())).rejects.toBeInstanceOf(JobSourceError);
     w.state.failRemotive = null;
     w.state.failArbeitnow = null;
     w.state.failJobicy = null;
+    w.state.failHimalayas = null;
     expect((await s.list(q())).total).toBe(2);
   });
 
@@ -608,6 +740,8 @@ describe("the Jobs API", () => {
       expect(partial.json.unavailable).toEqual(["Arbeitnow"]);
       w.state.failRemotive = () => new Response("x", { status: 500 });
       w.state.failJobicy = () => new Response("x", { status: 500 });
+      w.state.failHimalayas = () => new Response("x", { status: 500 });
+      sharedHimalayasCache.clear();
       sharedJobicyCache.clear();
       sharedRemotiveCache.clear(); // no earlier good copy of either source: nothing to show
       sharedArbeitnowCache.clear();

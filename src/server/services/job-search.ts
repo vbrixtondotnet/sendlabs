@@ -1,13 +1,15 @@
 import type { JobCategoryDto, JobDescriptionBlock, JobDto, JobsPageDto } from "../../shared/api";
-import { ARBEITNOW, JOBICY, REMOTIVE } from "../../shared/jobs";
+import { ARBEITNOW, HIMALAYAS, JOBICY, JOOBLE, REMOTIVE } from "../../shared/jobs";
 import type { JobListQuery } from "../../shared/schemas";
 import { JobSourceError } from "../lib/live-fetch";
 import { ArbeitnowJobService } from "./arbeitnow-jobs";
+import { HimalayasJobService, MAX_COUNTRIES, type HimalayasFilter } from "./himalayas-jobs";
 import { JobicyJobService, MAX_GEOS, type JobicyFilter } from "./jobicy-jobs";
+import { JoobleJobService, MAX_LOCATIONS, type JoobleFilter } from "./jooble-jobs";
 import { RemotiveJobService } from "./remotive-jobs";
 
 /**
- * The Jobs page's one source of jobs: Remotive, Arbeitnow and Jobicy, live, side by side, merged into a single list. Nothing is stored.
+ * The Jobs page's one source of jobs: Remotive, Arbeitnow, Jobicy, Himalayas and (with a key) Jooble, live, side by side, merged into a single list. Nothing is stored.
  * Each source is fetched, cached and capped by its own service; this adds the filters that neither source can do for us (they
  * ignore search parameters), the sort and the paging, over the merged list. If one source cannot be reached the other still
  * answers, and the page is told which one is missing; only when every source fails is it an error.
@@ -48,10 +50,19 @@ export interface JobSources {
   remotive: RemotiveJobService;
   arbeitnow: ArbeitnowJobService;
   jobicy: JobicyJobService;
+  himalayas: HimalayasJobService;
+  /** Only when JOOBLE_API_KEY is set. */
+  jooble?: JoobleJobService;
 }
 
-export function jobSources(doFetch: typeof fetch): JobSources {
-  return { remotive: new RemotiveJobService({ fetch: doFetch }), arbeitnow: new ArbeitnowJobService({ fetch: doFetch }), jobicy: new JobicyJobService({ fetch: doFetch }) };
+export function jobSources(doFetch: typeof fetch, keys: { joobleApiKey?: string | undefined } = {}): JobSources {
+  return {
+    remotive: new RemotiveJobService({ fetch: doFetch }),
+    arbeitnow: new ArbeitnowJobService({ fetch: doFetch }),
+    jobicy: new JobicyJobService({ fetch: doFetch }),
+    himalayas: new HimalayasJobService({ fetch: doFetch }),
+    ...(keys.joobleApiKey?.trim() ? { jooble: new JoobleJobService({ fetch: doFetch, apiKey: keys.joobleApiKey.trim() }) } : {}),
+  };
 }
 
 type Outcome = { source: string; jobs: JobDto[] } | { source: string; error: JobSourceError };
@@ -100,10 +111,28 @@ export class JobSearchService {
     return filter;
   }
 
+  /** What Himalayas is asked for: the words (or the chosen category, which its search also understands) as `q`, each chosen place as `country`. */
+  private himalayasFilter(q: JobListQuery): HimalayasFilter {
+    const filter: HimalayasFilter = {};
+    const words = q.keyword || q.category;
+    if (words) filter.keyword = words;
+    if (q.locations.length > 0) filter.countries = q.locations.slice(0, MAX_COUNTRIES);
+    return filter;
+  }
+
+  /** What Jooble is asked for: the words and each chosen place. Jooble has no categories, so a chosen category skips it. */
+  private joobleFilter(q: JobListQuery): JoobleFilter {
+    const filter: JoobleFilter = {};
+    if (q.keyword) filter.keyword = q.keyword;
+    if (q.locations.length > 0) filter.locations = q.locations.slice(0, MAX_LOCATIONS);
+    return filter;
+  }
+
   /**
    * One page of jobs for the filters. The page's filters are sent to the sources that can use them: the keyword goes to Remotive as
    * `search` and to Jobicy as `tag`; the category goes to Remotive as `category` (when it is one of Remotive's) and to Jobicy as
-   * `industry` (when it is one of Jobicy's); chosen places go to Jobicy as `geo`. Arbeitnow cannot filter (it ignores every parameter),
+   * `industry` (when it is one of Jobicy's); chosen places go to Jobicy as `geo`, to Himalayas as `country` and to Jooble as `location`; Himalayas
+   * and Jooble also get the keyword (as `q` and `keywords`). Arbeitnow cannot filter (it ignores every parameter),
    * so its list is kept whole. Everything is then re-checked here on the merged list; Location, Remote only, sort and paging are
    * applied here too. `signal` is the caller's: if it aborts the wait ends at once.
    */
@@ -116,6 +145,8 @@ export class JobSearchService {
       { name: REMOTIVE.name, run: () => this.sources.remotive.jobs(q.keyword ?? "", remotiveCategory, signal) },
       { name: ARBEITNOW.name, run: () => this.sources.arbeitnow.jobs(signal) },
       { name: JOBICY.name, run: () => this.sources.jobicy.jobs(jobicyFilter, signal) },
+      { name: HIMALAYAS.name, run: () => this.sources.himalayas.jobs(this.himalayasFilter(q), signal) },
+      ...(this.sources.jooble && !q.category ? [{ name: JOOBLE.name, run: () => this.sources.jooble!.jobs(this.joobleFilter(q), signal) }] : []),
     ]);
 
     const wanted = q.category ? [q.category, chosen?.label ?? ""].filter(Boolean).map(normalize) : [];
@@ -145,18 +176,21 @@ export class JobSearchService {
    * `remotive` marks the ones Remotive's API understands.
    */
   async categories(signal?: AbortSignal): Promise<(JobCategoryDto & { remotive: boolean })[]> {
-    const [theirs, arbeit, jobicy] = await Promise.all([
+    const [theirs, arbeit, jobicy, himalayas] = await Promise.all([
       this.sources.remotive.categories(signal).catch((e) => { if (e instanceof JobSourceError && e.kind === "aborted") throw e; return [] as JobCategoryDto[]; }),
       this.sources.arbeitnow.jobs(signal).catch((e) => { if (e instanceof JobSourceError && e.kind === "aborted") throw e; return [] as JobDto[]; }),
       this.sources.jobicy.jobs({}, signal).catch((e) => { if (e instanceof JobSourceError && e.kind === "aborted") throw e; return [] as JobDto[]; }),
+      this.sources.himalayas.jobs({}, signal).catch((e) => { if (e instanceof JobSourceError && e.kind === "aborted") throw e; return [] as JobDto[]; }),
     ]);
     const jobs = [...arbeit, ...jobicy];
     const industries = (await this.sources.jobicy.reference(signal)).industries;
-    if (theirs.length === 0 && jobs.length === 0) throw new JobSourceError("Jobs", "network", "No job source could be reached");
+    if (theirs.length === 0 && jobs.length === 0 && himalayas.length === 0) throw new JobSourceError("Jobs", "network", "No job source could be reached");
     const out: (JobCategoryDto & { remotive: boolean })[] = theirs.map((c) => ({ ...c, remotive: true }));
     const known = new Set(theirs.flatMap((c) => [normalize(c.value), normalize(c.label)]));
     const counts = new Map<string, number>();
     for (const j of jobs) for (const t of j.skills) counts.set(t, (counts.get(t) ?? 0) + 1);
+    // Himalayas tags each job with a dozen fine topics; only its broad category per job is counted, so it does not crowd out the rest.
+    for (const j of himalayas) if (j.category) counts.set(j.category, (counts.get(j.category) ?? 0) + 1);
     for (const [name] of [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).filter(([, n]) => n >= MIN_TOPIC_JOBS).slice(0, 30)) {
       if (!known.has(normalize(name))) { known.add(normalize(name)); out.push({ value: name, label: name, remotive: false }); }
     }
@@ -166,13 +200,15 @@ export class JobSearchService {
   }
 
   /**
-   * The description of one job, from the source its id names ("remotive:123", "arbeitnow:some-slug", "jobicy:456"), as plain text blocks. Null when
+   * The description of one job, from the source its id names ("remotive:123", "arbeitnow:some-slug", "jobicy:456", "himalayas:companies/acme/jobs/va", "jooble:ab12"), as plain text blocks. Null when
    * the id is not one of ours or the source no longer lists the job.
    */
   async description(id: string, signal?: AbortSignal): Promise<JobDescriptionBlock[] | null> {
     if (id.startsWith("remotive:")) return this.sources.remotive.description(id, signal);
     if (id.startsWith("arbeitnow:")) return this.sources.arbeitnow.description(id, signal);
     if (id.startsWith("jobicy:")) return this.sources.jobicy.description(id, signal);
+    if (id.startsWith("himalayas:")) return this.sources.himalayas.description(id, signal);
+    if (id.startsWith("jooble:")) return this.sources.jooble ? this.sources.jooble.description(id, signal) : null;
     return null;
   }
 
@@ -182,6 +218,8 @@ export class JobSearchService {
       { name: REMOTIVE.name, run: () => this.sources.remotive.jobs("", "", signal) },
       { name: ARBEITNOW.name, run: () => this.sources.arbeitnow.jobs(signal) },
       { name: JOBICY.name, run: () => this.sources.jobicy.jobs({}, signal) },
+      { name: HIMALAYAS.name, run: () => this.sources.himalayas.jobs({}, signal) },
+      ...(this.sources.jooble ? [{ name: JOOBLE.name, run: () => this.sources.jooble!.jobs({}, signal) }] : []),
     ]);
     const counts = new Map<string, number>();
     for (const j of jobs) for (const t of tokens(j.location)) counts.set(t, (counts.get(t) ?? 0) + 1);

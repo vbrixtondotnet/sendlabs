@@ -10,14 +10,14 @@ import { sendApplicationEmail } from "../services/job-application-email";
 import { JobSearchService, jobSources } from "../services/job-search";
 
 /**
- * Jobs, live from Remotive, Arbeitnow and Jobicy, merged: nothing is stored. The browser asks us, we ask the sources (each with a timeout, a
+ * Jobs, live from Remotive, Arbeitnow, Jobicy, Himalayas and (with a key) Jooble, merged: nothing is stored. The browser asks us, we ask the sources (each with a timeout, a
  * short in-memory cache, one shared request for identical searches and an hourly cap: see their services), filter / sort / page the
  * merged list and send it back. Open to every signed-in account: the jobs belong to no account. The request's own abort signal is passed
  * on, so a search the page has already replaced stops being waited for.
  */
 export const jobRoutes = new Hono<AppEnv>();
 
-const service = (c: { get: (k: "fetch") => typeof fetch }) => new JobSearchService(jobSources(c.get("fetch")));
+const service = (c: { get: (k: "fetch") => typeof fetch; env: Env }) => new JobSearchService(jobSources(c.get("fetch"), { joobleApiKey: c.env.JOOBLE_API_KEY }));
 
 /** A source failure is a gateway problem, not a bug in ours: say so, in words the page can show. */
 async function viaSources<T>(work: () => Promise<T>): Promise<T> {

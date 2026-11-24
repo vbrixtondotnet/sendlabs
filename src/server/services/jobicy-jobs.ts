@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { JobDescriptionBlock, JobDto } from "../../shared/api";
 import { JOBICY, safeApplyUrl } from "../../shared/jobs";
 import { toDescriptionBlocks } from "../lib/job-description";
+import { payLine } from "../lib/pay";
 import { HourlyCap, JobSourceError, getJson, once, untilAborted } from "../lib/live-fetch";
 import { safeLogo } from "./remotive-jobs";
 
@@ -73,22 +74,9 @@ function parseTime(value: string | null | undefined): string | null {
   return Number.isNaN(ms) ? null : new Date(ms).toISOString();
 }
 
-const money = (v: number | string | null | undefined): number | null => {
-  const n = typeof v === "string" ? Number(v.replace(/[^\d.]/g, "")) : v;
-  return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : null;
-};
-
 /** "USD 60,000 - 80,000 / year", or "" when Jobicy gives no pay. */
-export function salaryOf(j: Pick<z.infer<typeof remoteJob>, "salaryMin" | "salaryMax" | "salaryCurrency" | "salaryPeriod">): string {
-  const lo = money(j.salaryMin);
-  const hi = money(j.salaryMax);
-  if (lo === null && hi === null) return "";
-  const fmt = (n: number) => n.toLocaleString("en-US");
-  const range = lo !== null && hi !== null && lo !== hi ? `${fmt(lo)} - ${fmt(hi)}` : fmt((lo ?? hi)!);
-  const cur = (j.salaryCurrency ?? "").trim();
-  const per = (j.salaryPeriod ?? "").trim().toLowerCase();
-  return `${cur ? `${cur} ` : ""}${range}${per ? ` / ${per.replace(/ly$/, "")}` : ""}`;
-}
+export const salaryOf = (j: Pick<z.infer<typeof remoteJob>, "salaryMin" | "salaryMax" | "salaryCurrency" | "salaryPeriod">): string =>
+  payLine({ min: j.salaryMin, max: j.salaryMax, currency: j.salaryCurrency, period: j.salaryPeriod });
 
 /** Jobicy's job into the app's `JobDto`. The link must be on Jobicy's own site (it is the link back its terms ask for). */
 export function mapJobicyJob(input: z.input<typeof remoteJob>): JobDto {

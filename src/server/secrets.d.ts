@@ -42,6 +42,11 @@ interface Env {
   /** Which service delivers email: "gmail" (the default). See services/email-providers.ts for how to add another. */
   EMAIL_PROVIDER?: string;
   /**
+   * SECRET. Jooble API key (free: https://jooble.org/api/about). Optional: without it the Jobs page simply does not use Jooble. Put it in
+   * `.dev.vars`, or `wrangler secret put JOOBLE_API_KEY --env <env>`. It is sent only to jooble.org, in the request address.
+   */
+  JOOBLE_API_KEY?: string;
+  /**
    * Local development shortcut only: when set (in `.dev.vars`), a request with no session runs as this user, so the API
    * can be tried without signing in. Unset by default, so locally you sign in through the login page. Ignored outside
    * the local environment.
