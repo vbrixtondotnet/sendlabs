@@ -246,6 +246,59 @@ describe("filters (all applied here, on the merged list)", () => {
   });
 });
 
+describe("Arbeitnow: English jobs only (the default)", () => {
+  const EN_TEXT = "&lt;p&gt;We are looking for a senior engineer to join our team. You will work with the product group and help us build the platform for our customers.&lt;/p&gt;";
+  const DE_TEXT = "&lt;p&gt;Wir suchen einen erfahrenen Entwickler für unser Team. Sie arbeiten mit der Produktgruppe und helfen uns, die Plattform für unsere Kunden zu bauen.&lt;/p&gt;";
+  const FR_TEXT = "&lt;p&gt;Nous recherchons un ingénieur expérimenté pour rejoindre notre équipe. Vous travaillerez avec le groupe produit et vous nous aiderez à construire la plateforme pour nos clients.&lt;/p&gt;";
+  const NL_TEXT = "&lt;p&gt;Wij zoeken een ervaren ontwikkelaar voor ons team. Je werkt met de productgroep en helpt ons het platform te bouwen voor onze klanten.&lt;/p&gt;";
+  const mixed = () => world({
+    arbeitnow: [
+      arb("english-dev", { title: "Software Engineer", description: EN_TEXT, location: "London", tags: ["Engineering"] }),
+      arb("german-dev", { title: "Softwareentwickler (m/w/d)", description: DE_TEXT, location: "Berlin", tags: ["Entwicklung"] }),
+      arb("french-dev", { title: "Ingénieur logiciel", description: FR_TEXT, location: "Paris", tags: ["Ingénierie"] }),
+      arb("dutch-dev", { title: "Software ontwikkelaar", description: NL_TEXT, location: "Utrecht", tags: ["Techniek"] }),
+      arb("bare-title", { title: "Developer", description: "", location: "Zurich" }), // too little text to tell: kept
+    ],
+  });
+
+  it("keeps the English jobs and drops German, French and Dutch ones, before anything is remembered", async () => {
+    const w = mixed();
+    const jobs = await makeArbeitnow(w.fetchFn).jobs();
+    expect(jobs.map((j) => j.id).sort()).toEqual(["arbeitnow:bare-title", "arbeitnow:english-dev"]);
+  });
+
+  it("asks Arbeitnow for the same single page as before: it has no language setting, so no extra parameter is sent", async () => {
+    const w = mixed();
+    await makeArbeitnow(w.fetchFn).jobs();
+    expect(w.state.calls).toEqual(["https://www.arbeitnow.com/api/job-board-api?page=1"]);
+  });
+
+  it("keeps everything when it is switched off", async () => {
+    const w = mixed();
+    const svc = new ArbeitnowJobService({ fetch: w.fetchFn, cache: new ArbeitnowCache(), englishOnly: false });
+    expect(await svc.jobs()).toHaveLength(5);
+  });
+
+  it("applies to the merged list, the descriptions, the categories and the locations too", async () => {
+    const w = mixed();
+    const s = makeSearch(w.fetchFn);
+    expect((await ids(s)).sort()).toEqual(["arbeitnow:bare-title", "arbeitnow:english-dev"]);
+    expect((await s.list(q())).total).toBe(2);
+    expect(await s.description("arbeitnow:english-dev")).not.toBeNull();
+    expect(await s.description("arbeitnow:german-dev")).toBeNull(); // a dropped job has no description either
+    expect((await s.categories()).map((c) => c.label)).not.toContain("Entwicklung");
+    const places = await s.locations();
+    expect(places).toEqual(expect.arrayContaining(["London", "Zurich"]));
+    expect(places).not.toEqual(expect.arrayContaining(["Berlin"]));
+    expect(places).not.toEqual(expect.arrayContaining(["Paris"]));
+  });
+
+  it("does not touch Remotive's jobs, whatever language they are in", async () => {
+    const w = world({ remotive: [rem(1, { title: "Softwareentwickler", description: "<p>Wir suchen einen Entwickler für unser Team und die Kunden.</p>" })], arbeitnow: [] });
+    expect((await ids(makeSearch(w.fetchFn))).sort()).toEqual(["remotive:1"]);
+  });
+});
+
 describe("categories and locations for the filters", () => {
   it("lists Remotive's categories, then Arbeitnow's topics it does not already have, each once, sorted by name", async () => {
     const { fetchFn } = world({

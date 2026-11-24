@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { JobDescriptionBlock, JobDto } from "../../shared/api";
 import { ARBEITNOW, safeApplyUrl } from "../../shared/jobs";
 import { toDescriptionBlocks } from "../lib/job-description";
+import { looksEnglish } from "../lib/language";
 import { HourlyCap, JobSourceError, getJson, once, untilAborted } from "../lib/live-fetch";
 
 /**
@@ -78,6 +79,12 @@ export function mapArbeitnowJob(input: z.input<typeof remoteJob>): JobDto {
   };
 }
 
+/** What the language is judged on: the title and the first ~1,200 characters of the description (plenty: every sentence has small words). */
+export function languageSample(title: string, blocks: JobDescriptionBlock[]): string {
+  const text = blocks.flatMap((b) => (b.type === "list" ? b.items : [b.text])).join(" ");
+  return `${title}. ${text.slice(0, 1200)}`;
+}
+
 export class ArbeitnowCache {
   /** The list, with each job's description already reduced to plain text blocks (Arbeitnow's are up to 40 KB of escaped HTML each). */
   list: { at: number; jobs: JobDto[]; descriptions: Map<string, JobDescriptionBlock[]> } | null = null;
@@ -97,6 +104,12 @@ const sharedCache = sharedArbeitnowCache;
 
 export interface ArbeitnowDeps {
   fetch: typeof fetch;
+  /**
+   * Keep only jobs written in English. ON unless set to false. Arbeitnow has no language setting (it ignores every parameter we tried:
+   * language, lang, locale...) and most of its jobs are in German, French or Dutch, so this is done here, on the title and the start of
+   * the description, before anything is remembered (the jobs, their descriptions, and the filter choices all come from the English ones).
+   */
+  englishOnly?: boolean;
   timeoutMs?: number;
   now?: () => number;
   cache?: ArbeitnowCache;
@@ -106,8 +119,10 @@ export class ArbeitnowJobService {
   private readonly timeoutMs: number;
   private readonly now: () => number;
   private readonly cache: ArbeitnowCache;
+  private readonly englishOnly: boolean;
 
   constructor(private readonly deps: ArbeitnowDeps) {
+    this.englishOnly = deps.englishOnly ?? true;
     this.timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.now = deps.now ?? Date.now;
     this.cache = deps.cache ?? sharedCache;
@@ -136,9 +151,11 @@ export class ArbeitnowJobService {
               if (!parsed.success) continue; // one odd job does not spoil the rest
               const job = mapArbeitnowJob(parsed.data);
               if (job.title === "" || seen.has(job.id)) continue;
+              const blocks = toDescriptionBlocks(parsed.data.description);
+              if (this.englishOnly && !looksEnglish(languageSample(job.title, blocks))) continue; // German, French, Dutch...
               seen.add(job.id);
               out.push(job);
-              descriptions.set(job.id, toDescriptionBlocks(parsed.data.description));
+              descriptions.set(job.id, blocks);
             }
           }
           this.cache.list = { at: this.now(), jobs: out, descriptions };
