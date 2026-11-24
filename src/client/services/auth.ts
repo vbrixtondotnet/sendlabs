@@ -24,6 +24,6 @@ export function useSignOut() {
  */
 export function safeNext(raw: string | null | undefined): string {
   if (!raw || !raw.startsWith("/") || raw.startsWith("//") || raw.includes("\\")) return "/";
-  if (raw === "/login" || raw.startsWith("/login?") || raw.startsWith("/invite/")) return "/";
+  if (raw === "/login" || raw.startsWith("/login?")) return "/";
   return raw;
 }

@@ -58,7 +58,7 @@ export class EmailSendError extends Error {
   }
 }
 
-/** A ready-to-use connection to the provider for one organization. */
+/** A ready-to-use connection to the provider for one account. */
 export interface EmailChannel {
   /** The name this sender is set up to show on the From line, "" when none was set. Callers fall back to their own. */
   readonly fromName: string;
@@ -72,9 +72,9 @@ export interface EmailProvider {
   /** Stable id, as set in `EMAIL_PROVIDER`: "gmail", "sendgrid", "mailgun". */
   readonly id: string;
   /**
-   * Gets a channel for an organization, doing whatever the provider needs first (loading its saved connection or API
+   * Gets a channel for an account, doing whatever the provider needs first (loading its saved connection or API
    * key, refreshing a token). Throws an `ApiError` the person can act on when sending is not possible: not configured,
    * no sender connected, or the connection must be redone.
    */
-  open(tenantId: string): Promise<EmailChannel>;
+  open(userId: string): Promise<EmailChannel>;
 }

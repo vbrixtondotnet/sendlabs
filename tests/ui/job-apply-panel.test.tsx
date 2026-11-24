@@ -18,9 +18,9 @@ const base: Handler = ({ path, method }) =>
   : path === "/api/jobs/apply-email" && method === "POST" ? { json: { sent: true, attachments: 0 } }
   : undefined;
 
-const open = (handler: Handler = base, role: "Administrator" | "Campaign Manager" | "Viewer" = "Administrator", onClose = () => undefined) => {
+const open = (handler: Handler = base, onClose = () => undefined) => {
   const calls = stubApi(handler);
-  renderAt(<JobApplyPanel job={job} onClose={onClose} />, { role });
+  renderAt(<JobApplyPanel job={job} onClose={onClose} />, {});
   return calls;
 };
 const panel = () => screen.getByRole("dialog", { name: "Apply by email" });
@@ -33,7 +33,7 @@ const sendButton = () => screen.getByRole("button", { name: /Send email|Sending/
 describe("the Apply panel", () => {
   it("is a panel that slides in from the right, named for the job, with a way to close it", async () => {
     let closed = 0;
-    open(base, "Administrator", () => { closed++; });
+    open(base, () => { closed++; });
     const p = panel();
     expect(p.getAttribute("aria-modal")).toBe("true");
     expect(p.className).toContain("slide-in-right");
@@ -83,7 +83,7 @@ describe("the Apply panel", () => {
 
   it("sends the words and the files as a form to our server, and closes with a confirmation", async () => {
     let closed = 0;
-    const calls = open(base, "Administrator", () => { closed++; });
+    const calls = open(base, () => { closed++; });
     await screen.findByText(/sales@acme.test/);
     fillTo(" hiring@acme.test ");
     attach(file("resume.pdf", 2000, "application/pdf"), file("cover.docx"));
@@ -112,14 +112,7 @@ describe("the Apply panel", () => {
     await waitFor(() => expect(calls.filter((c) => c.path === "/api/jobs/apply-email")).toHaveLength(2));
   });
 
-  it("cannot send for a role that only looks, or when no Gmail account is connected, and says why", async () => {
-    open(base, "Viewer");
-    expect(await screen.findByText("Your role cannot send email")).toBeTruthy();
-    fillTo();
-    expect(sendButton().disabled).toBe(true);
-  });
-
-  it("asks to connect Gmail first when the organization has none", async () => {
+  it("asks to connect Gmail first when the account has none", async () => {
     open(({ path, method, ...rest }) => (path === "/api/sender" ? { json: senderStatus(null) } : base({ path, method, ...rest } as Call)));
     expect(await screen.findByText("Connect your Gmail account first")).toBeTruthy();
     fillTo();

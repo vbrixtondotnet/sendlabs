@@ -87,14 +87,6 @@ describe("Campaigns page (live data)", () => {
     expect(await screen.findByText("Pause or cancel the campaign before archiving it")).toBeTruthy();
   });
 
-  it("hides write actions from a Viewer", async () => {
-    stubApi(base);
-    renderAt(<Campaigns />, { role: "Viewer" });
-    await screen.findByText("Draft one");
-    expect(screen.queryByRole("button", { name: "Duplicate" })).toBeNull();
-    expect(screen.queryByRole("link", { name: /New campaign/ })).toBeNull();
-  });
-
   it("shows the API error instead of an empty table", async () => {
     stubApi(() => ({ status: 500, json: { error: { code: "INTERNAL_ERROR", message: "Something went wrong", correlationId: "ref-9" } } }));
     renderAt(<Campaigns />);

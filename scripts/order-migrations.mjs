@@ -1,7 +1,7 @@
 // Reorders the statements of every generated migration so each one can run on PostgreSQL.
 //
 // drizzle-kit writes: CREATE TABLE ..., then ALTER TABLE ... ADD FOREIGN KEY ..., then CREATE INDEX .... PostgreSQL only accepts a
-// foreign key that points at columns already covered by a unique index (every composite key here, such as (tenant_id, id)
+// foreign key that points at columns already covered by a unique index (every composite key here, such as (user_id, id)
 // on users), so the indexes must exist first. This keeps the generated statements and only moves them: tables, then indexes,
 // then foreign keys. It is idempotent, so it is safe to run again, and `npm run db:generate` runs it after drizzle-kit.
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";

@@ -10,7 +10,6 @@ import { REJECTED_OUTCOMES, type ImportRowOutcome } from "../../../shared/types"
 import { BULK_ROWS, chunk } from "../batch";
 import type { Database } from "../client";
 import { importRows, imports } from "../schema";
-import { usersRepo } from "./users";
 
 export interface NewImport {
   filename: string;
@@ -23,8 +22,6 @@ export interface NewImport {
   duplicateRows: number;
   blankRows: number;
   numericWarnings: number;
-  /** The uploading user's id. */
-  createdBy: string;
 }
 
 export interface RowResult {
@@ -34,10 +31,9 @@ export interface RowResult {
   contactId: string | null;
 }
 
-/** Scoped to `tenantId`: another tenant's imports do not exist as far as this repository is concerned. */
-export function importsRepo(db: Database, tenantId: string) {
-  const mine = eq(imports.tenantId, tenantId);
-  const users = usersRepo(db, tenantId);
+/** Scoped to `userId`: another account's imports do not exist as far as this repository is concerned. */
+export function importsRepo(db: Database, userId: string) {
+  const mine = eq(imports.userId, userId);
 
   const byId = async (id: string) => {
     const [row] = await db.select().from(imports).where(and(mine, eq(imports.id, id))).limit(1);
@@ -47,7 +43,7 @@ export function importsRepo(db: Database, tenantId: string) {
   return {
     /** Starts an import in the Processing state, so a crash mid-way leaves a visible record. */
     async start(input: NewImport): Promise<string> {
-      const [row] = await db.insert(imports).values({ ...input, tenantId, status: "Processing" }).returning({ id: imports.id });
+      const [row] = await db.insert(imports).values({ ...input, userId, status: "Processing" }).returning({ id: imports.id });
       if (!row) throw new Error("Insert returned no row");
       return row.id;
     },
@@ -57,7 +53,7 @@ export function importsRepo(db: Database, tenantId: string) {
       const now = nowMs();
       for (const group of chunk(rows, BULK_ROWS)) {
         await db.insert(importRows).values(
-          group.map((r) => ({ id: newId(), tenantId, importId, rowNumber: r.rowNumber, rawValue: r.rawValue, outcome: r.outcome, contactId: r.contactId, createdAt: now })),
+          group.map((r) => ({ id: newId(), userId, importId, rowNumber: r.rowNumber, rawValue: r.rawValue, outcome: r.outcome, contactId: r.contactId, createdAt: now })),
         );
       }
     },
@@ -79,18 +75,16 @@ export function importsRepo(db: Database, tenantId: string) {
         db.select().from(imports).where(mine).orderBy(desc(imports.createdAt), desc(imports.id)).limit(pageSize).offset(offsetOf(page, pageSize)),
         db.select({ n: count() }).from(imports).where(mine),
       ]);
-      const emails = await users.emails(rows.map((r) => r.createdBy));
-      return pageOf(rows.map((r) => toImportDto(r, emails.get(r.createdBy) ?? "")), totalRows[0]?.n ?? 0, page, pageSize);
+      return pageOf(rows.map(toImportDto), totalRows[0]?.n ?? 0, page, pageSize);
     },
 
     async get(id: string): Promise<ImportDto> {
       const row = await byId(id);
       if (!row) throw notFound("Import");
-      const emails = await users.emails([row.createdBy]);
-      return toImportDto(row, emails.get(row.createdBy) ?? "");
+      return toImportDto(row);
     },
 
-    /** A campaign may only target one of THIS tenant's imports, and only one that finished. */
+    /** A campaign may only target one of THIS account's imports, and only one that finished. */
     async assertUsable(id: string): Promise<void> {
       const row = await byId(id);
       if (!row || row.status !== "Completed") {
@@ -104,7 +98,7 @@ export function importsRepo(db: Database, tenantId: string) {
 
     async listRows(importId: string, q: ImportRowsQuery): Promise<Page<ImportRowDto>> {
       if (!(await byId(importId))) throw notFound("Import");
-      const conditions: (SQL | undefined)[] = [eq(importRows.tenantId, tenantId), eq(importRows.importId, importId)];
+      const conditions: (SQL | undefined)[] = [eq(importRows.userId, userId), eq(importRows.importId, importId)];
       if (q.outcome) conditions.push(eq(importRows.outcome, q.outcome));
       else if (q.show === "rejected") conditions.push(inArray(importRows.outcome, [...REJECTED_OUTCOMES]));
       const where = and(...conditions);
@@ -121,7 +115,7 @@ export function importsRepo(db: Database, tenantId: string) {
       const rows = await db
         .select()
         .from(importRows)
-        .where(and(eq(importRows.tenantId, tenantId), eq(importRows.importId, importId), inArray(importRows.outcome, [...REJECTED_OUTCOMES])))
+        .where(and(eq(importRows.userId, userId), eq(importRows.importId, importId), inArray(importRows.outcome, [...REJECTED_OUTCOMES])))
         .orderBy(importRows.rowNumber);
       // The query only returns rejected outcomes, which are exactly the InvalidRow reasons.
       return rows.map((r) => ({ row: r.rowNumber, raw: r.rawValue, reason: r.outcome as InvalidRow["reason"] }));

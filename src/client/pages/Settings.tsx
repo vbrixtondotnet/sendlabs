@@ -1,46 +1,35 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Navigate, useSearchParams } from "react-router-dom";
-import type { InvitationDto } from "@shared/api";
-import { ACCESS_LEVELS, SENDER_CONNECT_ERRORS, type AccessId, type SenderConnectError } from "@shared/types";
-import { Badge, Button, Card, CardHeader, Empty, ErrorNotice, Field, LoadingRows, Modal, Notice, PageHeader, Pagination, Select, Table, TextArea, TextInput, Td, Th, fmtDate } from "@/components/ui";
-import { useRole } from "@/hooks/useRole";
+import { useSearchParams } from "react-router-dom";
+import { SENDER_CONNECT_ERRORS, type SenderConnectError } from "@shared/types";
+import { Badge, Button, Card, CardHeader, Empty, ErrorNotice, Field, LoadingRows, Modal, Notice, PageHeader, Pagination, Select, TextArea, TextInput, fmtDate } from "@/components/ui";
 import { useToast } from "@/hooks/useToast";
 import { goTo } from "@/lib/navigate";
 import { EMAIL_FOOTER_ENABLED, LIST_UNSUBSCRIBE_HEADERS_ENABLED } from "@/lib/merge";
 import { ApiClientError } from "@/services/http";
 import { useConnectGmail, useDisconnectSender, useSender, useSetSenderName } from "@/services/sender";
-import { useMe, useUpdateTenant } from "@/services/me";
+import { useMe, useUpdateCompany } from "@/services/me";
 import { useSuppressions } from "@/services/suppressions";
 import { useAddTestRecipient, useRemoveTestRecipient, useTestRecipients } from "@/services/testRecipients";
-import { useInvitations, useInviteUser, useRemoveUser, useResendInvitation, useRevokeInvitation, useUsers } from "@/services/users";
-import type { UserDto } from "@shared/api";
 
-const TABS = ["Company Details", "Users & access", "Email Service"] as const;
+const TABS = ["Company Details", "Email Service"] as const;
 type Tab = (typeof TABS)[number];
 const PAGE_SIZE = 25;
 
 export function Settings() {
-  const { isAdmin, ready } = useRole();
   const [params] = useSearchParams();
   // Coming back from Google's "Connect Gmail" screen (?sender=...) lands on Email Service, where the result is shown.
   const [tab, setTab] = useState<Tab>(() => (params.has("sender") ? "Email Service" : "Company Details"));
 
-  if (!ready) return <PageHeader title="Settings" />; // who you are is still loading
-
-  // Settings are for Administrators only. Anyone else who opens the address is sent back to the start page.
-  if (!isAdmin) return <Navigate to="/" replace />;
-
   return (
     <>
-      <PageHeader title="Settings" description="Company details, users and access, and the email service: sender, sending limits, unsubscribe rules and data retention." />
-      <div className="mb-5"><Notice tone="warn" title="Preview only">Company Details, Users & access, the Gmail sender (with its test-send allowlist), the unsubscribe settings and the suppression list are connected to the server. Sending limits and data retention, on the Email Service tab, are not saved yet; they will be stored per tenant once they are connected.</Notice></div>
+      <PageHeader title="Settings" description="Company details and the email service: sender, sending limits, unsubscribe rules and data retention." />
+      <div className="mb-5"><Notice tone="warn" title="Preview only">Company Details, the Gmail sender (with its test-send allowlist), the unsubscribe settings and the suppression list are connected to the server. Sending limits and data retention, on the Email Service tab, are not saved yet; they will be stored per account once they are connected.</Notice></div>
       <div className="mb-5 flex gap-1 overflow-x-auto border-b border-slate-200 dark:border-slate-800" role="tablist">
         {TABS.map((t) => (
           <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={`whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium ${tab === t ? "border-brand-600 text-brand-600 dark:text-brand-400" : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"}`}>{t}</button>
         ))}
       </div>
       {tab === "Company Details" && <CompanyTab />}
-      {tab === "Users & access" && <UsersTab />}
       {tab === "Email Service" && <EmailServiceTab />}
     </>
   );
@@ -55,7 +44,7 @@ const CONNECT_ERROR_TEXT: Record<SenderConnectError, string> = {
   no_refresh_token: "Google did not let Sendrix stay connected. Remove Sendrix at myaccount.google.com/permissions, then connect again.",
   email_unavailable: "Sendrix could not confirm which email address you connected. Please try again.",
   not_configured: "Gmail connection is not set up on this server yet.",
-  inactive: "Your account or organization is not active, so nothing was connected.",
+  inactive: "Your account is not active, so nothing was connected.",
 };
 
 /** The `?sender=` result Google's callback redirected back with, read once and then removed from the address. */
@@ -200,7 +189,6 @@ function SenderSection() {
               {[
                 ["Sending address", connectedSender.email],
                 ["Permission", connectedSender.permissions.join(", ") || "None"],
-                ["Connected by", connectedSender.connectedBy || "Unknown"],
                 ["Connected on", fmtDate(connectedSender.connectedAt)],
               ].map(([k, v]) => (
                 <div key={k} className="flex justify-between gap-4 px-5 py-2.5"><dt className="text-slate-500">{k}</dt><dd className="text-right font-medium">{v}</dd></div>
@@ -364,19 +352,19 @@ function SuppressionCard() {
 }
 
 /**
- * The organization's unsubscribe rules, both on for every organization to begin with. Sending applies them: when the
+ * The account's unsubscribe rules, both on to begin with. Sending applies them: when the
  * first is on, every email gets the standard unsubscribe footer automatically, and the second adds (while LIST_UNSUBSCRIBE_HEADERS_ENABLED) the one-click
  * List-Unsubscribe headers to every email. The postal address in every footer is the one from Company Details.
  */
 function ComplianceCard() {
   const me = useMe();
-  const tenant = me.data?.tenant;
+  const company = me.data?.company;
   if (me.isError) return <ErrorNotice error={me.error} onRetry={() => void me.refetch()} />;
-  if (!tenant) return <Card><LoadingRows rows={2} cols={1} /></Card>;
+  if (!company) return <Card><LoadingRows rows={2} cols={1} /></Card>;
 
   return (
     <Card>
-      <CardHeader title="Unsubscribe and compliance" subtitle="Applied to every campaign your organization sends." />
+      <CardHeader title="Unsubscribe and compliance" subtitle="Applied to every campaign you send." />
       <div className="space-y-4 p-5">
         <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={EMAIL_FOOTER_ENABLED} disabled readOnly className="mt-0.5" />Unsubscribe link in every campaign {EMAIL_FOOTER_ENABLED ? <Badge tone="green">Always on</Badge> : <Badge tone="amber">Off for now</Badge>}</label>
         <p className="-mt-2 pl-6 text-xs text-slate-500">{EMAIL_FOOTER_ENABLED ? "Every email automatically ends with the standard unsubscribe footer. Nobody can edit or remove it." : "The footer at the end of each email (the unsubscribe link, your company name and your postal address) is switched off for now. Recipients can still unsubscribe with the one-click button their mail app shows."}</p>
@@ -384,7 +372,7 @@ function ComplianceCard() {
         <p className="-mt-2 pl-6 text-xs text-slate-500">{LIST_UNSUBSCRIBE_HEADERS_ENABLED ? "Gmail and Yahoo require one-click unsubscribe from senders of marketing email, so it cannot be turned off. A recipient who uses it is added to your suppression list straight away and is never emailed again." : "Campaign emails are sent without these headers, like a one-to-one email, so Gmail is less likely to file them under Promotions. Recipients can still unsubscribe with the link in the footer, and are then added to your suppression list and never emailed again."}</p>
         {EMAIL_FOOTER_ENABLED && <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600 dark:bg-slate-800/50 dark:text-slate-300">
           The footer of every email shows your company's postal address from <strong>Company Details</strong>:{" "}
-          {tenant.postalAddress ? <span className="whitespace-pre-line font-medium">{tenant.postalAddress}</span> : <span className="text-amber-700 dark:text-amber-400">not set yet, so campaigns cannot be launched until you add it.</span>}
+          {company.postalAddress ? <span className="whitespace-pre-line font-medium">{company.postalAddress}</span> : <span className="text-amber-700 dark:text-amber-400">not set yet, so campaigns cannot be launched until you add it.</span>}
         </p>}
       </div>
     </Card>
@@ -406,255 +394,23 @@ function EmailServiceTab() {
   );
 }
 
-/** What went wrong inviting, in words an Administrator can act on. The server's message already says what to do. */
-function inviteErrorText(e: unknown): string {
-  if (!(e instanceof ApiClientError)) return "Something went wrong. Please try again.";
-  if (e.code === "VALIDATION_ERROR") return e.fieldErrors[0]?.message ?? e.message;
-  return e.message;
-}
-
-function AddUserModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { toast } = useToast();
-  const sender = useSender();
-  const invite = useInviteUser();
-  const [form, setForm] = useState({ email: "", firstName: "", lastName: "", position: "", accessId: "campaign-manager" as AccessId });
-  const set = (k: keyof typeof form) => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [k]: e.target.value }));
-
-  const noSender = sender.isSuccess && (!sender.data.sender || sender.data.sender.status !== "Connected");
-  const complete = form.email.trim() && form.firstName.trim() && form.lastName.trim();
-  const { reset } = invite;
-
-  function close() {
-    reset();
-    setForm({ email: "", firstName: "", lastName: "", position: "", accessId: "campaign-manager" });
-    onClose();
-  }
-
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    if (!complete || invite.isPending || noSender) return;
-    try {
-      const sent = await invite.mutateAsync({ ...form, email: form.email.trim(), firstName: form.firstName.trim(), lastName: form.lastName.trim(), position: form.position.trim() });
-      toast(`Invitation sent to ${sent.email}`);
-      close();
-    } catch {
-      /* shown in the dialog */
-    }
-  }
-
-  return (
-    <Modal
-      open={open}
-      title="Add user"
-      onClose={close}
-      footer={
-        <>
-          <Button onClick={close}>Cancel</Button>
-          <Button variant="primary" type="submit" form="add-user-form" disabled={!complete || invite.isPending || noSender}>{invite.isPending ? "Sending…" : "Send invitation"}</Button>
-        </>
-      }
-    >
-      <form id="add-user-form" onSubmit={submit} noValidate className="space-y-4">
-        <p className="text-sm text-slate-600 dark:text-slate-300">Sendrix emails them an invitation. When they accept and choose a password, they become a user of your organization.</p>
-        {noSender && (
-          <Notice tone="warn" title="Connect Gmail first">Invitations are sent from your connected Gmail account. Connect one on the Sender tab, then come back.</Notice>
-        )}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="First name" htmlFor="au-first"><TextInput id="au-first" autoFocus autoComplete="off" value={form.firstName} onChange={set("firstName")} maxLength={100} /></Field>
-          <Field label="Last name" htmlFor="au-last"><TextInput id="au-last" autoComplete="off" value={form.lastName} onChange={set("lastName")} maxLength={100} /></Field>
-        </div>
-        <Field label="Position" htmlFor="au-position" hint="Their job title. Optional; they can change it themselves later.">
-          <TextInput id="au-position" autoComplete="off" placeholder="e.g. Sales Director" value={form.position} onChange={set("position")} maxLength={100} />
-        </Field>
-        <Field label="Email address" htmlFor="au-email"><TextInput id="au-email" type="email" autoComplete="off" value={form.email} onChange={set("email")} /></Field>
-        <Field label="Role" htmlFor="au-role" hint={ACCESS_LEVELS.find((a) => a.id === form.accessId)?.description ?? ""}>
-          <Select id="au-role" value={form.accessId} onChange={set("accessId")}>
-            {ACCESS_LEVELS.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </Select>
-        </Field>
-        {invite.isError && <Notice tone="error">{inviteErrorText(invite.error)}</Notice>}
-      </form>
-    </Modal>
-  );
-}
-
-function InvitationsCard() {
-  const { toast } = useToast();
-  const invitations = useInvitations();
-  const resend = useResendInvitation();
-  const revoke = useRevokeInvitation();
-  const [revoking, setRevoking] = useState<InvitationDto | null>(null);
-
-  async function doResend(i: InvitationDto) {
-    try {
-      await resend.mutateAsync(i.id);
-      toast(`Invitation sent again to ${i.email}`);
-    } catch (e) {
-      toast(inviteErrorText(e), "error");
-    }
-  }
-
-  async function doRevoke() {
-    if (!revoking) return;
-    try {
-      await revoke.mutateAsync(revoking.id);
-      toast(`Invitation to ${revoking.email} withdrawn`, "info");
-      setRevoking(null);
-    } catch (e) {
-      toast(e instanceof ApiClientError ? e.message : "Something went wrong", "error");
-      setRevoking(null);
-    }
-  }
-
-  if (invitations.isPending) return null;
-  if (invitations.isError) return <div className="border-t border-slate-200 p-4 dark:border-slate-800"><ErrorNotice error={invitations.error} onRetry={() => void invitations.refetch()} /></div>;
-  const items = invitations.data.items;
-  if (items.length === 0) return null;
-
-  return (
-    <div className="border-t border-slate-200 dark:border-slate-800">
-      <div className="px-5 pt-4"><h3 className="text-sm font-semibold">Pending invitations</h3><p className="text-xs text-slate-500">Invited, but they have not accepted yet. Links work for 7 days.</p></div>
-      <Table>
-        <thead><tr><Th>Name</Th><Th>Position</Th><Th>Email</Th><Th>Role</Th><Th>Status</Th><Th>Expires</Th><Th className="text-right">Actions</Th></tr></thead>
-        <tbody>
-          {items.map((i) => (
-            <tr key={i.id}>
-              <Td className="font-medium">{`${i.firstName} ${i.lastName}`.trim()}</Td>
-              <Td className="text-slate-600 dark:text-slate-300">{i.position || <span className="text-slate-400">-</span>}</Td>
-              <Td className="text-slate-600 dark:text-slate-300">{i.email}</Td>
-              <Td>{i.access}</Td>
-              <Td><Badge tone={i.status === "Pending" ? "amber" : "slate"}>{i.status}</Badge></Td>
-              <Td className="text-slate-500">{fmtDate(i.expiresAt)}</Td>
-              <Td className="whitespace-nowrap text-right">
-                <Button variant="ghost" aria-label={`Resend invitation to ${i.email}`} disabled={resend.isPending} onClick={() => void doResend(i)}>Resend</Button>
-                <Button variant="ghost" className="text-rose-600" aria-label={`Revoke invitation to ${i.email}`} onClick={() => setRevoking(i)}>Revoke</Button>
-              </Td>
-            </tr>
-          ))}
-        </tbody>
-      </Table>
-      <Modal
-        open={revoking !== null}
-        title="Withdraw this invitation?"
-        onClose={() => setRevoking(null)}
-        footer={
-          <>
-            <Button onClick={() => setRevoking(null)}>Keep it</Button>
-            <Button variant="danger" disabled={revoke.isPending} onClick={() => void doRevoke()}>{revoke.isPending ? "Withdrawing…" : "Withdraw"}</Button>
-          </>
-        }
-      >
-        <p className="text-sm">The link in the email sent to <strong>{revoking?.email}</strong> will stop working.</p>
-      </Modal>
-    </div>
-  );
-}
-
-function UsersTab() {
-  const [page, setPage] = useState(1);
-  const users = useUsers(page, PAGE_SIZE);
-  const [adding, setAdding] = useState(false);
-  const me = useMe();
-  const remove = useRemoveUser();
-  const [removing, setRemoving] = useState<UserDto | null>(null);
-  const { toast } = useToast();
-
-  async function doRemove() {
-    if (!removing) return;
-    const who = removing;
-    try {
-      await remove.mutateAsync(who.id);
-      toast(`${who.displayName || who.email} was removed`, "info");
-    } catch (e) {
-      toast(e instanceof ApiClientError ? e.message : "Something went wrong", "error");
-    }
-    setRemoving(null);
-  }
-
-  return (
-    <Card>
-      <CardHeader
-        title="Users"
-        subtitle="The people in your organization. Sign-in is by email and password."
-        action={<Button variant="primary" onClick={() => setAdding(true)}>Add user</Button>}
-      />
-      <AddUserModal open={adding} onClose={() => setAdding(false)} />
-      {users.isError ? (
-        <div className="p-4"><ErrorNotice error={users.error} onRetry={() => void users.refetch()} /></div>
-      ) : users.isPending ? (
-        <LoadingRows cols={6} rows={3} />
-      ) : (
-        <>
-          <Table>
-            <thead><tr><Th>Name</Th><Th>Position</Th><Th>Email</Th><Th>Role</Th><Th>Status</Th><Th>Last active</Th><Th className="text-right">Actions</Th></tr></thead>
-            <tbody>
-              {users.data.items.map((u) => (
-                <tr key={u.id}>
-                  <Td className="font-medium">{u.displayName || <span className="font-normal text-slate-400">(no name)</span>}</Td>
-                  <Td className="text-slate-600 dark:text-slate-300">{u.position || <span className="text-slate-400">-</span>}</Td>
-                  <Td className="text-slate-600 dark:text-slate-300">{u.email}</Td>
-                  <Td>
-                    <Select aria-label={`Role for ${u.displayName || u.email}`} className="max-w-[12rem]" value={u.access} disabled title="Changing access is not built yet" onChange={() => undefined}>
-                      {ACCESS_LEVELS.map((a) => <option key={a.id}>{a.name}</option>)}
-                    </Select>
-                  </Td>
-                  <Td><Badge tone={u.status === "Active" ? "green" : "slate"}>{u.status}</Badge></Td>
-                  <Td className="text-slate-500">{u.lastLoginAt ? fmtDate(u.lastLoginAt) : "Never"}</Td>
-                  <Td className="text-right">
-                    {u.id === me.data?.user.id ? (
-                      <span className="text-xs text-slate-400">You</span>
-                    ) : (
-                      <Button variant="ghost" className="text-rose-600" aria-label={`Remove ${u.displayName || u.email}`} onClick={() => setRemoving(u)}>Remove</Button>
-                    )}
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-          {users.data.items.length === 0 && <Empty>No users.</Empty>}
-          <Pagination page={page} pageCount={Math.max(1, Math.ceil(users.data.total / PAGE_SIZE))} total={users.data.total} pageSize={PAGE_SIZE} onPage={setPage} />
-        </>
-      )}
-      <InvitationsCard />
-      <Modal
-        open={removing !== null}
-        title="Remove this user?"
-        onClose={() => setRemoving(null)}
-        footer={
-          <>
-            <Button onClick={() => setRemoving(null)}>Keep user</Button>
-            <Button variant="danger" disabled={remove.isPending} onClick={() => void doRemove()}>{remove.isPending ? "Removing…" : "Remove user"}</Button>
-          </>
-        }
-      >
-        <p className="text-sm"><strong>{removing?.displayName || removing?.email}</strong> ({removing?.email}) will be signed out and lose access to your organization. Nothing they created is deleted, and you can invite them again later.</p>
-      </Modal>
-      <div className="grid gap-3 border-t border-slate-200 p-5 text-sm dark:border-slate-800 sm:grid-cols-3">
-        {ACCESS_LEVELS.map((a) => (
-          <div key={a.id}><p className="font-semibold">{a.name}</p><p className="text-slate-500">{a.description}</p></div>
-        ))}
-      </div>
-    </Card>
-  );
-}
-
 /** The message for one field from a failed save, if the server named that field. */
 const fieldError = (e: unknown, path: string) => (e instanceof ApiClientError ? e.fieldErrors.find((f) => f.path === path)?.message : undefined);
 const generalError = (e: unknown, fields: string[]) =>
   e instanceof ApiClientError && !(e.fieldErrors.length > 0 && e.fieldErrors.every((f) => fields.includes(f.path))) ? e.message : null;
 
 /**
- * Company details: the organization's name, website and postal address. The website and name go into the email
- * signature of new campaigns, and the address into email footers. Administrators only (so is this whole page).
+ * Company details: the account's company name, website and postal address. The website and name go into the email
+ * signature of new campaigns, and the address into email footers.
  */
 function CompanyTab() {
   const { toast } = useToast();
   const me = useMe();
-  const update = useUpdateTenant();
+  const update = useUpdateCompany();
   const [name, setName] = useState("");
   const [website, setWebsite] = useState("");
   const [address, setAddress] = useState("");
-  const loaded = me.data?.tenant;
+  const loaded = me.data?.company;
   const [seeded, setSeeded] = useState(false);
 
   // Fill the form once, when the company has loaded. Later refreshes must not overwrite what is being typed.
@@ -705,10 +461,10 @@ function CompanyTab() {
 
   return (
     <Card className="max-w-2xl">
-      <CardHeader title="Company details" subtitle="Your organization's name, website and postal address." />
+      <CardHeader title="Company details" subtitle="Your company's name, website and postal address." />
       <form onSubmit={submit} noValidate>
         <div className="space-y-4 p-5">
-          <Field label="Name" htmlFor="co-name" hint="Shown to everyone in your organization, in invitations, and as the sender name on campaign emails.">
+          <Field label="Name" htmlFor="co-name" hint="Used as the sender name on campaign emails.">
             <TextInput id="co-name" autoComplete="organization" maxLength={100} value={name} onChange={(e) => setName(e.target.value)} aria-invalid={!!nameError} />
             {nameError && <p className="mt-1 text-xs text-rose-600">{nameError}</p>}
           </Field>

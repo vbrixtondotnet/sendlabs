@@ -12,8 +12,7 @@ function errorText(e: ApiClientError): string {
   switch (e.code) {
     case "INVALID_CREDENTIALS": return "Incorrect email or password.";
     case "TOO_MANY_ATTEMPTS": return e.message;
-    case "USER_DISABLED":
-    case "TENANT_SUSPENDED": return e.message;
+    case "USER_DISABLED": return e.message;
     case "AUTH_NOT_CONFIGURED": return "Signing in is not available on this server yet.";
     case "NETWORK": return e.message;
     default: return e.fieldErrors[0]?.message ?? "Something went wrong. Please try again.";
@@ -86,7 +85,7 @@ export function Login() {
           <Button type="submit" variant="primary" className="mt-5 w-full" disabled={!complete || login.isPending || login.isSuccess}>
             {login.isSuccess ? "Signing you in…" : login.isPending ? "Signing in…" : "Sign in"}
           </Button>
-          <p className="mt-4 text-center text-xs text-slate-500">New here? Ask an Administrator of your organization to invite you.</p>
+          <p className="mt-4 text-center text-xs text-slate-500">Accounts are created by the system owner.</p>
         </form>
       </div>
     </div>

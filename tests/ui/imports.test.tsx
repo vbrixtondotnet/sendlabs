@@ -190,11 +190,4 @@ describe("Imports page (live)", () => {
     expect((screen.getByRole("button", { name: "Validate rows" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("is read-only for a Viewer, but still shows history", async () => {
-    stubApi(history());
-    renderAt(<Imports />, { role: "Viewer" });
-    expect(await screen.findByText("older.csv")).toBeTruthy();
-    expect(screen.queryByLabelText("CSV file")).toBeNull();
-    expect(screen.getByText(/read-only/)).toBeTruthy();
-  });
 });

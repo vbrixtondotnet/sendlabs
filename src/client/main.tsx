@@ -4,7 +4,6 @@ import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import "./index.css";
 import { App } from "./App";
-import { RoleProvider } from "./hooks/useRole";
 import { ToastProvider } from "./hooks/useToast";
 import { ApiClientError } from "./services/http";
 
@@ -23,11 +22,9 @@ createRoot(document.getElementById("root") as HTMLElement).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <RoleProvider>
-          <ToastProvider>
-            <App />
-          </ToastProvider>
-        </RoleProvider>
+        <ToastProvider>
+          <App />
+        </ToastProvider>
       </BrowserRouter>
     </QueryClientProvider>
   </StrictMode>,

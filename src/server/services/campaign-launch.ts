@@ -21,8 +21,8 @@ export const MAX_CAMPAIGN_RECIPIENTS = 20_000;
  * campaign becomes Sending, due immediately. The launch sends nothing itself: the scheduled sender does, a little at a time,
  * inside the campaign's daily window and limit. So the request is fast and cannot half-send.
  */
-export async function launchCampaign(deps: { db: Database; email: EmailProvider }, tenantId: string, campaignId: string): Promise<LaunchResultDto> {
-  const repo = campaignLaunchRepo(deps.db, tenantId);
+export async function launchCampaign(deps: { db: Database; email: EmailProvider }, userId: string, campaignId: string): Promise<LaunchResultDto> {
+  const repo = campaignLaunchRepo(deps.db, userId);
   const campaign = await repo.campaign(campaignId);
   if (!campaign) throw notFound("Campaign");
   if (!isCampaignEditable(campaign.status)) throw conflict(`Only a draft can be launched, and this campaign is ${campaign.status}`, "CAMPAIGN_NOT_DRAFT", { status: campaign.status });
@@ -42,7 +42,7 @@ export async function launchCampaign(deps: { db: Database; email: EmailProvider 
   }
 
   try {
-    await deps.email.open(tenantId); // throws a clear ApiError when the sender is not set up, disconnected or rejected
+    await deps.email.open(userId); // throws a clear ApiError when the sender is not set up, disconnected or rejected
   } catch (e) {
     if (e instanceof EmailSendError) throw new ApiError(502, "SENDER_UNAVAILABLE", "The email provider could not be reached. Try again in a moment");
     throw e;
@@ -57,12 +57,12 @@ export async function launchCampaign(deps: { db: Database; email: EmailProvider 
   }
 
   await repo.writeRecipients(campaignId, audience.recipients);
-  const sender = deps.email.id === "gmail" ? await senderRepo(deps.db, tenantId).get() : null;
+  const sender = deps.email.id === "gmail" ? await senderRepo(deps.db, userId).get() : null;
   if (!(await repo.start(campaignId, sender?.id ?? null))) {
     throw conflict("This campaign was launched or changed by someone else", "CAMPAIGN_NOT_DRAFT");
   }
-  console.log(JSON.stringify({ level: "info", event: "campaign_launched", tenantId, campaignId, recipients: audience.recipients.length, excluded: audience.excluded }));
-  const dto: CampaignDto = await campaignsRepo(deps.db, tenantId).get(campaignId);
+  console.log(JSON.stringify({ level: "info", event: "campaign_launched", userId, campaignId, recipients: audience.recipients.length, excluded: audience.excluded }));
+  const dto: CampaignDto = await campaignsRepo(deps.db, userId).get(campaignId);
   return { campaign: dto, recipients: audience.recipients.length, excluded: audience.excluded };
 }
 
@@ -70,8 +70,8 @@ export async function launchCampaign(deps: { db: Database; email: EmailProvider 
  * Sends the recipients that Failed another try. They go back to Pending with their attempts reset, and a campaign that had
  * finished with errors starts sending again. Nothing is sent now; the scheduled sender picks them up in its daily window.
  */
-export async function retryFailedRecipients(deps: { db: Database }, tenantId: string, campaignId: string): Promise<CampaignDto> {
-  const repo = campaignLaunchRepo(deps.db, tenantId);
+export async function retryFailedRecipients(deps: { db: Database }, userId: string, campaignId: string): Promise<CampaignDto> {
+  const repo = campaignLaunchRepo(deps.db, userId);
   const campaign = await repo.campaign(campaignId);
   if (!campaign) throw notFound("Campaign");
   if (!["CompletedWithErrors", "Sending", "Paused", "Failed"].includes(campaign.status)) {
@@ -80,6 +80,6 @@ export async function retryFailedRecipients(deps: { db: Database }, tenantId: st
   const requeued = await repo.requeueFailed(campaignId);
   if (requeued === 0) throw conflict("No emails failed, so there is nothing to retry", "NOTHING_TO_RETRY");
   if (campaign.status === "CompletedWithErrors") await repo.reopen(campaignId);
-  console.log(JSON.stringify({ level: "info", event: "campaign_retry_failed", tenantId, campaignId, requeued }));
-  return campaignsRepo(deps.db, tenantId).get(campaignId);
+  console.log(JSON.stringify({ level: "info", event: "campaign_retry_failed", userId, campaignId, requeued }));
+  return campaignsRepo(deps.db, userId).get(campaignId);
 }

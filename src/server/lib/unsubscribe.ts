@@ -2,7 +2,7 @@ import { isValidEncryptionKey } from "./crypto";
 import { ApiError } from "./errors";
 
 /**
- * Unsubscribe links carry a SIGNED token, not a database id: it says which tenant, which address and which campaign,
+ * Unsubscribe links carry a SIGNED token, not a database id: it says which account, which address and which campaign,
  * and an HMAC (SHA-256, keyed from TOKEN_ENCRYPTION_KEY with its own purpose label) proves we made it. Nobody can forge
  * a link for another address, and there is nothing to look up or guess. It never expires: a link in an old email must
  * keep working. The address is readable inside the token (it is only base64url), which is fine: it is the recipient's own.
@@ -10,7 +10,7 @@ import { ApiError } from "./errors";
  * A "test" token (from a test send) opens the real page but unsubscribes nobody.
  */
 export interface UnsubscribePayload {
-  tenantId: string;
+  userId: string;
   /** Trimmed and lower-cased. */
   email: string;
   campaignId: string | null;
@@ -40,7 +40,7 @@ export function unsubscribeKey(env: { TOKEN_ENCRYPTION_KEY?: string | undefined 
 }
 
 export async function createUnsubscribeToken(keyB64: string, p: UnsubscribePayload): Promise<string> {
-  const payload = toB64Url(enc.encode(JSON.stringify({ t: p.tenantId, e: p.email, c: p.campaignId, k: p.test ? "t" : "l" })));
+  const payload = toB64Url(enc.encode(JSON.stringify({ t: p.userId, e: p.email, c: p.campaignId, k: p.test ? "t" : "l" })));
   const sig = new Uint8Array(await crypto.subtle.sign("HMAC", await hmacKey(keyB64), enc.encode(`${PURPOSE}.${payload}`)));
   return `${payload}.${toB64Url(sig)}`;
 }
@@ -56,7 +56,7 @@ export async function readUnsubscribeToken(keyB64: string, token: string): Promi
     if (typeof data.t !== "string" || typeof data.e !== "string" || !data.t || !data.e || data.e.length > 320) return null;
     if (data.c !== null && typeof data.c !== "string") return null;
     if (data.k !== "t" && data.k !== "l") return null;
-    return { tenantId: data.t, email: data.e, campaignId: data.c, test: data.k === "t" };
+    return { userId: data.t, email: data.e, campaignId: data.c, test: data.k === "t" };
   } catch {
     return null;
   }

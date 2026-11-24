@@ -1,7 +1,7 @@
 import { and, eq, gt, inArray, sql } from "drizzle-orm";
 import { normalizeEmail } from "../../shared/email";
 import type { Database, DbOrTx } from "../database/client";
-import { access, loginAttempts, sessions, tenants, users } from "../database/schema";
+import { loginAttempts, sessions, users } from "../database/schema";
 import { randomToken, sha256Base64Url } from "../lib/crypto";
 import { ApiError } from "../lib/errors";
 import { newId, nowMs } from "../lib/id";
@@ -66,7 +66,7 @@ export async function recordFailure(db: DbOrTx, key: string, max: number, now: n
  * Every way of being wrong (no such address, wrong password, a removed user) gets the SAME answer, after the SAME
  * amount of work, so it cannot be used to find out who has an account. Failures are counted per typed address and per
  * network address; once locked, even the right password is refused until the lock ends. Only a user who proved they
- * know the password is told their account is disabled or their organization suspended.
+ * know the password is told their account is disabled.
  */
 export async function login(
   db: Database,
@@ -86,19 +86,9 @@ export async function login(
   }
 
   const [user] = await db
-    .select({
-      id: users.id,
-      tenantId: users.tenantId,
-      passwordHash: users.passwordHash,
-      status: users.status,
-      mustChangePassword: users.mustChangePassword,
-      tenantStatus: tenants.status,
-      accessName: access.name,
-    })
+    .select({ id: users.id, passwordHash: users.passwordHash, status: users.status, mustChangePassword: users.mustChangePassword })
     .from(users)
-    .innerJoin(tenants, eq(users.tenantId, tenants.id))
-    .innerJoin(access, eq(users.accessId, access.id))
-    .where(and(eq(users.normalizedEmail, email), eq(users.isDeleted, false)))
+    .where(eq(users.normalizedEmail, email))
     .limit(1);
 
   const ok = await verifyPassword(input.password, user?.passwordHash ?? (await decoyHash()));
@@ -109,18 +99,17 @@ export async function login(
     });
     throw INVALID();
   }
-  if (user.status !== "Active") throw new ApiError(403, "USER_DISABLED", "This account is disabled. Ask an Administrator of your organization.");
-  if (user.tenantStatus !== "Active") throw new ApiError(403, "TENANT_SUSPENDED", "This organization is suspended");
+  if (user.status !== "Active") throw new ApiError(403, "USER_DISABLED", "This account is disabled");
 
   const sessionToken = randomToken();
   const expiresAt = now + SESSION_TTL_MS;
   const tokenHash = await sha256Base64Url(sessionToken);
   await db.transaction(async (tx) => {
     await tx.delete(loginAttempts).where(eq(loginAttempts.key, emailKey));
-    await tx.insert(sessions).values({ id: newId(), tenantId: user.tenantId, userId: user.id, tokenHash, expiresAt, createdAt: now });
+    await tx.insert(sessions).values({ id: newId(), userId: user.id, tokenHash, expiresAt, createdAt: now });
     // Only the sign-in time: a sign-in is not an edit of the user, so updated_at stays as it was.
     await tx.execute(sql`UPDATE users SET last_login_at = ${now} WHERE id = ${user.id}`);
   });
-  console.log(JSON.stringify({ level: "info", event: "login", tenantId: user.tenantId, userId: user.id }));
+  console.log(JSON.stringify({ level: "info", event: "login", userId: user.id }));
   return { sessionToken, expiresAt, mustChangePassword: user.mustChangePassword };
 }

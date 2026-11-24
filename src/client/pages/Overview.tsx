@@ -2,19 +2,17 @@ import { Link } from "react-router-dom";
 import type { CampaignSummaryDto } from "@shared/api";
 import { RECIPIENT_STATUSES, type RecipientStatus } from "@shared/types";
 import { Button, Card, CardHeader, CampaignStatusBadge, ErrorNotice, LoadingRows, Notice, PageHeader, ProgressBar, StackedBar, StatCard, fmt, fmtDate } from "@/components/ui";
-import { useRole } from "@/hooks/useRole";
 import { useCampaigns } from "@/services/campaigns";
 import { useContacts } from "@/services/contacts";
 
 const count = (c: CampaignSummaryDto) => RECIPIENT_STATUSES.reduce((n, s) => n + c.totals[s], 0);
 
 export function Overview() {
-  const { canEdit } = useRole();
   // The API has no dashboard endpoint yet, so the figures are derived from the 100 newest active campaigns.
   const list = useCampaigns({ page: 1, pageSize: 100, archived: "exclude" }, { refetchMs: 15_000 });
   const contacts = useContacts({ page: 1, pageSize: 1 });
 
-  const actions = canEdit && (
+  const actions = (
     <>
       <Link to="/imports"><Button>Import contacts</Button></Link>
       <Link to="/campaigns/new"><Button variant="primary">New campaign</Button></Link>
@@ -107,7 +105,7 @@ export function Overview() {
                 <Link to={c.status === "Draft" ? `/campaigns/${c.id}/edit` : `/campaigns/${c.id}`} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/50">
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">{c.name}</p>
-                    <p className="text-xs text-slate-500">{c.launchedAt ? `Launched ${fmtDate(c.launchedAt)}` : `Created ${fmtDate(c.createdAt)}`} · {c.createdBy}</p>
+                    <p className="text-xs text-slate-500">{c.launchedAt ? `Launched ${fmtDate(c.launchedAt)}` : `Created ${fmtDate(c.createdAt)}`}</p>
                   </div>
                   <div className="hidden w-48 sm:block">{count(c) > 0 && <StackedBar totals={c.totals} />}</div>
                   <CampaignStatusBadge status={c.status} />

@@ -16,7 +16,7 @@ const bEmail = "admin@globex.test";
 beforeAll(async () => {
   h = await startHarness();
   a = h;
-  const B = await h.addTenant("Globex Corp", bEmail);
+  const B = await h.addAccount("Globex Corp", bEmail);
   b = h.as(bEmail);
   userA = (await h.rows<{ id: string }>("SELECT id FROM users WHERE normalized_email = ?", h.adminEmail))[0]!.id;
   userB = B.userId;
@@ -48,7 +48,7 @@ type Person = { id: string; email: string | null; hasEmail: boolean };
 const credits = async (who: Caller) => (await who.api("GET", "/api/me")).json.user.credits as number;
 const find = async (who: Caller, id: string) => ((await who.api("GET", "/api/people?pageSize=100")).json.items as Person[]).find((p) => p.id === id)!;
 const add = (who: Caller, id: string) => who.api("POST", `/api/people/${id}/add-contact`);
-const contactCount = async (tenantId = h.tenantId) => Number((await h.rows<{ n: string }>("SELECT count(*) AS n FROM contacts WHERE tenant_id = ?", tenantId))[0]!.n);
+const contactCount = async (userId = h.userId) => Number((await h.rows<{ n: string }>("SELECT count(*) AS n FROM contacts WHERE user_id = ?", userId))[0]!.n);
 
 describe("the starting balance", () => {
   it("gives every user 100 credits, shown on /api/me", async () => {
@@ -77,11 +77,11 @@ describe("POST /api/people/:id/add-contact", () => {
     expect(r.json).toMatchObject({ charged: true, credits: 99, person: { id: "g1", email: "Ava@Summit.test", hasEmail: true } });
     expect(await credits(a)).toBe(99);
 
-    const [c] = await h.rows<Record<string, unknown>>("SELECT * FROM contacts WHERE tenant_id = ?", h.tenantId);
+    const [c] = await h.rows<Record<string, unknown>>("SELECT * FROM contacts WHERE user_id = ?", h.userId);
     expect(c).toMatchObject({ id: r.json.contactId, email: "Ava@Summit.test", normalized_email: "ava@summit.test", first_name: "Ava", last_name: "Smith", company_name: "Summit Ava", country: "United States", employees: 1400, consent_status: "Unknown", consent_source: "People search" });
     const ledger = await h.rows<Record<string, unknown>>("SELECT * FROM credit_transactions");
     expect(ledger).toHaveLength(1);
-    expect(ledger[0]).toMatchObject({ user_id: userA, tenant_id: h.tenantId, delta: -1, balance_after: 99, reason: "people_reveal", global_contact_id: "g1", contact_id: r.json.contactId });
+    expect(ledger[0]).toMatchObject({ user_id: userA, delta: -1, balance_after: 99, reason: "people_reveal", global_contact_id: "g1", contact_id: r.json.contactId });
   });
 
   it("shows the email in later searches, and the person is in the contacts list", async () => {
@@ -118,7 +118,7 @@ describe("POST /api/people/:id/add-contact", () => {
     expect(r.json).toMatchObject({ charged: true, credits: 99 });
     expect(await credits(a)).toBe(99);
     expect(await credits(b)).toBe(99);
-    expect(await contactCount(h.tenantId)).toBe(1);
+    expect(await contactCount(h.userId)).toBe(1);
     expect(Number((await h.rows<{ n: string }>("SELECT count(*) AS n FROM contacts WHERE email = 'Ava@Summit.test'"))[0]!.n)).toBe(2);
     expect((await h.rows<{ user_id: string }>("SELECT user_id FROM credit_transactions ORDER BY created_at")).map((r) => r.user_id).sort()).toEqual([userA, userB].sort());
   });

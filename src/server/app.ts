@@ -13,16 +13,13 @@ import { peopleRoutes } from "./routes/people";
 import { healthRoutes } from "./routes/health";
 import { importRoutes } from "./routes/imports";
 import { authRoutes } from "./routes/auth";
-import { invitationPublicRoutes } from "./routes/invitations";
 import { meRoutes } from "./routes/me";
-import { tenantRoutes } from "./routes/tenant";
 import { emailTemplateRoutes } from "./routes/email-templates";
 import { suppressionRoutes } from "./routes/suppressions";
 import { unsubscribeRoutes } from "./routes/unsubscribe";
 import { senderPublicRoutes, senderRoutes } from "./routes/sender";
 import { GoogleOAuth } from "./services/google-oauth";
 import { testRecipientRoutes } from "./routes/test-recipients";
-import { userRoutes } from "./routes/users";
 import { MAX_FILE_BYTES } from "../shared/csv";
 import { ZodError } from "zod";
 
@@ -96,18 +93,15 @@ export function createApp(options: { google?: GoogleOAuth; fetch?: typeof fetch;
   });
 
   // Public: health, and the page Google sends the browser back to. Everything else requires an actor.
-  // The callback trusts only a one-time `state` we issued, which also says which tenant it is for.
+  // The callback trusts only a one-time `state` we issued, which also says which account it is for.
   app.route("/api/health", healthRoutes);
   app.route("/api/sender", senderPublicRoutes);
-  app.route("/api/invitations", invitationPublicRoutes);
   app.route("/api/auth", authRoutes);
   app.route("/api/unsubscribe", unsubscribeRoutes);
 
   const api = new Hono<AppEnv>();
   api.use("*", requireActor);
   api.route("/me", meRoutes);
-  api.route("/tenant", tenantRoutes);
-  api.route("/users", userRoutes);
   api.route("/sender", senderRoutes);
   api.route("/test-recipients", testRecipientRoutes);
   api.route("/suppressions", suppressionRoutes);

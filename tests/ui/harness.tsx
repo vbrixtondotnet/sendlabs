@@ -4,9 +4,7 @@ import { cleanup, render } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, vi } from "vitest";
-import type { CampaignDto, CampaignSummaryDto, ContactDto, ImportDto, InvitationDto, Page, RecipientDto, EmailTemplateDto, EmailTemplateSummaryDto, MeDto, SenderDto, SenderStatusDto, TestRecipientDto, UserDto } from "../../src/shared/api";
-import type { Role } from "../../src/shared/types";
-import { RoleProvider } from "../../src/client/hooks/useRole";
+import type { CampaignDto, CampaignSummaryDto, ContactDto, ImportDto, Page, RecipientDto, EmailTemplateDto, EmailTemplateSummaryDto, MeDto, SenderDto, SenderStatusDto, TestRecipientDto } from "../../src/shared/api";
 import { ToastProvider } from "../../src/client/hooks/useToast";
 
 afterEach(() => {
@@ -50,20 +48,18 @@ function Elsewhere() {
   return <div data-testid="elsewhere" data-location={l.pathname + l.search} />;
 }
 
-export function renderAt(ui: ReactElement, opts: { path?: string; route?: string; role?: Role } = {}) {
+export function renderAt(ui: ReactElement, opts: { path?: string; route?: string } = {}) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } });
-  const { path = "/", route = "*", role = "Administrator" } = opts;
+  const { path = "/", route = "*" } = opts;
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={[path]}>
-        <RoleProvider fixed={role}>
-          <ToastProvider>
-            <Routes>
-              <Route path={route} element={ui} />
-              <Route path="*" element={<Elsewhere />} />
-            </Routes>
-          </ToastProvider>
-        </RoleProvider>
+        <ToastProvider>
+          <Routes>
+            <Route path={route} element={ui} />
+            <Route path="*" element={<Elsewhere />} />
+          </Routes>
+        </ToastProvider>
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -86,7 +82,7 @@ const zero = { Pending: 0, Queued: 0, Processing: 0, Accepted: 0, Failed: 0, Ski
 
 export const campaign = (over: Partial<CampaignDto> = {}): CampaignDto => ({
   id: "k1", name: "Access-to-SQL", subject: "Hi {{firstName}}", htmlBody: "<p>Hello {{firstName}} <a href=\"{{unsubscribeUrl}}\">unsubscribe</a></p>",
-  textBody: null, signature: "", plainText: false, status: "Draft", senderAccountId: null, recipientImportId: null, recipientIndustries: [], createdBy: "dev@local", dailyLimit: 500, sendWindowStart: "09:00",
+  textBody: null, signature: "", plainText: false, status: "Draft", senderAccountId: null, recipientImportId: null, recipientIndustries: [], dailyLimit: 500, sendWindowStart: "09:00",
   sendWindowEnd: "17:00", timezone: "America/Los_Angeles", nextRunAt: null, lastRunAt: null, launchedAt: null, completedAt: null,
   archivedAt: null, createdAt: ts, updatedAt: ts, totals: { ...zero }, ...over,
 });
@@ -107,29 +103,19 @@ export const totals = (over: Partial<typeof zero> = {}) => ({ ...zero, ...over }
 export const importDto = (over: Partial<ImportDto> = {}): ImportDto => ({
   id: "imp1", filename: "template.csv", fileSize: 4096, status: "Completed", columnMapping: { email: 4 }, totalRows: 25, validRows: 25,
   createdContacts: 25, existingContacts: 0, counts: { malformed: 0, badRow: 0, duplicate: 0, blank: 0 }, rejectedRows: 0, numericWarnings: 0,
-  error: null, createdBy: "dev@local", createdAt: ts, completedAt: ts, ...over,
-});
-
-export const userDto = (over: Partial<UserDto> = {}): UserDto => ({
-  id: "u1", email: "admin@sabertoothsoftwarelabs.net", firstName: "", lastName: "", position: "", displayName: "Administrator", access: "Administrator", accessId: "administrator",
-  status: "Active", mustChangePassword: false, lastLoginAt: null, createdAt: ts, ...over,
-});
-
-export const invitationDto = (over: Partial<InvitationDto> = {}): InvitationDto => ({
-  id: "inv1", email: "pat@example.test", firstName: "Pat", lastName: "Lee", position: "", access: "Viewer", accessId: "viewer", status: "Pending",
-  invitedBy: "admin@sabertoothsoftwarelabs.net", createdAt: ts, expiresAt: "2026-11-13T14:30:00.000Z", ...over,
+  error: null, createdAt: ts, completedAt: ts, ...over,
 });
 
 export const senderDto =(over: Partial<SenderDto> = {}): SenderDto => ({
   senderName: "",
   id: "s1", provider: "gmail", email: "sales@acme.test", status: "Connected", permissions: ["Send email"],
-  connectedBy: "admin@sabertoothsoftwarelabs.net", connectedAt: ts, ...over,
+  connectedAt: ts, ...over,
 });
 
-/** What GET /api/me returns: an Administrator of a company with the default compliance settings (both on). */
-export const meDto = (user: Partial<MeDto["user"]> = {}, tenant: Partial<MeDto["tenant"]> = {}): MeDto => ({
-  user: { id: "u1", email: "admin@sabertoothsoftwarelabs.net", firstName: "Ada", lastName: "Lovelace", position: "", displayName: "Ada Lovelace", access: "Administrator", mustChangePassword: false, credits: 100, ...user },
-  tenant: { id: "t", name: "Acme", slug: "acme", postalAddress: "Acme Inc.\n1 Road, Springfield", website: "", requireUnsubscribeLink: true, oneClickUnsubscribe: true, ...tenant },
+/** What GET /api/me returns: an account with company details and the default compliance settings (both on). */
+export const meDto = (user: Partial<MeDto["user"]> = {}, company: Partial<MeDto["company"]> = {}): MeDto => ({
+  user: { id: "u1", email: "admin@sabertoothsoftwarelabs.net", firstName: "Ada", lastName: "Lovelace", position: "", displayName: "Ada Lovelace", mustChangePassword: false, credits: 100, ...user },
+  company: { name: "Acme", postalAddress: "Acme Inc.\n1 Road, Springfield", website: "", requireUnsubscribeLink: true, oneClickUnsubscribe: true, ...company },
   session: true,
   });
 
@@ -142,7 +128,7 @@ export const templateDto = (over: Partial<EmailTemplateDto> = {}): EmailTemplate
 });
 
 export const testRecipientDto = (over: Partial<TestRecipientDto> = {}): TestRecipientDto => ({
-  id: "t1", email: "qa@acme.test", addedBy: "admin@sabertoothsoftwarelabs.net", createdAt: ts, ...over,
+  id: "t1", email: "qa@acme.test", createdAt: ts, ...over,
 });
 
 /** What GET /api/sender returns. `sender: null` = nothing connected. */

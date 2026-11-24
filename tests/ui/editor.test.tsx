@@ -8,9 +8,9 @@ import { rte } from "./rte";
 import { campaign, contact, page, renderAt, senderStatus, stubApi, testRecipientDto, type Handler, templateDto, templateSummary } from "./harness";
 
 /** Who is signed in. The signature of a new campaign is built from this. */
-const meDto = (user: Partial<MeDto["user"]> = {}, tenant: Partial<MeDto["tenant"]> = {}): MeDto => ({
-  user: { id: "u1", email: "rico@sabertooth.test", firstName: "Rico", lastName: "Prinsipe", position: "Marketing Admin", displayName: "Rico Prinsipe", access: "Administrator", mustChangePassword: false, credits: 100, ...user },
-  tenant: { id: "t", name: "Sabertooth Software Labs", slug: "sabertooth", postalAddress: ADDRESS, website: "sabertoothsoftwarelabs.net", requireUnsubscribeLink: true, oneClickUnsubscribe: true, ...tenant },
+const meDto = (user: Partial<MeDto["user"]> = {}, company: Partial<MeDto["company"]> = {}): MeDto => ({
+  user: { id: "u1", email: "rico@sabertooth.test", firstName: "Rico", lastName: "Prinsipe", position: "Marketing Admin", displayName: "Rico Prinsipe", mustChangePassword: false, credits: 100, ...user },
+  company: { name: "Sabertooth Software Labs", postalAddress: ADDRESS, website: "sabertoothsoftwarelabs.net", requireUnsubscribeLink: true, oneClickUnsubscribe: true, ...company },
   session: true,
 });
 const ADDRESS = "Sabertooth Software Labs\n1 Example Street\nManila, Philippines";
@@ -209,13 +209,6 @@ describe("Campaign editor (live drafts)", () => {
     expect(screen.getByRole("link", { name: "View the campaign" }).getAttribute("href")).toBe("/campaigns/k1");
   });
 
-  it("is unavailable to a Viewer", async () => {
-    stubApi(contacts);
-    renderAt(<CampaignEditor />, { path: "/campaigns/new", route: "/campaigns/new", role: "Viewer" });
-    expect(await screen.findByText(/read-only/)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Save draft" })).toBeNull();
-  });
-
   describe("test send", () => {
     const allowlisted = (items = [testRecipientDto(), testRecipientDto({ id: "t2", email: "pm@acme.test" })]): Handler => (c) =>
       c.path === "/api/test-recipients" && c.method === "GET" ? { json: { items } } : contacts(c);
@@ -237,13 +230,6 @@ describe("Campaign editor (live drafts)", () => {
       expect(await screen.findByText(/No test addresses yet/)).toBeTruthy();
       expect(screen.getByRole("link", { name: "Add one in Settings" }).getAttribute("href")).toBe("/settings");
       expect(testButton().disabled).toBe(true);
-    });
-
-    it("tells a Campaign Manager to ask an Administrator instead of linking to Settings", async () => {
-      stubApi(allowlisted([]));
-      renderAt(<CampaignEditor />, { path: "/campaigns/new", route: "/campaigns/new", role: "Campaign Manager" });
-      expect(await screen.findByText(/Ask an Administrator/)).toBeTruthy();
-      expect(screen.queryByRole("link", { name: "Add one in Settings" })).toBeNull();
     });
 
     it("saves the draft, then asks the server to test-send it to the ticked addresses", async () => {
@@ -594,14 +580,6 @@ describe("Compliance in the editor", () => {
     newCampaign();
     await ready();
     expect(await screen.findByText("Add your company's postal address in Settings > Company Details before launching")).toBeTruthy();
-    expect(launch().disabled).toBe(true);
-  });
-
-  it("tells a Campaign Manager to ask an Administrator", async () => {
-    stubApi(withMe(meDto({ access: "Campaign Manager" }, { postalAddress: "" })));
-    renderAt(<CampaignEditor />, { path: "/campaigns/new", route: "/campaigns/new", role: "Campaign Manager" });
-    await ready();
-    expect(await screen.findByText(/Ask an Administrator to add the company's postal address/)).toBeTruthy();
     expect(launch().disabled).toBe(true);
   });
 

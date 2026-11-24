@@ -71,7 +71,7 @@ export async function runCampaignTick(deps: TickDeps, now: number = Date.now()):
 
 async function serveCampaign(deps: TickDeps, unsubscribe: { encryptionKey: string; appBaseUrl: string }, campaign: CampaignRow, now: number, result: TickResult): Promise<void> {
   const sending = campaignSendingRepo(deps.db);
-  const { id: campaignId, tenantId } = campaign;
+  const { id: campaignId, userId } = campaign;
 
   await sending.reclaimExpired(campaignId, now);
 
@@ -92,13 +92,13 @@ async function serveCampaign(deps: TickDeps, unsubscribe: { encryptionKey: strin
   const budget = pacedBudget(campaign.dailyLimit - sentToday, minutesLeft, MAX_SENDS_PER_CAMPAIGN_PER_TICK);
   if (budget <= 0) return;
 
-  const tenant = await sending.tenant(tenantId);
-  if (!tenant) return;
-  const fromFallback = (await sending.creatorName(tenantId, campaign.createdBy)) || tenant.name;
+  const company = await sending.company(userId);
+  if (!company) return;
+  const fromFallback = company.displayName || company.name;
 
   let channel: EmailChannel;
   try {
-    channel = await deps.email.open(tenantId);
+    channel = await deps.email.open(userId);
   } catch (e) {
     if (e instanceof EmailSendError) {
       await sending.backoff(campaignId, now + TRANSIENT_BACKOFF_MS, now); // the provider is down: try again shortly
@@ -113,9 +113,9 @@ async function serveCampaign(deps: TickDeps, unsubscribe: { encryptionKey: strin
     throw e;
   }
 
-  await sending.promote(tenantId, campaignId, budget, now);
-  const claimed = await sending.claim(tenantId, campaignId, budget, now, LEASE_MS);
-  const suppressions = suppressionsRepo(deps.db, tenantId);
+  await sending.promote(userId, campaignId, budget, now);
+  const claimed = await sending.claim(userId, campaignId, budget, now, LEASE_MS);
+  const suppressions = suppressionsRepo(deps.db, userId);
   let stop = false;
 
   for (const r of claimed) {
@@ -130,11 +130,11 @@ async function serveCampaign(deps: TickDeps, unsubscribe: { encryptionKey: strin
       continue;
     }
     try {
-      const token = await createUnsubscribeToken(unsubscribe.encryptionKey, { tenantId, email: normalizeEmail(r.email), campaignId, test: false });
+      const token = await createUnsubscribeToken(unsubscribe.encryptionKey, { userId, email: normalizeEmail(r.email), campaignId, test: false });
       await channel.send(
         buildCampaignEmail({
           campaign,
-          tenant,
+          company: { name: company.name, postalAddress: company.postalAddress },
           contact: r.contact,
           to: r.email,
           fromName: channel.fromName || fromFallback,

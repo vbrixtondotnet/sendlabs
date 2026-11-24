@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import type { UnsubscribeInfoDto, UnsubscribeResultDto } from "../../shared/api";
 import type { Database } from "../database/client";
-import { contacts, suppressions, tenants } from "../database/schema";
+import { contacts, suppressions, users } from "../database/schema";
 import { ApiError } from "../lib/errors";
 import { readUnsubscribeToken, type UnsubscribePayload } from "../lib/unsubscribe";
 
@@ -14,13 +14,13 @@ export function maskEmail(email: string): string {
   return `${email[0]}***${email.slice(at)}`;
 }
 
-/** The genuine payload and the company it is for, or the one generic 404. A company that no longer exists cannot be unsubscribed from. */
+/** The genuine payload and the company it is for, or the one generic 404. An account that no longer exists cannot be unsubscribed from. */
 async function open(db: Database, key: string, token: string): Promise<{ who: UnsubscribePayload; companyName: string }> {
   const who = await readUnsubscribeToken(key, token);
   if (!who) throw INVALID();
-  const [tenant] = await db.select({ name: tenants.name }).from(tenants).where(eq(tenants.id, who.tenantId)).limit(1);
-  if (!tenant) throw INVALID();
-  return { who, companyName: tenant.name };
+  const [account] = await db.select({ name: users.companyName, displayName: users.displayName }).from(users).where(eq(users.id, who.userId)).limit(1);
+  if (!account) throw INVALID();
+  return { who, companyName: account.name || account.displayName };
 }
 
 /** What the page shows before the person confirms. Changes nothing (a mail scanner opening the link unsubscribes nobody). */
@@ -28,7 +28,7 @@ export async function describeUnsubscribe(db: Database, key: string, token: stri
   const { who, companyName } = await open(db, key, token);
   const [existing] = who.test
     ? []
-    : await db.select({ id: suppressions.id }).from(suppressions).where(and(eq(suppressions.tenantId, who.tenantId), eq(suppressions.normalizedEmail, who.email))).limit(1);
+    : await db.select({ id: suppressions.id }).from(suppressions).where(and(eq(suppressions.userId, who.userId), eq(suppressions.normalizedEmail, who.email))).limit(1);
   return { companyName, email: maskEmail(who.email), alreadyUnsubscribed: !!existing, test: who.test };
 }
 
@@ -43,13 +43,13 @@ export async function performUnsubscribe(db: Database, key: string, token: strin
   await db.transaction(async (tx) => {
     await tx
       .insert(suppressions)
-      .values({ tenantId: who.tenantId, email: who.email, normalizedEmail: who.email, reason: "Unsubscribed", campaignId: who.campaignId })
+      .values({ userId: who.userId, email: who.email, normalizedEmail: who.email, reason: "Unsubscribed", campaignId: who.campaignId })
       .onConflictDoNothing();
     await tx
       .update(contacts)
       .set({ consentStatus: "Withdrawn", consentSource: "Unsubscribe link" })
-      .where(and(eq(contacts.tenantId, who.tenantId), eq(contacts.normalizedEmail, who.email)));
+      .where(and(eq(contacts.userId, who.userId), eq(contacts.normalizedEmail, who.email)));
   });
-  console.log(JSON.stringify({ level: "info", event: "unsubscribed", tenantId: who.tenantId }));
+  console.log(JSON.stringify({ level: "info", event: "unsubscribed", userId: who.userId }));
   return { unsubscribed: true, test: false, companyName };
 }

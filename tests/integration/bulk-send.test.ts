@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { EMAIL_FOOTER_ENABLED, LIST_UNSUBSCRIBE_HEADERS_ENABLED } from "../../src/shared/merge";
 import { GoogleOAuth } from "../../src/server/services/google-oauth";
 import { FakeGoogle } from "./fake-google";
-import { startHarness, uniqueEmail, type Caller, type Harness } from "./harness";
+import { startHarness, type Caller, type Harness } from "./harness";
 
 const google = new FakeGoogle();
 let h: Harness;
@@ -20,7 +20,7 @@ const DAY = 24 * 60 * 60 * 1000;
 beforeAll(async () => {
   h = await startHarness({ google: new GoogleOAuth(google.fetch) });
   expect((await h.api("PATCH", "/api/me", { firstName: "Rico", lastName: "Prinsipe" })).status).toBe(200);
-  expect((await h.api("PATCH", "/api/tenant", { postalAddress: "1 Road\nCebu City" })).status).toBe(200);
+  expect((await h.api("PATCH", "/api/me/company", { postalAddress: "1 Road\nCebu City" })).status).toBe(200);
   const start = await h.api("POST", "/api/sender/gmail/connect");
   expect((await h.text(google.consent(start.json.url, { email: SENDER }))).status).toBe(302);
   expect((await h.api("PATCH", "/api/sender", { senderName: "Marketing Admin" })).status).toBe(200);
@@ -35,7 +35,7 @@ beforeEach(async () => {
   await h.sql("DELETE FROM campaigns");
   await h.sql("DELETE FROM contacts");
   await h.sql("UPDATE sender_accounts SET status = 'Connected'");
-  await h.api("PATCH", "/api/tenant", { postalAddress: "1 Road\nCebu City" });
+  await h.api("PATCH", "/api/me/company", { postalAddress: "1 Road\nCebu City" });
 });
 
 const header = (raw: string, name: string) => new RegExp(`^${name}: (.*)$`, "m").exec(raw.split("\r\n\r\n")[0]!)?.[1];
@@ -94,7 +94,7 @@ describe("launching a campaign", () => {
     await contact("ann@x.test");
     await contact("gone@x.test");
     await contact("withdrew@x.test");
-    await h.sql("INSERT INTO suppressions (id,tenant_id,email,normalized_email,reason,created_at) VALUES (?,?,?,?,?,?)", "s1", h.tenantId, "gone@x.test", "gone@x.test", "Unsubscribed", 1);
+    await h.sql("INSERT INTO suppressions (id,user_id,email,normalized_email,reason,created_at) VALUES (?,?,?,?,?,?)", "s1", h.userId, "gone@x.test", "gone@x.test", "Unsubscribed", 1);
     await h.sql("UPDATE contacts SET consent_status = 'Withdrawn' WHERE normalized_email = 'withdrew@x.test'");
     const id = await campaign();
     const r = await launch(id);
@@ -116,11 +116,11 @@ describe("launching a campaign", () => {
     const id = await campaign();
     if (EMAIL_FOOTER_ENABLED) {
       // The postal address is only needed while the footer that shows it is on.
-      await h.api("PATCH", "/api/tenant", { postalAddress: "" });
+      await h.api("PATCH", "/api/me/company", { postalAddress: "" });
       const noAddress = await launch(id);
       expect(noAddress.status).toBe(409);
       expect(noAddress.json.error.code).toBe("POSTAL_ADDRESS_REQUIRED");
-      await h.api("PATCH", "/api/tenant", { postalAddress: "1 Road" });
+      await h.api("PATCH", "/api/me/company", { postalAddress: "1 Road" });
     }
 
     const typo = await campaign({ subject: "Hi {{frstName}}" });
@@ -145,19 +145,16 @@ describe("launching a campaign", () => {
 
   it.runIf(!EMAIL_FOOTER_ENABLED)("launches without a postal address while the footer that shows it is off", async () => {
     await contact("ann@x.test");
-    await h.api("PATCH", "/api/tenant", { postalAddress: "" });
+    await h.api("PATCH", "/api/me/company", { postalAddress: "" });
     const id = await campaign();
     const r = await launch(id);
     expect(r.status).toBe(200);
     expect(r.json.campaign.status).toBe("Sending");
   });
 
-  it("is for Administrators and Campaign Managers, not Viewers", async () => {
+  it("needs a signed-in account", async () => {
     await contact("ann@x.test");
     const id = await campaign();
-    const email = uniqueEmail("viewer");
-    await h.sql("INSERT INTO users (id,tenant_id,display_name,email,normalized_email,password_hash,access_id,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)", `u-${email}`, h.tenantId, "V", email, email, "x", "viewer", "Active", 1, 1);
-    expect((await launch(id, h.as(email))).status).toBe(403);
     expect((await h.anonymous.api("POST", `/api/campaigns/${id}/launch`)).status).toBe(401);
     expect((await get(id)).status).toBe("Draft");
   });
@@ -183,7 +180,7 @@ describe("the scheduled sender", () => {
     expect(header(ann!.raw, "List-Unsubscribe") !== undefined).toBe(LIST_UNSUBSCRIBE_HEADERS_ENABLED);
     expect(header(ann!.raw, "List-Unsubscribe-Post") !== undefined).toBe(LIST_UNSUBSCRIBE_HEADERS_ENABLED);
     // Each link is that recipient's own, and a live one (not a test link).
-    expect(tokenOf(ann!.raw)).toMatchObject({ t: h.tenantId, e: "ann@x.test", c: id, k: "l" });
+    expect(tokenOf(ann!.raw)).toMatchObject({ t: h.userId, e: "ann@x.test", c: id, k: "l" });
     expect(tokenOf(bob!.raw)).toMatchObject({ e: "bob@x.test", k: "l" });
     expect((await statuses(id)).map((s) => s.status)).toEqual(["Accepted", "Accepted"]);
   });
@@ -254,7 +251,7 @@ describe("the scheduled sender", () => {
     await contact("bob@x.test");
     const id = await campaign();
     await launch(id);
-    await h.sql("INSERT INTO suppressions (id,tenant_id,email,normalized_email,reason,created_at) VALUES (?,?,?,?,?,?)", "s1", h.tenantId, "bob@x.test", "bob@x.test", "Unsubscribed", 1);
+    await h.sql("INSERT INTO suppressions (id,user_id,email,normalized_email,reason,created_at) VALUES (?,?,?,?,?,?)", "s1", h.userId, "bob@x.test", "bob@x.test", "Unsubscribed", 1);
     const r = await tick();
     expect(r.json).toMatchObject({ accepted: 1, skipped: 1 });
     expect(sentTo()).toEqual(["ann@x.test"]);

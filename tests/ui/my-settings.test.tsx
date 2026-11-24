@@ -6,15 +6,15 @@ import type { MeDto } from "../../src/shared/api";
 import { renderAt, stubApi, type Call, type Handler } from "./harness";
 
 const meDto = (over: Partial<MeDto["user"]> = {}): MeDto => ({
-  user: { id: "u1", email: "ada@acme.test", firstName: "Ada", lastName: "Lovelace", position: "", displayName: "Ada Lovelace", access: "Campaign Manager", mustChangePassword: false, credits: 100, ...over },
-  tenant: { id: "t", name: "Acme", slug: "acme", postalAddress: "", website: "", requireUnsubscribeLink: true, oneClickUnsubscribe: true },
+  user: { id: "u1", email: "ada@acme.test", firstName: "Ada", lastName: "Lovelace", position: "", displayName: "Ada Lovelace", mustChangePassword: false, credits: 100, ...over },
+  company: { name: "Acme", postalAddress: "", website: "", requireUnsubscribeLink: true, oneClickUnsubscribe: true },
   session: true,
 });
 const fail = (status: number, code: string, message: string, details?: unknown) => ({ status, json: { error: { code, message, details, correlationId: "x" } } });
 
 /** A server that remembers what was saved, like the real one. */
-function server(opts: { profileReply?: ReturnType<typeof fail>; passwordReply?: { status: number; json?: unknown }; access?: MeDto["user"]["access"] } = {}): Handler {
-  let me = meDto({ access: opts.access ?? "Campaign Manager" });
+function server(opts: { profileReply?: ReturnType<typeof fail>; passwordReply?: { status: number; json?: unknown } } = {}): Handler {
+  let me = meDto();
   return ({ method, path, body }: Call) => {
     if (method === "GET" && path === "/api/me") return { json: me };
     if (method === "PATCH" && path === "/api/me") {
@@ -49,8 +49,8 @@ describe("My settings: tabs", () => {
     expect(screen.queryByLabelText("First name")).toBeNull();
   });
 
-  it("no longer has Company Details: that lives under Settings, for Administrators", async () => {
-    open(server({ access: "Administrator" }));
+  it("no longer has Company Details: that lives under Settings", async () => {
+    open(server());
     await screen.findByLabelText("First name");
     expect(screen.queryByRole("tab", { name: "Company Details" })).toBeNull();
     expect(screen.queryByLabelText("Postal address")).toBeNull();
@@ -79,15 +79,13 @@ describe("My settings: tabs", () => {
 describe("User Details tab", () => {
   const openUser = (handler: Handler = server()) => open(handler, "/account?tab=user");
 
-  it("shows the current first and last name, and the email and role read-only", async () => {
+  it("shows the current first and last name, and the email read-only", async () => {
     openUser();
     await screen.findByLabelText("First name");
     expect(input("First name").value).toBe("Ada");
     expect(input("Last name").value).toBe("Lovelace");
     expect(input("Email address").value).toBe("ada@acme.test");
     expect(input("Email address").readOnly).toBe(true);
-    expect(input("Role").value).toBe("Campaign Manager");
-    expect(input("Role").readOnly).toBe(true);
   });
 
   it("has a Position field, empty until it is set, and an optional one", async () => {
@@ -101,7 +99,7 @@ describe("User Details tab", () => {
   });
 
   it("shows the saved position", async () => {
-    openUser(() => ({ json: meDto({ access: "Viewer", position: "Sales Director" }) }));
+    openUser(() => ({ json: meDto({ position: "Sales Director" }) }));
     await screen.findByLabelText("Position");
     expect(input("Position").value).toBe("Sales Director");
   });
@@ -120,7 +118,7 @@ describe("User Details tab", () => {
   });
 
   it("can be cleared again, and is allowed to be empty", async () => {
-    const calls = openUser((c) => (c.method === "GET" ? { json: meDto({ access: "Viewer", position: "CTO" }) } : { json: { firstName: "Ada", lastName: "Lovelace", position: "", displayName: "Ada Lovelace" } }));
+    const calls = openUser((c) => (c.method === "GET" ? { json: meDto({ position: "CTO" }) } : { json: { firstName: "Ada", lastName: "Lovelace", position: "", displayName: "Ada Lovelace" } }));
     await screen.findByLabelText("Position");
     type("Position", "");
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
@@ -138,7 +136,7 @@ describe("User Details tab", () => {
   });
 
   it("no longer carries the organization name", async () => {
-    openUser(server({ access: "Administrator" }));
+    openUser(server());
     await screen.findByLabelText("First name");
     expect(screen.queryByLabelText("Organization name")).toBeNull();
     expect(screen.queryByLabelText("Name")).toBeNull();
@@ -159,7 +157,7 @@ describe("User Details tab", () => {
   });
 
   it("saves the new name, sending the names and position only, and never touches the company", async () => {
-    const calls = openUser(server({ access: "Administrator" }));
+    const calls = openUser(server());
     await screen.findByLabelText("First name");
     type("First name", " Grace ");
     type("Last name", "Hopper");

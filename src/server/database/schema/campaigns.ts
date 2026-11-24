@@ -8,7 +8,6 @@ import {
 } from "../../../shared/types";
 import { contacts } from "./contacts";
 import { createdAt, idColumn, inList, updatedAt } from "./helpers";
-import { tenants } from "./tenants";
 import { users } from "./users";
 
 /** "HH:MM", 00:00 to 23:59 (SQLite wrote this with GLOB; PostgreSQL uses a regular expression). */
@@ -18,15 +17,16 @@ const hhmm = (column: string) => `("${column}" ~ '^([01][0-9]|2[0-3]):[0-5][0-9]
  * A campaign sends one separate email per recipient, in daily batches (the "drip"):
  * a daily tick takes up to `daily_limit` Pending recipients, in `sequence` order, until none are left.
  * Subject, body and drip settings lock once the campaign leaves Draft (enforced in the service layer).
- * Owned by one tenant, and created by one of that tenant's users.
+ * Owned by one account (the one that created it).
  */
 export const campaigns = pgTable(
   "campaigns",
   {
     id: idColumn(),
-    tenantId: text("tenant_id")
+    /** The account that owns this row. Every query filters by it; the composite keys below stop a row pointing at another account's data. */
+    userId: text("user_id")
       .notNull()
-      .references(() => tenants.id, { onDelete: "restrict" }),
+      .references(() => users.id, { onDelete: "restrict" }),
     name: text("name").notNull(),
     /** May contain merge fields, e.g. {{firstName}}. */
     subject: text("subject").notNull(),
@@ -40,18 +40,16 @@ export const campaigns = pgTable(
 
     /** Becomes a foreign key to `sender_accounts.id` when that table is added. */
     senderAccountId: text("sender_account_id"),
-    /** The user who created it. The composite key below guarantees that user belongs to the same tenant. */
-    createdBy: text("created_by").notNull(),
 
     /**
-     * Who gets the emails: null means every contact of the tenant, otherwise the people in that import.
+     * Who gets the emails: null means every contact of the account, otherwise the people in that import.
      * Resolved into campaign_recipients at launch. A soft reference (no foreign key): a SET NULL action on a
-     * composite key would also null the required tenant_id. The API checks the import is the tenant's own
+     * composite key would also null the required user_id. The API checks the import is the account's own
      * and Completed.
      */
     recipientImportId: text("recipient_import_id"),
     /**
-     * Alternative audience: every contact of the tenant whose industry is one of these (exact match). Empty means
+     * Alternative audience: every contact of the account whose industry is one of these (exact match). Empty means
      * "not used". Mutually exclusive with `recipientImportId`. Resolved into campaign_recipients at launch.
      */
     recipientIndustries: jsonb("recipient_industries").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
@@ -80,12 +78,11 @@ export const campaigns = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    // Lets recipients reference "a campaign of the SAME tenant" with a composite foreign key.
-    uniqueIndex("campaigns_tenant_id_uq").on(t.tenantId, t.id),
-    foreignKey({ columns: [t.tenantId, t.createdBy], foreignColumns: [users.tenantId, users.id], name: "campaigns_creator_fk" }),
-    index("campaigns_tenant_status_idx").on(t.tenantId, t.status),
-    index("campaigns_tenant_created_at_idx").on(t.tenantId, t.createdAt),
-    // The daily tick scans for due campaigns across every tenant, so this one is deliberately not tenant-led.
+    // Lets recipients reference "a campaign of the SAME account" with a composite foreign key.
+    uniqueIndex("campaigns_user_id_uq").on(t.userId, t.id),
+    index("campaigns_user_status_idx").on(t.userId, t.status),
+    index("campaigns_user_created_at_idx").on(t.userId, t.createdAt),
+    // The daily tick scans for due campaigns across every account, so this one is deliberately not account-led.
     index("campaigns_due_idx").on(t.status, t.nextRunAt),
     check("campaigns_status_chk", inList("status", CAMPAIGN_STATUSES)),
     check("campaigns_daily_limit_chk", sql.raw(`"daily_limit" BETWEEN 1 AND 2000`)),
@@ -99,21 +96,22 @@ export const campaigns = pgTable(
 
 /**
  * One row per (campaign, contact). Created for the whole list at launch, so a lost HTTP request
- * never loses recipient work. Only each day's batch is enqueued. Carries its own `tenant_id`, and the
- * composite keys guarantee the campaign and the contact belong to that same tenant.
+ * never loses recipient work. Only each day's batch is enqueued. Carries its own `user_id`, and the
+ * composite keys guarantee the campaign and the contact belong to that same account.
  */
 export const campaignRecipients = pgTable(
   "campaign_recipients",
   {
     id: idColumn(),
-    tenantId: text("tenant_id")
+    /** The account that owns this row. Every query filters by it; the composite keys below stop a row pointing at another account's data. */
+    userId: text("user_id")
       .notNull()
-      .references(() => tenants.id, { onDelete: "restrict" }),
+      .references(() => users.id, { onDelete: "restrict" }),
     campaignId: text("campaign_id").notNull(),
     /**
      * Nullable so a contact can be erased on request while the campaign keeps its audit trail through the
      * snapshots below. Erasing a contact first sets this to NULL (see contactsRepo.delete): the composite key
-     * cannot use SET NULL, because that would also null the required tenant_id.
+     * cannot use SET NULL, because that would also null the required user_id.
      */
     contactId: text("contact_id"),
 
@@ -143,15 +141,15 @@ export const campaignRecipients = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    foreignKey({ columns: [t.tenantId, t.campaignId], foreignColumns: [campaigns.tenantId, campaigns.id], name: "recipients_campaign_fk" }).onDelete("cascade"),
-    foreignKey({ columns: [t.tenantId, t.contactId], foreignColumns: [contacts.tenantId, contacts.id], name: "recipients_contact_fk" }),
+    foreignKey({ columns: [t.userId, t.campaignId], foreignColumns: [campaigns.userId, campaigns.id], name: "recipients_campaign_fk" }).onDelete("cascade"),
+    foreignKey({ columns: [t.userId, t.contactId], foreignColumns: [contacts.userId, contacts.id], name: "recipients_contact_fk" }),
     uniqueIndex("campaign_recipients_campaign_contact_uq").on(t.campaignId, t.contactId),
     uniqueIndex("campaign_recipients_campaign_sequence_uq").on(t.campaignId, t.sequence),
     // Dashboard counts and the daily "next N Pending in order" query.
     index("campaign_recipients_pick_idx").on(t.campaignId, t.status, t.sequence),
-    // Reconciliation: stuck Processing rows with expired leases (runs across tenants).
+    // Reconciliation: stuck Processing rows with expired leases (runs across accounts).
     index("campaign_recipients_lease_idx").on(t.status, t.leaseExpiresAt),
-    index("campaign_recipients_contact_idx").on(t.tenantId, t.contactId),
+    index("campaign_recipients_contact_idx").on(t.userId, t.contactId),
     check("campaign_recipients_status_chk", inList("status", RECIPIENT_STATUSES)),
     check("campaign_recipients_skip_reason_chk", sql.raw(
       `"skip_reason" IS NULL OR "skip_reason" IN (${SKIP_REASONS.map((r) => `'${r}'`).join(", ")})`,

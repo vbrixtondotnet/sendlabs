@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { EmailTemplates } from "../../src/client/pages/EmailTemplates";
 import type { EmailTemplateSummaryDto } from "../../src/shared/api";
-import type { Role } from "../../src/shared/types";
 import { renderAt, stubApi, templateDto, templateSummary, type Call, type Handler } from "./harness";
 import { rte } from "./rte";
 
@@ -79,9 +78,9 @@ function server(opts: { mine?: EmailTemplateSummaryDto[]; manageReply?: ReturnTy
     return undefined;
   };
 }
-const open = (handler: Handler = server(), role: Role = "Administrator") => {
+const open = (handler: Handler = server()) => {
   const calls = stubApi(handler);
-  renderAt(<EmailTemplates />, { path: "/templates", route: "/templates", role });
+  renderAt(<EmailTemplates />, { path: "/templates", route: "/templates" });
   return calls;
 };
 const row = (name: string) => screen.getByText(name, { selector: "td" }).closest("tr")!;
@@ -156,7 +155,7 @@ describe("Available Templates tab", () => {
     expect(within(row("Construction")).queryByText("In My Templates")).toBeNull();
   });
 
-  it("lets an Administrator add one: it is copied on the server, marked, and the Add button goes away", async () => {
+  it("lets you add one: it is copied on the server, marked, and the Add button goes away", async () => {
     const calls = open();
     await screen.findByText("Construction", { selector: "td" });
     choose("Construction", "Add Construction to My Templates");
@@ -174,21 +173,6 @@ describe("Available Templates tab", () => {
     choose("Construction", "Add Construction to My Templates");
     expect(await screen.findByText("You can have at most 100 templates")).toBeTruthy();
     expect(items("Construction")).toContain("Add to My Templates");
-  });
-
-  it("is read-only for a Campaign Manager: they can look and preview, with no way to add, and are told why", async () => {
-    const calls = open(server(), "Campaign Manager");
-    await screen.findByText("Construction", { selector: "td" });
-    expect(screen.queryByRole("button", { name: /Add .* to My Templates/ })).toBeNull();
-    expect(screen.getByText(/Your role is read-only/)).toBeTruthy();
-    expect(items("Construction")).toEqual(["Preview"]);
-    expect(writes(calls)).toHaveLength(0);
-  });
-
-  it("does not show the read-only notice to an Administrator", async () => {
-    open();
-    await screen.findByText("Construction", { selector: "td" });
-    expect(screen.queryByText(/Your role is read-only/)).toBeNull();
   });
 
   it("has no way to create, edit or delete a system template", async () => {
@@ -210,15 +194,15 @@ describe("Available Templates tab", () => {
 });
 
 describe("My Templates tab", () => {
-  const openMine = async (handler: Handler = server(), role: Role = "Administrator") => {
-    const calls = open(handler, role);
+  const openMine = async (handler: Handler = server()) => {
+    const calls = open(handler);
     await screen.findByRole("tab", { name: "My Templates" });
     tab("My Templates");
     await screen.findByText(/These are the templates offered when writing a campaign/);
     return calls;
   };
 
-  it("lists the organization's templates, saying where each came from, with Preview and Remove for an Administrator", async () => {
+  it("lists the account's templates, saying where each came from, with Preview and Remove", async () => {
     await openMine();
     await screen.findByText("Our own pitch", { selector: "td" });
     expect(screen.getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Template", "Source", "Added", "Actions"]);
@@ -242,7 +226,7 @@ describe("My Templates tab", () => {
     await waitFor(() => expect(screen.queryByText("Our own pitch", { selector: "td" })).toBeNull());
   });
 
-  it("lets an Administrator edit one, and says a copy of an Available Template is changed on its own", async () => {
+  it("lets you edit one, and says a copy of an Available Template is changed on its own", async () => {
     const calls = await openMine();
     await screen.findByText("Digital Marketing", { selector: "td" });
     choose("Digital Marketing", "Edit Digital Marketing");
@@ -276,16 +260,6 @@ describe("My Templates tab", () => {
     expect(screen.getByText("Our own pitch", { selector: "td" })).toBeTruthy();
   });
 
-  it("is read-only for a Campaign Manager: no Create template, no Remove, and a notice", async () => {
-    const calls = await openMine(server(), "Campaign Manager");
-    await screen.findByText("Our own pitch", { selector: "td" });
-    expect(screen.queryByRole("button", { name: "Create template" })).toBeNull();
-    expect(screen.queryByRole("button", { name: /Remove/ })).toBeNull();
-    expect(screen.getByText(/Your role is read-only/)).toBeTruthy();
-    expect(items("Our own pitch")).toEqual(["Preview"]);
-    expect(writes(calls)).toHaveLength(0);
-  });
-
   it("says plainly when it is empty, and what to do about it", async () => {
     await openMine(server({ mine: [] }));
     expect(await screen.findByText(/My Templates is empty, so campaigns offer no templates\. Add one from Available Templates, or create your own\./)).toBeTruthy();
@@ -294,15 +268,6 @@ describe("My Templates tab", () => {
   it("says why it could not load, instead of looking empty", async () => {
     await openMine(server({ listReply: fail(500, "INTERNAL_ERROR", "Could not load templates") }));
     expect(await screen.findByText("Could not load templates")).toBeTruthy();
-  });
-});
-
-describe("Viewer", () => {
-  it("has no access to Email Templates: they are told so, and nothing is requested", async () => {
-    const calls = open(server(), "Viewer");
-    expect(await screen.findByText("Your role does not have access to Email Templates.")).toBeTruthy();
-    expect(screen.queryByRole("tab")).toBeNull();
-    expect(calls.filter((c) => c.path.startsWith("/api/email-templates"))).toHaveLength(0);
   });
 });
 
@@ -425,114 +390,5 @@ describe("Creating a template", () => {
     await screen.findByRole("dialog");
     expect(nameBox().value).toBe("");
     expect(writes(calls)).toHaveLength(0);
-  });
-});
-
-describe("SuperAdministrator", () => {
-  const openSuper = (handler: Handler = server()) => open(handler, "SuperAdministrator");
-  const nameBox = () => screen.getByLabelText("Template name") as HTMLInputElement;
-  const message = () => rte("Message");
-
-  it("sees only the Available Templates, with no My Templates tab, no read-only notice, and nothing requested for My Templates", async () => {
-    const calls = openSuper();
-    expect(await screen.findByRole("heading", { name: "Available Templates" })).toBeTruthy();
-    await screen.findByText("Construction", { selector: "td" });
-    expect(screen.queryByRole("tab")).toBeNull();
-    expect(screen.queryByText("My Templates", { selector: "button" })).toBeNull();
-    expect(screen.queryByText(/Your role is read-only/)).toBeNull();
-    expect(calls.some((c) => c.method === "GET" && c.path === "/api/email-templates")).toBe(false); // the API would refuse it
-    expect(screen.queryByRole("button", { name: /Add .* to My Templates/ })).toBeNull();
-    expect(screen.queryByText("In My Templates")).toBeNull();
-  });
-
-  it("has Preview, Edit and Delete on every template, and a Create template button", async () => {
-    openSuper();
-    await screen.findByText("Construction", { selector: "td" });
-    expect(screen.getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Template", "Updated", "Actions"]);
-    for (const name of ["Automotive Services", "Construction", "Digital Marketing"]) {
-      expect(items(name)).toEqual(["Preview", "Edit", "Delete"]);
-    }
-    expect(screen.getByRole("button", { name: "Create template" })).toBeTruthy();
-  });
-
-  it("creates one: sends the name and message, and the new template is listed", async () => {
-    const calls = openSuper();
-    await screen.findByText("Construction", { selector: "td" });
-    fireEvent.click(screen.getByRole("button", { name: "Create template" }));
-    await screen.findByRole("dialog");
-    fireEvent.change(nameBox(), { target: { value: " Aerospace " } });
-    message().set("<p>Hello {{firstName}}</p>");
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Create template" }));
-    expect(await screen.findByText('Template "Aerospace" created')).toBeTruthy();
-    expect(writes(calls)).toHaveLength(1);
-    expect(writes(calls)[0]).toMatchObject({ method: "POST", path: "/api/email-templates/available", body: { name: "Aerospace", htmlBody: "<p>Hello {{firstName}}</p>" } });
-    expect(await screen.findByText("Aerospace", { selector: "td" })).toBeTruthy();
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-
-  it("edits one: the form opens with its current name and message, and saving sends the changes", async () => {
-    const calls = openSuper();
-    await screen.findByText("Construction", { selector: "td" });
-    choose("Construction", "Edit Construction");
-    await waitFor(() => expect(nameBox().value).toBe("Construction"));
-    await waitFor(() => expect(message().value()).toContain("system Construction"));
-    expect(screen.getByText(/Copies organizations already added to their My Templates are not changed/)).toBeTruthy();
-    fireEvent.change(nameBox(), { target: { value: "Building & Construction" } });
-    message().set("<p>New text</p>");
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Save changes" }));
-    expect(await screen.findByText('Template "Building & Construction" saved')).toBeTruthy();
-    expect(writes(calls)[0]).toMatchObject({ method: "PUT", path: "/api/email-templates/available/construction", body: { name: "Building & Construction", htmlBody: "<p>New text</p>" } });
-    expect(await screen.findByText("Building & Construction", { selector: "td" })).toBeTruthy();
-  });
-
-  it("deletes one after asking, and explains that organizations keep their copies", async () => {
-    const calls = openSuper();
-    await screen.findByText("Construction", { selector: "td" });
-    choose("Construction", "Delete Construction");
-    const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText(/Copies organizations already added to their My Templates stay as they are/)).toBeTruthy();
-    expect(writes(calls)).toHaveLength(0);
-    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
-    expect(await screen.findByText('"Construction" deleted')).toBeTruthy();
-    expect(writes(calls)[0]).toMatchObject({ method: "DELETE", path: "/api/email-templates/available/construction" });
-    await waitFor(() => expect(screen.queryByText("Construction", { selector: "td" })).toBeNull());
-  });
-
-  it("keeps the template when the question is answered with Keep it", async () => {
-    const calls = openSuper();
-    await screen.findByText("Construction", { selector: "td" });
-    choose("Construction", "Delete Construction");
-    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Keep it" }));
-    expect(writes(calls)).toHaveLength(0);
-    expect(screen.getByText("Construction", { selector: "td" })).toBeTruthy();
-  });
-
-  it("shows the server's reason under the name when it is taken, and keeps what was typed", async () => {
-    openSuper(server({ manageReply: fail(409, "TEMPLATE_NAME_TAKEN", "A template with that name already exists", [{ path: "name", message: "A template with that name already exists" }]) }));
-    await screen.findByText("Construction", { selector: "td" });
-    fireEvent.click(screen.getByRole("button", { name: "Create template" }));
-    await screen.findByRole("dialog");
-    fireEvent.change(nameBox(), { target: { value: "Construction" } });
-    message().set("<p>Hi</p>");
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Create template" }));
-    expect(await screen.findByText("A template with that name already exists")).toBeTruthy();
-    expect(nameBox().value).toBe("Construction");
-    expect(screen.getByRole("dialog")).toBeTruthy();
-  });
-
-  it("previews an available template", async () => {
-    openSuper();
-    await screen.findByText("Construction", { selector: "td" });
-    choose("Construction", "Preview Construction");
-    expect(((await screen.findByTitle("Template preview")) as HTMLIFrameElement).getAttribute("srcdoc")).toContain("(system Construction)");
-  });
-});
-
-describe("only a SuperAdministrator manages Available Templates", () => {
-  it.each(["Administrator", "Campaign Manager"] as const)("gives a %s no Create, Edit or Delete on the Available Templates tab", async (role) => {
-    open(server(), role);
-    await screen.findByText("Construction", { selector: "td" });
-    expect(screen.queryByRole("button", { name: /^(Edit|Delete) / })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Create template" })).toBeNull();
   });
 });

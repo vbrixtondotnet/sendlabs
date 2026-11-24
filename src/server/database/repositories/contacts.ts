@@ -16,11 +16,11 @@ const ci = (column: SQL | AnyColumn, pattern: string) =>
   sql`lower(${column}) LIKE ${pattern} ESCAPE '\\'`;
 
 /**
- * Every query here is scoped to `tenantId`: a contact of another tenant does not exist as far as this
+ * Every query here is scoped to `userId`: a contact of another account does not exist as far as this
  * repository is concerned (reads find nothing, writes change nothing, and the API answers 404).
  */
-export function contactsRepo(db: Database, tenantId: string) {
-  const mine = eq(contacts.tenantId, tenantId);
+export function contactsRepo(db: Database, userId: string) {
+  const mine = eq(contacts.userId, userId);
 
   const byId = async (id: string) => {
     const [row] = await db.select().from(contacts).where(and(mine, eq(contacts.id, id))).limit(1);
@@ -61,9 +61,9 @@ export function contactsRepo(db: Database, tenantId: string) {
     },
 
     /**
-     * Bulk insert for an import. An email that already exists IN THIS TENANT is skipped, never overwritten
+     * Bulk insert for an import. An email that already exists IN THIS ACCOUNT is skipped, never overwritten
      * (decision D-06), and the skip is decided by the unique index, so concurrent imports cannot create
-     * duplicates. Another tenant holding the same address is irrelevant: that is a separate row.
+     * duplicates. Another account holding the same address is irrelevant: that is a separate row.
      * Returns the normalized emails that were actually created. Safe to re-run.
      */
     async insertMany(rows: readonly ValidContact[], sourceImportId: string): Promise<Set<string>> {
@@ -75,7 +75,7 @@ export function contactsRepo(db: Database, tenantId: string) {
           .values(
             group.map((c) => ({
               id: newId(),
-              tenantId,
+              userId,
               email: c.rawEmail,
               normalizedEmail: c.email,
               firstName: c.firstName,
@@ -95,15 +95,15 @@ export function contactsRepo(db: Database, tenantId: string) {
               updatedAt: now,
             })),
           )
-          // The unique index decides: an address this tenant already has is skipped, never overwritten.
-          .onConflictDoNothing({ target: [contacts.tenantId, contacts.normalizedEmail] })
+          // The unique index decides: an address this account already has is skipped, never overwritten.
+          .onConflictDoNothing({ target: [contacts.userId, contacts.normalizedEmail] })
           .returning({ email: contacts.normalizedEmail });
         for (const r of inserted) created.add(r.email);
       }
       return created;
     },
 
-    /** Maps normalized emails to this tenant's contact ids (for linking import rows). */
+    /** Maps normalized emails to this account's contact ids (for linking import rows). */
     async idsByEmail(emails: readonly string[]): Promise<Map<string, string>> {
       const map = new Map<string, string>();
       for (const group of chunk(emails, LOOKUP_CHUNK)) {
@@ -145,7 +145,7 @@ export function contactsRepo(db: Database, tenantId: string) {
       try {
         const [row] = await db
           .insert(contacts)
-          .values({ ...rest, tenantId, email, normalizedEmail, sourceImportId })
+          .values({ ...rest, userId, email, normalizedEmail, sourceImportId })
           .returning();
         if (!row) throw new Error("Insert returned no row");
         return toContactDto(row);
@@ -183,12 +183,12 @@ export function contactsRepo(db: Database, tenantId: string) {
     /**
      * Removes the contact. Recipients and import rows keep their snapshots and lose only the link, which is
      * cleared first (one transaction): the composite foreign keys cannot use ON DELETE SET NULL, since that
-     * would also null the required tenant_id. A full erasure that scrubs those snapshots is a later feature.
+     * would also null the required user_id. A full erasure that scrubs those snapshots is a later feature.
      */
     async delete(id: string): Promise<void> {
       const deleted = await db.transaction(async (tx) => {
-        await tx.update(campaignRecipients).set({ contactId: null }).where(and(eq(campaignRecipients.tenantId, tenantId), eq(campaignRecipients.contactId, id)));
-        await tx.update(importRows).set({ contactId: null }).where(and(eq(importRows.tenantId, tenantId), eq(importRows.contactId, id)));
+        await tx.update(campaignRecipients).set({ contactId: null }).where(and(eq(campaignRecipients.userId, userId), eq(campaignRecipients.contactId, id)));
+        await tx.update(importRows).set({ contactId: null }).where(and(eq(importRows.userId, userId), eq(importRows.contactId, id)));
         return tx.delete(contacts).where(and(mine, eq(contacts.id, id))).returning({ id: contacts.id });
       });
       if (deleted.length === 0) throw notFound("Contact");

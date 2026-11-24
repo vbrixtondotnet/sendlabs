@@ -130,9 +130,8 @@ describe("Email Service tab when Gmail is connected", () => {
     open();
     expect(await screen.findByText("sales@acme.test")).toBeTruthy();
     expect(screen.getByText("Connected")).toBeTruthy();
-    for (const label of ["Sending address", "Permission", "Connected by", "Connected on"]) expect(screen.getByText(label)).toBeTruthy();
+    for (const label of ["Sending address", "Permission", "Connected on"]) expect(screen.getByText(label)).toBeTruthy();
     expect(screen.getByText("Send email")).toBeTruthy();
-    expect(screen.getByText("admin@sabertoothsoftwarelabs.net")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Connect Gmail" })).toBeNull();
     expect(screen.getByRole("button", { name: "Reconnect" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Disconnect" })).toBeTruthy();

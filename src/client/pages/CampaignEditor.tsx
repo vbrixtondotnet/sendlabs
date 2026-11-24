@@ -9,7 +9,6 @@ import {
 } from "@/components/ui";
 import { ColumnMapper, CsvDropzone, CsvFileBar, ValidationSummary } from "@/components/csv";
 import { useCsvFile } from "@/hooks/useCsvFile";
-import { useRole } from "@/hooks/useRole";
 import { useToast } from "@/hooks/useToast";
 import { EMAIL_FOOTER_ENABLED, escapeHtml, footerFor, textFromHtml, composeEmailHtml, defaultSignatureHtml, isBlankHtml, MERGE_FIELDS, renderTemplate, UNSUBSCRIBE_TAG, unknownTags } from "@/lib/merge";
 import { RichTextEditor } from "@/components/RichTextEditor";
@@ -38,12 +37,8 @@ function launchMessage(e: ApiClientError): string {
 
 export function CampaignEditor() {
   const { id } = useParams();
-  const { canEdit } = useRole();
   const existing = useCampaign(id);
 
-  if (!canEdit) {
-    return (<><PageHeader title="Campaign editor" /><Notice tone="warn">Your role is read-only and cannot create or edit campaigns.</Notice></>);
-  }
   if (id && existing.isPending) return <><PageHeader title="Edit draft" /><Card><LoadingRows rows={4} cols={3} /></Card></>;
   if (id && existing.isError) {
     const notFound = existing.error instanceof ApiClientError && existing.error.status === 404;
@@ -78,7 +73,6 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
   const senderEmail = senderStatus.data?.sender?.email ?? null;
   const imports = useImports(1, 100);
   const industryCounts = useIndustryCounts();
-  const { isAdmin } = useRole();
   const testRecipients = useTestRecipients();
   const sendTest = useSendTest();
   const testAddresses = (testRecipients.data?.items ?? []).map((r) => r.email);
@@ -100,7 +94,7 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
   useEffect(() => {
     if (signatureSeeded.current || !me.data) return;
     signatureSeeded.current = true; // once: later refreshes of who you are must not overwrite what is being typed
-    setSignature(defaultSignatureHtml({ name: me.data.user.displayName, position: me.data.user.position }, me.data.tenant));
+    setSignature(defaultSignatureHtml({ name: me.data.user.displayName, position: me.data.user.position }, me.data.company));
   }, [me.data]);
   const editSignature = (value: string) => { signatureSeeded.current = true; setSignature(value); };
   const [source, setSource] = useState<Source>(
@@ -152,7 +146,7 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
   /* ---- validation (the server re-checks everything) ---- */
   const unknown = unknownTags(subject + html + signature);
   const problems: string[] = [];
-  // Campaigns are sent from the tenant's own connected Gmail account. Without one, nothing can be sent.
+  // Campaigns are sent from the account's own connected Gmail account. Without one, nothing can be sent.
   if (senderStatus.isPending) problems.push("Checking your Gmail sender");
   else if (!senderStatus.data?.sender) problems.push("Connect a Gmail sender in Settings before launching");
   else if (senderStatus.data.sender.status !== "Connected") problems.push("Reconnect your Gmail sender in Settings before launching");
@@ -160,8 +154,8 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
   if (!subject.trim()) problems.push("Subject is required");
   if (isBlankHtml(html)) problems.push("Email body is required");
   // The company's postal address is printed in every email's footer, so it has to exist before launching.
-  if (me.data && !me.data.tenant.postalAddress.trim()) {
-    problems.push(isAdmin ? "Add your company's postal address in Settings > Company Details before launching" : "Ask an Administrator to add the company's postal address (Settings > Company Details) before launching");
+  if (me.data && !me.data.company.postalAddress.trim()) {
+    problems.push("Add your company's postal address in Settings > Company Details before launching");
   }
   if (unknown.length) problems.push(`Unknown merge field${unknown.length > 1 ? "s" : ""}: ${unknown.join(", ")}`);
   if (!Number.isInteger(daily) || daily < 1 || daily > 2000) problems.push("Daily limit must be a whole number from 1 to 2,000");
@@ -246,7 +240,7 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
   }
 
   const fieldError = (path: string) => fieldErrors.find((f) => f.path === path)?.message;
-  const composedHtml = composeEmailHtml({ body: html, signature, ...footerFor({ name: me.data?.tenant.name ?? "", postalAddress: me.data?.tenant.postalAddress ?? "" }) }, sample);
+  const composedHtml = composeEmailHtml({ body: html, signature, ...footerFor({ name: me.data?.company.name ?? "", postalAddress: me.data?.company.postalAddress ?? "" }) }, sample);
   // A plain-text campaign is sent as text only, so that is what the preview shows: the same message with the formatting gone.
   const previewDoc = plainText
     ? `<!doctype html><html><body style="margin:0;padding:16px;background:#fff"><pre style="font-family:Consolas,monospace;font-size:13px;line-height:1.5;color:#222;white-space:pre-wrap;margin:0">${escapeHtml(textFromHtml(composedHtml))}</pre></body></html>`
@@ -454,7 +448,7 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
                   <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 border-b border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-800/50">
                     <dt className="text-slate-500">From</dt><dd>{senderEmail ? (me.data?.user.displayName.trim() ? `${me.data.user.displayName.trim()} <${senderEmail}>` : senderEmail) : <span className="text-slate-400">(no sender connected)</span>}</dd>
                     <dt className="text-slate-500">To</dt><dd>{sample.email ?? ""}</dd>
-                    <dt className="text-slate-500">Subject</dt><dd className="font-medium">{renderTemplate(subject || "(no subject)", sample, false, undefined, me.data?.tenant.name ?? "")}</dd>
+                    <dt className="text-slate-500">Subject</dt><dd className="font-medium">{renderTemplate(subject || "(no subject)", sample, false, undefined, me.data?.company.name ?? "")}</dd>
                   </dl>
                   <iframe title="Rendered email preview" sandbox="" srcDoc={previewDoc} className="h-80 w-full rounded-b-lg bg-white" />
                 </div>
@@ -497,7 +491,7 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
                 {testRecipients.isPending ? (
                   <p className="mt-1 text-sm text-slate-500">Loading…</p>
                 ) : testAddresses.length === 0 ? (
-                  <p className="mt-1 text-sm text-slate-500">No test addresses yet. {isAdmin ? <Link to="/settings" className="font-medium text-brand-600 hover:underline">Add one in Settings</Link> : "Ask an Administrator to add one in Settings."}</p>
+                  <p className="mt-1 text-sm text-slate-500">No test addresses yet. <Link to="/settings" className="font-medium text-brand-600 hover:underline">Add one in Settings</Link></p>
                 ) : (
                   <fieldset className="mt-1">
                     <legend className="sr-only">Send the test to</legend>

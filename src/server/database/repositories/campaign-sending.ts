@@ -1,7 +1,7 @@
 import { and, count, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import type { ContactFields, SkipReason } from "../../../shared/types";
 import type { Database } from "../client";
-import { campaignRecipients, campaigns, tenants, users, type CampaignRow } from "../schema";
+import { campaignRecipients, campaigns, users, type CampaignRow } from "../schema";
 
 /** A recipient claimed for sending. */
 export interface ClaimedRecipient {
@@ -12,8 +12,8 @@ export interface ClaimedRecipient {
 }
 
 /**
- * The queries the sender runs on a schedule. Unlike the tenant repositories this one is NOT scoped to a tenant, because the
- * tick looks across all of them; every method takes the tenant and campaign it works on, and every write is conditional on
+ * The queries the sender runs on a schedule. Unlike the account repositories this one is NOT scoped to an account, because the
+ * tick looks across all of them; every method takes the account and campaign it works on, and every write is conditional on
  * the row still being in the state it was read in, so two ticks that overlap cannot send the same recipient twice.
  *
  * Recipient states follow the machine in shared/status.ts: Pending -> Queued (promote) -> Processing (claim) -> Accepted,
@@ -32,15 +32,10 @@ export function campaignSendingRepo(db: Database) {
         .limit(limit);
     },
 
-    async tenant(tenantId: string) {
-      const [row] = await db.select({ name: tenants.name, postalAddress: tenants.postalAddress }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
+    /** The account's company name and postal address (for the footer) and its own name (the fallback name on the From line). */
+    async company(userId: string) {
+      const [row] = await db.select({ name: users.companyName, postalAddress: users.postalAddress, displayName: users.displayName }).from(users).where(eq(users.id, userId)).limit(1);
       return row ?? null;
-    },
-
-    /** The display name of the campaign's creator: the fallback name on the From line. */
-    async creatorName(tenantId: string, userId: string): Promise<string> {
-      const [row] = await db.select({ name: users.displayName }).from(users).where(and(eq(users.tenantId, tenantId), eq(users.id, userId))).limit(1);
-      return row?.name ?? "";
     },
 
     /** How many were accepted since `sinceMs` (the start of the campaign's day). Accepted means the provider took it. */
@@ -68,11 +63,11 @@ export function campaignSendingRepo(db: Database) {
      * equivalent but PostgreSQL may run that subquery again for each row it checks, so the LIMIT is not honoured and far more
      * than `n` rows change: a daily limit of 3 sent 5, and a trickle of 1 sent all 30.)
      */
-    async promote(tenantId: string, campaignId: string, n: number, now: number): Promise<void> {
+    async promote(userId: string, campaignId: string, n: number, now: number): Promise<void> {
       await db.execute(sql`
         WITH picked AS MATERIALIZED (
           SELECT id FROM campaign_recipients
-           WHERE tenant_id = ${tenantId} AND campaign_id = ${campaignId} AND status = 'Pending'
+           WHERE user_id = ${userId} AND campaign_id = ${campaignId} AND status = 'Pending'
            ORDER BY sequence LIMIT ${n} FOR UPDATE SKIP LOCKED)
         UPDATE campaign_recipients r SET status = 'Queued', queued_at = ${now}, updated_at = ${now}
           FROM picked WHERE r.id = picked.id`);
@@ -82,11 +77,11 @@ export function campaignSendingRepo(db: Database) {
      * Queued -> Processing for the next `n` in send order, with a lease, counting the attempt. Returns exactly the rows this
      * call claimed: the UPDATE and its RETURNING are one statement, and SKIP LOCKED keeps two ticks from claiming the same row.
      */
-    async claim(tenantId: string, campaignId: string, n: number, now: number, leaseMs: number): Promise<ClaimedRecipient[]> {
+    async claim(userId: string, campaignId: string, n: number, now: number, leaseMs: number): Promise<ClaimedRecipient[]> {
       const rows = (await db.execute(sql`
         WITH picked AS MATERIALIZED (
           SELECT id FROM campaign_recipients
-           WHERE tenant_id = ${tenantId} AND campaign_id = ${campaignId} AND status = 'Queued'
+           WHERE user_id = ${userId} AND campaign_id = ${campaignId} AND status = 'Queued'
            ORDER BY sequence LIMIT ${n} FOR UPDATE SKIP LOCKED)
         UPDATE campaign_recipients r SET status = 'Processing', lease_expires_at = ${now + leaseMs}, attempt_count = r.attempt_count + 1, updated_at = ${now}
           FROM picked WHERE r.id = picked.id

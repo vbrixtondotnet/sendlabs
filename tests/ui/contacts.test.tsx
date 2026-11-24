@@ -155,16 +155,5 @@ describe("Contacts page (live data)", () => {
       await waitFor(() => expect(calls.some((c) => c.method === "DELETE" && c.path === "/api/contacts/c1")).toBe(true));
     });
 
-    it("is read-only for a Viewer", async () => {
-      stubApi(base);
-      renderAt(<Contacts />, { role: "Viewer" });
-      await screen.findByText("Nick Harbaugh");
-      expect(screen.queryByRole("button", { name: "Add contact" })).toBeNull();
-      fireEvent.click(screen.getByRole("button", { name: "Nick Harbaugh" }));
-      const dialog = await screen.findByRole("dialog");
-      expect((within(dialog).getByLabelText("Title") as HTMLInputElement).disabled).toBe(true);
-      expect(within(dialog).queryByRole("button", { name: "Save changes" })).toBeNull();
-      expect(within(dialog).queryByRole("button", { name: "Delete" })).toBeNull();
-    });
   });
 });

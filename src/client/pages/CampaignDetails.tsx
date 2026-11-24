@@ -8,7 +8,6 @@ import {
   RecipientStatusBadge, Select, StackedBar, StatCard, Table, TextInput, Td, Th, fmt, fmtDate, recipientLabel, segmentColors,
 } from "@/components/ui";
 import { useDebounced } from "@/hooks/useDebounced";
-import { useRole } from "@/hooks/useRole";
 import { useToast } from "@/hooks/useToast";
 import { ApiClientError } from "@/services/http";
 import { useCampaign, useCampaignAction, useRecipients, useRetryFailed } from "@/services/campaigns";
@@ -36,7 +35,6 @@ export function CampaignDetails() {
 }
 
 function Details({ campaign }: { campaign: CampaignDto }) {
-  const { canEdit } = useRole();
   const { toast } = useToast();
   const act = useCampaignAction();
   const retry = useRetryFailed();
@@ -82,17 +80,17 @@ function Details({ campaign }: { campaign: CampaignDto }) {
         actions={
           <>
             <CampaignStatusBadge status={campaign.status} />
-            {canEdit && campaign.status === "Draft" && <Link to={`/campaigns/${campaign.id}/edit`}><Button variant="primary">Edit draft</Button></Link>}
-            {canEdit && can("pause") && <Button disabled={act.isPending} onClick={() => run("pause", "Campaign paused")}>Pause</Button>}
-            {canEdit && can("resume") && <Button variant="primary" disabled={act.isPending} onClick={() => run("resume", "Campaign resumed")}>Resume</Button>}
-            {canEdit && t.Failed > 0 && ["CompletedWithErrors", "Sending", "Paused", "Failed"].includes(campaign.status) && <Button disabled={retry.isPending} onClick={() => void retryFailed()}>{retry.isPending ? "Retrying…" : `Retry ${fmt(t.Failed)} failed`}</Button>}
-            {canEdit && can("cancel") && <Button variant="danger" onClick={() => setConfirmCancel(true)}>Cancel campaign</Button>}
+            {campaign.status === "Draft" && <Link to={`/campaigns/${campaign.id}/edit`}><Button variant="primary">Edit draft</Button></Link>}
+            {can("pause") && <Button disabled={act.isPending} onClick={() => run("pause", "Campaign paused")}>Pause</Button>}
+            {can("resume") && <Button variant="primary" disabled={act.isPending} onClick={() => run("resume", "Campaign resumed")}>Resume</Button>}
+            {t.Failed > 0 && ["CompletedWithErrors", "Sending", "Paused", "Failed"].includes(campaign.status) && <Button disabled={retry.isPending} onClick={() => void retryFailed()}>{retry.isPending ? "Retrying…" : `Retry ${fmt(t.Failed)} failed`}</Button>}
+            {can("cancel") && <Button variant="danger" onClick={() => setConfirmCancel(true)}>Cancel campaign</Button>}
           </>
         }
       />
 
       <p className="-mt-3 mb-5 text-sm text-slate-500">
-        Created by {campaign.createdBy} · {fmtDate(campaign.createdAt)}
+        Created {fmtDate(campaign.createdAt)}
         {campaign.launchedAt && <> · launched {fmtDate(campaign.launchedAt)}</>}
       </p>
 

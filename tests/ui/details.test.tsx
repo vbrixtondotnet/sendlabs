@@ -34,8 +34,8 @@ function server(initial: CampaignDto): Handler {
   };
 }
 
-const open = (_handler: Handler, role?: "Viewer") =>
-  renderAt(<CampaignDetails />, { path: "/campaigns/k1", route: "/campaigns/:id", ...(role ? { role } : {}) });
+const open = (_handler: Handler) =>
+  renderAt(<CampaignDetails />, { path: "/campaigns/k1", route: "/campaigns/:id" });
 
 describe("Campaign details (live data)", () => {
   it("shows the real totals, schedule and recipient rows", async () => {
@@ -125,13 +125,6 @@ describe("Campaign details (live data)", () => {
     open(server(sending));
     expect(await screen.findByText(/Finished, but 2 emails failed/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Retry 2 failed" })).toBeTruthy();
-  });
-
-  it("hides every action from a Viewer", async () => {
-    stubApi(server(sending));
-    open(server(sending), "Viewer");
-    await screen.findByRole("heading", { name: "Access-to-SQL" });
-    for (const name of ["Pause", "Cancel campaign"]) expect(screen.queryByRole("button", { name })).toBeNull();
   });
 
   it("shows the server's reason when an action is refused", async () => {

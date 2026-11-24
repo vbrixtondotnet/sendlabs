@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { MeDto } from "@shared/api";
 import { api } from "./http";
 
-/** The signed-in user and their tenant. Fetched once and kept: it only changes on sign-in. */
+/** The signed-in user and their company details. Fetched once and kept: it only changes on sign-in. */
 export function useMe() {
   return useQuery({
     queryKey: ["me"],
@@ -37,11 +37,11 @@ export function useChangePassword() {
   });
 }
 
-/** Edit the company details (name and/or postal address). Administrators only; the server answers 403 otherwise. The header name refreshes from the result. */
-export function useUpdateTenant() {
+/** Edit the account's company details (name, postal address, website, unsubscribe settings). The header refreshes from the result. */
+export function useUpdateCompany() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { name?: string; postalAddress?: string; website?: string; requireUnsubscribeLink?: boolean; oneClickUnsubscribe?: boolean }) => api<MeDto["tenant"]>("PATCH", "/api/tenant", input),
-    onSuccess: (saved) => qc.setQueryData<MeDto>(["me"], (me) => (me ? { ...me, tenant: { ...me.tenant, ...saved } } : me)),
+    mutationFn: (input: { name?: string; postalAddress?: string; website?: string; requireUnsubscribeLink?: boolean; oneClickUnsubscribe?: boolean }) => api<MeDto["company"]>("PATCH", "/api/me/company", input),
+    onSuccess: (saved) => qc.setQueryData<MeDto>(["me"], (me) => (me ? { ...me, company: { ...me.company, ...saved } } : me)),
   });
 }

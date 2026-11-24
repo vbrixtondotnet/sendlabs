@@ -3,8 +3,8 @@
  *
  * Secrets at rest use AES-256-GCM. The key is a Worker secret (TOKEN_ENCRYPTION_KEY, 32 random bytes, base64),
  * never stored in the database next to what it protects. Every ciphertext is bound to a context string
- * ("additional authenticated data") such as the tenant it belongs to: GCM then refuses to decrypt it anywhere
- * else, so a ciphertext copied into another tenant's row is useless.
+ * ("additional authenticated data") such as the account it belongs to: GCM then refuses to decrypt it anywhere
+ * else, so a ciphertext copied into another account's row is useless.
  */
 
 const enc = new TextEncoder();

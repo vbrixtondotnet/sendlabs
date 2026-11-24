@@ -12,40 +12,24 @@ import { goTo } from "../../src/client/lib/navigate";
 beforeEach(() => vi.mocked(goTo).mockClear());
 
 const me = (over: Partial<MeDto["user"]> = {}, tenantName = "Sabertooth Software Labs"): MeDto => ({
-  user: { id: "u1", email: "admin@sabertoothsoftwarelabs.net", firstName: "", lastName: "", position: "", displayName: "Administrator", access: "Administrator", mustChangePassword: false, credits: 100, ...over },
-  tenant: { id: "t1", name: tenantName, slug: "sabertooth-software-labs", postalAddress: "", website: "", requireUnsubscribeLink: true, oneClickUnsubscribe: true },
+  user: { id: "u1", email: "admin@sabertoothsoftwarelabs.net", firstName: "", lastName: "", position: "", displayName: "Administrator", mustChangePassword: false, credits: 100, ...over },
+  company: { name: tenantName, postalAddress: "", website: "", requireUnsubscribeLink: true, oneClickUnsubscribe: true },
   session: false,
 });
 
 const open = () => renderAt(<Layout />);
 
-describe("the Settings menu is for Administrators only", () => {
+describe("the Settings menu", () => {
   const links = () => screen.getAllByRole("link").map((l) => l.textContent);
 
-  it("shows Settings to an Administrator, with the other items", async () => {
-    stubApi(({ path }) => (path === "/api/me" ? { json: me({ access: "Administrator" }) } : undefined));
+  it("shows Settings, with the other items", async () => {
+    stubApi(({ path }) => (path === "/api/me" ? { json: me() } : undefined));
     open();
     await screen.findByText("Sabertooth Software Labs");
     expect(links()).toEqual(expect.arrayContaining(["Overview", "Imports", "Contacts", "Search People", "Campaigns", "Settings"]));
     expect(screen.getByRole("link", { name: "Settings" }).getAttribute("href")).toBe("/settings");
-    expect(screen.getByText("Settings are a preview")).toBeTruthy();
   });
 
-  it.each(["Campaign Manager", "Viewer"] as const)("hides Settings from a %s, who still gets everything else", async (access) => {
-    stubApi(({ path }) => (path === "/api/me" ? { json: me({ access }) } : undefined));
-    open();
-    await screen.findByText("Sabertooth Software Labs");
-    expect(links()).toEqual(expect.arrayContaining(["Overview", "Imports", "Contacts", "Campaigns"]));
-    expect(links()).not.toContain("Settings");
-    expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
-    expect(screen.queryByText("Settings are a preview")).toBeNull();
-  });
-
-  it("does not offer Settings while it is still unknown who is signed in", () => {
-    vi.stubGlobal("fetch", () => new Promise(() => undefined)); // never answers: who is signed in stays unknown
-    open();
-    expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
-  });
 });
 
 describe("the Jobs menu item", () => {
@@ -60,17 +44,10 @@ describe("the Jobs menu item", () => {
 });
 
 describe("the Gmail-style shell", () => {
-  it("has a New campaign button above the navigation for people who can create, and not for a Viewer", async () => {
-    stubApi(({ path }) => (path === "/api/me" ? { json: me({ access: "Campaign Manager" }) } : undefined));
+  it("has a New campaign button above the navigation for creating one", async () => {
+    stubApi(({ path }) => (path === "/api/me" ? { json: me() } : undefined));
     open();
     expect((await screen.findByRole("link", { name: "New campaign" })).getAttribute("href")).toBe("/campaigns/new");
-  });
-
-  it("hides New campaign from a Viewer", async () => {
-    stubApi(({ path }) => (path === "/api/me" ? { json: me({ access: "Viewer" }) } : undefined));
-    open();
-    await screen.findByText("Sabertooth Software Labs");
-    expect(screen.queryByRole("link", { name: "New campaign" })).toBeNull();
   });
 
   it("has a search box in the top bar, and the menu button folds the navigation to icons and back", async () => {
@@ -86,22 +63,16 @@ describe("the Gmail-style shell", () => {
 });
 
 describe("the credits badge (mockup)", () => {
-  it("shows 100 Credits at the top right for a tenant user", async () => {
+  it("shows 100 Credits at the top right for an account", async () => {
     stubApi(({ path }) => (path === "/api/me" ? { json: me() } : undefined));
     open();
     expect(await screen.findByText("100 Credits")).toBeTruthy();
   });
 
-  it("is not shown to a SuperAdministrator, who belongs to no tenant", async () => {
-    stubApi(({ path }) => (path === "/api/me" ? { json: me({ access: "SuperAdministrator" }) } : path.startsWith("/api/email-templates") ? { json: { items: [] } } : undefined));
-    open();
-    await screen.findByText("Sabertooth Software Labs");
-    expect(screen.queryByText("100 Credits")).toBeNull();
-  });
 });
 
-describe("the header shows the real tenant and user", () => {
-  it("shows the tenant's name and the signed-in user, and nothing hardcoded", async () => {
+describe("the header shows the real company and user", () => {
+  it("shows the company's name and the signed-in user, and nothing hardcoded", async () => {
     stubApi(({ path }) => (path === "/api/me" ? { json: me() } : undefined));
     open();
     expect(await screen.findByText("Sabertooth Software Labs")).toBeTruthy();
@@ -121,7 +92,7 @@ describe("the header shows the real tenant and user", () => {
     expect(screen.queryByRole("combobox")).toBeNull();
   });
 
-  it("shows another tenant's name for another tenant's user", async () => {
+  it("shows another account's company name", async () => {
     stubApi(({ path }) => (path === "/api/me" ? { json: me({ email: "admin@globex.test", displayName: "Hank Scorpio" }, "Globex Corp") } : undefined));
     open();
     expect(await screen.findByText("Globex Corp")).toBeTruthy();
@@ -207,8 +178,8 @@ describe("initials", () => {
 describe("the Email Templates menu item", () => {
   const links = () => screen.getAllByRole("link").map((l) => l.textContent);
 
-  it.each(["Administrator", "Campaign Manager"] as const)("is in the left navigation for a %s, after Campaigns and Jobs", async (access) => {
-    stubApi(({ path }) => (path === "/api/me" ? { json: me({ access }) } : undefined));
+  it("is in the left navigation, after Campaigns and Jobs", async () => {
+    stubApi(({ path }) => (path === "/api/me" ? { json: me() } : undefined));
     open();
     await screen.findByText("Sabertooth Software Labs");
     const order = links();
@@ -217,19 +188,4 @@ describe("the Email Templates menu item", () => {
     expect(screen.getByRole("link", { name: "Email Templates" }).getAttribute("href")).toBe("/templates");
   });
 
-  it("is the only item in the left navigation for a SuperAdministrator, who belongs to no tenant, and is where they land", async () => {
-    stubApi(({ path }) => (path === "/api/me" ? { json: me({ access: "SuperAdministrator" }, "Sendrix Platform") } : undefined));
-    open();
-    await screen.findByText("Sendrix Platform"); // who is signed in has loaded
-    expect(links().filter((l) => ["Overview", "Imports", "Contacts", "Campaigns", "Settings"].includes(l ?? ""))).toEqual([]);
-    expect(links()).toContain("Email Templates");
-  });
-
-  it("is not in the left navigation for a Viewer, who has no access to Email Templates", async () => {
-    stubApi(({ path }) => (path === "/api/me" ? { json: me({ access: "Viewer" }) } : undefined));
-    open();
-    await screen.findByText("Sabertooth Software Labs");
-    expect(links()).toContain("Campaigns");
-    expect(links()).not.toContain("Email Templates");
-  });
 });

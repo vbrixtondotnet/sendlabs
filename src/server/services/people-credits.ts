@@ -11,18 +11,18 @@ import { nowMs } from "../lib/id";
 const REASON = "people_reveal";
 
 /**
- * "Add Contact" on the People page: reveals a global contact's email address by making them one of the caller's tenant's
+ * "Add Contact" on the People page: reveals a global contact's email address by making them one of the caller's
  * contacts, and spends PERSON_REVEAL_COST credits from the caller's balance.
  *
  * All in one transaction, so there is never a charge without a contact or a contact without a charge:
- *   1. the contact is inserted, doing nothing if the tenant already has that address;
+ *   1. the contact is inserted, doing nothing if the account already has that address;
  *   2. only when a contact was really created, the credits are taken with one conditional UPDATE (`credits >= cost`), so
  *      two clicks at once cannot spend the same credit twice or take the balance below zero;
  *   3. a ledger row records it.
- * A person who is already a contact (added earlier, by anyone in the tenant, or imported from a CSV) is not charged again. Out
+ * A person who is already a contact (added earlier, or imported from a CSV) is not charged again. Out
  * of credits answers 402 and the transaction rolls back, so no contact is created.
  */
-export async function addPersonAsContact(db: Database, who: { userId: string; tenantId: string }, personId: string): Promise<AddContactResultDto> {
+export async function addPersonAsContact(db: Database, who: { userId: string }, personId: string): Promise<AddContactResultDto> {
   return db.transaction(async (tx) => {
     const [person] = await tx.select().from(globalContacts).where(eq(globalContacts.id, personId)).limit(1);
     if (!person) throw notFound("Person");
@@ -33,7 +33,7 @@ export async function addPersonAsContact(db: Database, who: { userId: string; te
     const [created] = await tx
       .insert(contacts)
       .values({
-        tenantId: who.tenantId,
+        userId: who.userId,
         email,
         normalizedEmail,
         firstName: person.firstName,
@@ -48,15 +48,15 @@ export async function addPersonAsContact(db: Database, who: { userId: string; te
         country: person.country,
         consentSource: "People search",
       })
-      .onConflictDoNothing({ target: [contacts.tenantId, contacts.normalizedEmail] })
+      .onConflictDoNothing({ target: [contacts.userId, contacts.normalizedEmail] })
       .returning({ id: contacts.id });
 
     if (!created) {
-      // Already one of this tenant's contacts: nothing to charge.
+      // Already one of this account's contacts: nothing to charge.
       const [existing] = await tx
         .select({ id: contacts.id })
         .from(contacts)
-        .where(and(eq(contacts.tenantId, who.tenantId), eq(contacts.normalizedEmail, normalizedEmail)))
+        .where(and(eq(contacts.userId, who.userId), eq(contacts.normalizedEmail, normalizedEmail)))
         .limit(1);
       const [me] = await tx.select({ credits: users.credits }).from(users).where(eq(users.id, who.userId)).limit(1);
       return { person: toPersonDto(person, true), contactId: existing?.id ?? "", charged: false, credits: me?.credits ?? 0 };
@@ -65,12 +65,11 @@ export async function addPersonAsContact(db: Database, who: { userId: string; te
     const [paid] = await tx
       .update(users)
       .set({ credits: sql`${users.credits} - ${PERSON_REVEAL_COST}`, updatedAt: nowMs() })
-      .where(and(eq(users.id, who.userId), eq(users.tenantId, who.tenantId), sql`${users.credits} >= ${PERSON_REVEAL_COST}`))
+      .where(and(eq(users.id, who.userId), sql`${users.credits} >= ${PERSON_REVEAL_COST}`))
       .returning({ credits: users.credits });
     if (!paid) throw new ApiError(402, "INSUFFICIENT_CREDITS", "You are out of credits. Credits are needed to add people to your contacts.");
 
     await tx.insert(creditTransactions).values({
-      tenantId: who.tenantId,
       userId: who.userId,
       delta: -PERSON_REVEAL_COST,
       balanceAfter: paid.credits,

@@ -5,7 +5,6 @@ import { ApiError } from "../lib/errors";
 import { JobSourceError } from "../lib/live-fetch";
 import { readAttachments } from "../lib/attachments";
 import { parseQuery } from "../lib/http";
-import { requireAccess } from "../middleware/auth";
 import { emailProviderForRequest } from "../services/email-providers";
 import { sendApplicationEmail } from "../services/job-application-email";
 import { JobSearchService, jobSources } from "../services/job-search";
@@ -13,7 +12,7 @@ import { JobSearchService, jobSources } from "../services/job-search";
 /**
  * Jobs, live from Remotive and Arbeitnow, merged: nothing is stored. The browser asks us, we ask the sources (each with a timeout, a
  * short in-memory cache, one shared request for identical searches and an hourly cap: see their services), filter / sort / page the
- * merged list and send it back. Open to every signed-in role: the jobs belong to no tenant. The request's own abort signal is passed
+ * merged list and send it back. Open to every signed-in account: the jobs belong to no account. The request's own abort signal is passed
  * on, so a search the page has already replaced stops being waited for.
  */
 export const jobRoutes = new Hono<AppEnv>();
@@ -53,9 +52,8 @@ jobRoutes.get("/locations", async (c) => c.json({ items: await viaSources(() => 
 
 /**
  * Sends a personally written application email, with PDF / Word attachments, from the Apply panel. One recipient, no CC or BCC.
- * People who can only look (Viewers) cannot send, and a SuperAdministrator has no organization to send as.
  */
-jobRoutes.post("/apply-email", requireAccess("Administrator", "Campaign Manager"), async (c) => {
+jobRoutes.post("/apply-email", async (c) => {
   let form: FormData;
   try {
     form = await c.req.formData();
@@ -71,6 +69,6 @@ jobRoutes.post("/apply-email", requireAccess("Administrator", "Campaign Manager"
   const attachments = await readAttachments(files);
 
   const actor = c.get("actor");
-  await sendApplicationEmail({ email: emailProviderForRequest(c), tenantId: actor.tenantId, userId: actor.userId, fallbackFromName: actor.displayName || actor.email }, fields, attachments);
+  await sendApplicationEmail({ email: emailProviderForRequest(c), userId: actor.userId, fallbackFromName: actor.displayName || actor.email }, fields, attachments);
   return c.json({ sent: true, attachments: attachments.length });
 });

@@ -15,7 +15,7 @@ describe("global_contacts", () => {
   it("has the requested columns, and no tenant", async () => {
     const cols = (await h.rows<{ column_name: string }>("SELECT column_name FROM information_schema.columns WHERE table_name = 'global_contacts' ORDER BY ordinal_position")).map((c) => c.column_name);
     expect(cols).toEqual(["id", "first_name", "last_name", "title", "company", "email", "employee_count", "industry", "website", "city", "state", "country", "created_at", "updated_at"]);
-    expect(cols).not.toContain("tenant_id");
+    expect(cols).not.toContain("user_id");
   });
 
   it("stores and returns a person, with the text columns defaulting to empty and the employee count optional", async () => {

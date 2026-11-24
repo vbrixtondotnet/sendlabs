@@ -8,7 +8,7 @@ import {
   contactPatchSchema,
   isValidTimeZone,
   SIGNATURE_MAX,
-  tenantUpdateSchema,
+  companyUpdateSchema,
   websiteField,
 } from "../../src/shared/schemas";
 import { isValidEmail, normalizeEmail } from "../../src/shared/email";
@@ -136,10 +136,10 @@ describe("website", () => {
     }
   });
   it("is accepted on its own in a company update, and an update with nothing in it is still refused", () => {
-    expect(ok(tenantUpdateSchema, { website: "example.com" })).toBe(true);
-    expect(ok(tenantUpdateSchema, { website: "" })).toBe(true);
-    expect(ok(tenantUpdateSchema, {})).toBe(false);
-    expect(ok(tenantUpdateSchema, { website: "example.com", slug: "hacked" })).toBe(false);
+    expect(ok(companyUpdateSchema, { website: "example.com" })).toBe(true);
+    expect(ok(companyUpdateSchema, { website: "" })).toBe(true);
+    expect(ok(companyUpdateSchema, {})).toBe(false);
+    expect(ok(companyUpdateSchema, { website: "example.com", slug: "hacked" })).toBe(false);
   });
 });
 
@@ -163,18 +163,18 @@ describe("campaign signature", () => {
 describe("unsubscribe settings in a company update", () => {
   it("accept true and false, each on its own or together", () => {
     for (const v of [{ requireUnsubscribeLink: true }, { requireUnsubscribeLink: false }, { oneClickUnsubscribe: false }, { requireUnsubscribeLink: false, oneClickUnsubscribe: true }]) {
-      expect(ok(tenantUpdateSchema, v), JSON.stringify(v)).toBe(true);
+      expect(ok(companyUpdateSchema, v), JSON.stringify(v)).toBe(true);
     }
   });
   it("refuse anything that is not a boolean", () => {
     for (const v of ["true", 1, 0, null, "yes", []]) {
-      expect(ok(tenantUpdateSchema, { requireUnsubscribeLink: v }), JSON.stringify(v)).toBe(false);
-      expect(ok(tenantUpdateSchema, { oneClickUnsubscribe: v }), JSON.stringify(v)).toBe(false);
+      expect(ok(companyUpdateSchema, { requireUnsubscribeLink: v }), JSON.stringify(v)).toBe(false);
+      expect(ok(companyUpdateSchema, { oneClickUnsubscribe: v }), JSON.stringify(v)).toBe(false);
     }
   });
   it("count as something to change, so an update of only these is not 'nothing to change'", () => {
-    expect(ok(tenantUpdateSchema, {})).toBe(false);
-    expect(ok(tenantUpdateSchema, { requireUnsubscribeLink: false })).toBe(true);
+    expect(ok(companyUpdateSchema, {})).toBe(false);
+    expect(ok(companyUpdateSchema, { requireUnsubscribeLink: false })).toBe(true);
   });
 });
 

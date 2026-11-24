@@ -30,26 +30,26 @@ importRoutes.post("/", async (c) => {
   if (typeof file === "string" || file === undefined) throw badRequest("Missing the `file` field", undefined, "INVALID_UPLOAD");
   if (typeof mapping !== "string") throw badRequest("Missing the `mapping` field", undefined, "INVALID_UPLOAD");
 
-  const { tenantId, userId } = c.get("actor");
-  const dto = await runCsvImport(c.get("db"), { tenantId, userId }, { filename: file.name, size: file.size, text: await file.text(), mapping });
+  const { userId } = c.get("actor");
+  const dto = await runCsvImport(c.get("db"), { userId }, { filename: file.name, size: file.size, text: await file.text(), mapping });
   return c.json(dto, 201);
 });
 
 importRoutes.get("/", async (c) => {
   const q = parseQuery(c, importListQuery);
-  return c.json(await importsRepo(c.get("db"), c.get("actor").tenantId).list(q.page, q.pageSize));
+  return c.json(await importsRepo(c.get("db"), c.get("actor").userId).list(q.page, q.pageSize));
 });
 
-importRoutes.get("/:id", async (c) => c.json(await importsRepo(c.get("db"), c.get("actor").tenantId).get(c.req.param("id"))));
+importRoutes.get("/:id", async (c) => c.json(await importsRepo(c.get("db"), c.get("actor").userId).get(c.req.param("id"))));
 
 importRoutes.get("/:id/rows", async (c) => {
   const q = parseQuery(c, importRowsQuery);
-  return c.json(await importsRepo(c.get("db"), c.get("actor").tenantId).listRows(c.req.param("id"), q));
+  return c.json(await importsRepo(c.get("db"), c.get("actor").userId).listRows(c.req.param("id"), q));
 });
 
 /** The downloadable report of rows that were not imported. Formula-injection safe. */
 importRoutes.get("/:id/rejected-rows.csv", async (c) => {
-  const repo = importsRepo(c.get("db"), c.get("actor").tenantId);
+  const repo = importsRepo(c.get("db"), c.get("actor").userId);
   const [meta, rows] = await Promise.all([repo.get(c.req.param("id")), repo.rejectedRows(c.req.param("id"))]);
   const base = meta.filename.replace(/\.csv$/i, "").replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 80) || "import";
   return c.body("﻿" + toCsv(invalidReportRows(rows)), 200, {

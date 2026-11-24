@@ -4,7 +4,7 @@ import { api } from "./http";
 
 const KEY = ["sender"] as const;
 
-/** Whether this tenant has a connected email account, and whether the server can connect one at all. */
+/** Whether this account has a connected email account, and whether the server can connect one at all. */
 export function useSender() {
   return useQuery({ queryKey: KEY, queryFn: () => api<SenderStatusDto>("GET", "/api/sender"), staleTime: 30_000 });
 }
@@ -14,7 +14,7 @@ export function useConnectGmail() {
   return useMutation({ mutationFn: () => api<{ url: string }>("POST", "/api/sender/gmail/connect") });
 }
 
-/** Administrators only: the name recipients see on the From line. */
+/** the name recipients see on the From line. */
 export function useSetSenderName() {
   const qc = useQueryClient();
   return useMutation({

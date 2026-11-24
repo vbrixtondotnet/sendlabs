@@ -1,11 +1,11 @@
 import { bigint, check, index, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core";
 import { CONSENT_STATUSES } from "../../../shared/types";
+import { users } from "./users";
 import { createdAt, idColumn, inList, nonNegativeOrNull, normalizedEmailRule, updatedAt } from "./helpers";
-import { tenants } from "./tenants";
 
 /**
- * A tenant's contacts: one row per normalized email address within the tenant, across all of its
- * imports (decision D-06). Two tenants can each hold the same address, as separate rows, and neither
+ * An account's contacts: one row per normalized email address within the account, across all of its
+ * imports (decision D-06). Two accounts can each hold the same address, as separate rows, and neither
  * can see the other's. Columns follow template.csv. Suppression is a separate table (added later) so an
  * opt-out outlives any edit or re-import of the contact.
  */
@@ -13,9 +13,10 @@ export const contacts = pgTable(
   "contacts",
   {
     id: idColumn(),
-    tenantId: text("tenant_id")
+    /** The account that owns this row. Every query filters by it; the composite keys below stop a row pointing at another account's data. */
+    userId: text("user_id")
       .notNull()
-      .references(() => tenants.id, { onDelete: "restrict" }),
+      .references(() => users.id, { onDelete: "restrict" }),
 
     /** As entered (trimmed). Kept for display and audit. */
     email: text("email").notNull(),
@@ -41,20 +42,20 @@ export const contacts = pgTable(
     consentStatus: text("consent_status", { enum: CONSENT_STATUSES }).notNull().default("Unknown"),
     consentSource: text("consent_source"),
 
-    /** The import that created this contact. A soft reference (see imports.ts): the API checks the tenant. */
+    /** The import that created this contact. A soft reference (see imports.ts): the API checks the account. */
     sourceImportId: text("source_import_id"),
 
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
-    // The tenant-scoped replacement for "one row per email": the same address may exist once per tenant.
-    uniqueIndex("contacts_tenant_email_uq").on(t.tenantId, t.normalizedEmail),
-    // Lets recipients and import rows reference "a contact of the SAME tenant" with a composite foreign key.
-    uniqueIndex("contacts_tenant_id_uq").on(t.tenantId, t.id),
-    index("contacts_tenant_industry_idx").on(t.tenantId, t.industry),
-    index("contacts_tenant_source_import_idx").on(t.tenantId, t.sourceImportId),
-    index("contacts_tenant_created_at_idx").on(t.tenantId, t.createdAt),
+    // The account-scoped "one row per email": the same address may exist once per account.
+    uniqueIndex("contacts_user_email_uq").on(t.userId, t.normalizedEmail),
+    // Lets recipients and import rows reference "a contact of the SAME account" with a composite foreign key.
+    uniqueIndex("contacts_user_id_uq").on(t.userId, t.id),
+    index("contacts_user_industry_idx").on(t.userId, t.industry),
+    index("contacts_user_source_import_idx").on(t.userId, t.sourceImportId),
+    index("contacts_user_created_at_idx").on(t.userId, t.createdAt),
     check("contacts_consent_chk", inList("consent_status", CONSENT_STATUSES)),
     check("contacts_normalized_email_chk", normalizedEmailRule("normalized_email")),
     check("contacts_employees_chk", nonNegativeOrNull("employees")),

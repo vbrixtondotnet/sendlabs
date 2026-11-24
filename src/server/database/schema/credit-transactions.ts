@@ -1,7 +1,6 @@
 import { sql } from "drizzle-orm";
 import { check, index, integer, pgTable, text } from "drizzle-orm/pg-core";
 import { createdAt, idColumn } from "./helpers";
-import { tenants } from "./tenants";
 import { users } from "./users";
 
 /**
@@ -12,9 +11,6 @@ export const creditTransactions = pgTable(
   "credit_transactions",
   {
     id: idColumn(),
-    tenantId: text("tenant_id")
-      .notNull()
-      .references(() => tenants.id, { onDelete: "restrict" }),
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
@@ -23,9 +19,9 @@ export const creditTransactions = pgTable(
     balanceAfter: integer("balance_after").notNull(),
     /** What caused it, e.g. "people_reveal". */
     reason: text("reason").notNull(),
-    /** The global contact that was revealed, when that is the reason. A soft reference: the directory belongs to no tenant. */
+    /** The global contact that was revealed, when that is the reason. A soft reference: the directory belongs to no account. */
     globalContactId: text("global_contact_id"),
-    /** The contact it became in the tenant's list. */
+    /** The contact it became in the account's list. */
     contactId: text("contact_id"),
     createdAt: createdAt(),
   },

@@ -4,7 +4,6 @@ import type { ImportDto } from "@shared/api";
 import { Badge, Button, Card, CardHeader, Empty, ErrorNotice, LoadingRows, Notice, PageHeader, Pagination, Table, Td, Th, fmt, fmtDate } from "@/components/ui";
 import { ColumnMapper, CsvDropzone, CsvFileBar, ValidationSummary } from "@/components/csv";
 import { useCsvFile } from "@/hooks/useCsvFile";
-import { useRole } from "@/hooks/useRole";
 import { useToast } from "@/hooks/useToast";
 import { ApiClientError } from "@/services/http";
 import { rejectedRowsUrl, useCreateImport, useImports } from "@/services/imports";
@@ -15,7 +14,6 @@ const PAGE_SIZE = 10;
 const statusTone = { Completed: "green", Processing: "amber", Failed: "red" } as const;
 
 export function Imports() {
-  const { canEdit } = useRole();
   const { toast } = useToast();
   const csv = useCsvFile();
   const create = useCreateImport();
@@ -58,7 +56,7 @@ export function Imports() {
     <>
       <PageHeader title="Imports" description="Upload a CSV, review the validation results, then confirm to save the contacts. Uses the template.csv columns." />
 
-      {canEdit ? (
+      {(
         <Card className="mb-6">
           <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
             <ol className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm" aria-label="Import progress">
@@ -134,8 +132,6 @@ export function Imports() {
             </div>
           )}
         </Card>
-      ) : (
-        <div className="mb-6"><Notice>Your role is read-only. Switch to Administrator or Campaign Manager (top right) to import.</Notice></div>
       )}
 
       <Card>
@@ -153,7 +149,7 @@ export function Imports() {
               <tbody>
                 {history.data.items.map((i) => (
                   <tr key={i.id}>
-                    <Td><span className="font-medium">{i.filename}</span><p className="text-xs text-slate-500">{i.createdBy}</p></Td>
+                    <Td><span className="font-medium">{i.filename}</span></Td>
                     <Td className="whitespace-nowrap text-slate-500">{fmtDate(i.createdAt)}</Td>
                     <Td className="text-right tabular-nums">{fmt(i.totalRows)}</Td>
                     <Td className="text-right tabular-nums">{fmt(i.createdContacts)}</Td>

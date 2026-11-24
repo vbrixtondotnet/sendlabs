@@ -1,20 +1,75 @@
 import { and, eq, ne, sql } from "drizzle-orm";
 import type { MeDto } from "../../shared/api";
+import { isValidEmail, normalizeEmail } from "../../shared/email";
 import { passwordProblem } from "../../shared/password-rules";
-import { POSTAL_ADDRESS_MAX, type PasswordChange, type ProfileUpdate, type TenantUpdate } from "../../shared/schemas";
+import { POSTAL_ADDRESS_MAX, type CompanyUpdate, type PasswordChange, type ProfileUpdate } from "../../shared/schemas";
 import type { Database } from "../database/client";
-import { loginAttempts, sessions, tenants, users } from "../database/schema";
-import { ApiError, badRequest, isUniqueViolation } from "../lib/errors";
-import { nowMs } from "../lib/id";
+import { loginAttempts, sessions, users } from "../database/schema";
+import { ApiError, badRequest, constraintMessage } from "../lib/errors";
+import { newId, nowMs } from "../lib/id";
 import { hashPassword, verifyPassword } from "../lib/password";
 import type { Actor } from "../middleware/auth";
 import { LOGIN_MAX_FAILURES, lockedFor, recordFailure } from "./auth";
-import { cleanName } from "./invitations";
 
-type Self = Pick<Actor, "userId" | "tenantId" | "sessionId">;
+type Self = Pick<Actor, "userId" | "sessionId">;
+
+/** One line, single spaces, no control characters. */
+export const cleanName = (s: string) => s.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim();
+
+export interface CreateAccountInput {
+  email: string;
+  firstName?: string;
+  lastName?: string;
+  /** Shown around the app. Derived from the name (or the email) when omitted. */
+  displayName?: string;
+  password: string;
+  /** True for a temporary password the person must replace at first sign-in. */
+  mustChangePassword?: boolean;
+  /** The company details its emails go out under. All optional: they can be set later in Settings. */
+  company?: { name?: string; postalAddress?: string; website?: string };
+}
 
 /**
- * Changes the signed-in user's own name and position. Nothing else: email, role and tenant are not editable here.
+ * Creates an account: one user who owns their own data. There is no organization to create and no role to give. Checks the email and
+ * the password, and answers 409 EMAIL_EXISTS when the address is already an account. The sign-up flow, `npm run db:provision` and the
+ * seed scripts all call this.
+ */
+export async function createAccount(db: Database, input: CreateAccountInput): Promise<{ userId: string }> {
+  const email = input.email.trim();
+  const normalizedEmail = normalizeEmail(email);
+  if (!isValidEmail(normalizedEmail)) throw badRequest("Validation failed", [{ path: "email", message: "Not a valid email address" }], "VALIDATION_ERROR");
+  const problem = passwordProblem(input.password);
+  if (problem) throw badRequest("Validation failed", [{ path: "password", message: problem }], "VALIDATION_ERROR");
+
+  const firstName = cleanName(input.firstName ?? "");
+  const lastName = cleanName(input.lastName ?? "");
+  const displayName = cleanName(input.displayName ?? "") || [firstName, lastName].filter(Boolean).join(" ") || email.split("@")[0]!;
+  const userId = newId();
+  const passwordHash = await hashPassword(input.password);
+  try {
+    await db.insert(users).values({
+      id: userId,
+      email,
+      normalizedEmail,
+      firstName,
+      lastName,
+      displayName,
+      passwordHash,
+      mustChangePassword: input.mustChangePassword ?? false,
+      companyName: cleanName(input.company?.name ?? ""),
+      postalAddress: cleanAddress(input.company?.postalAddress ?? ""),
+      website: cleanName(input.company?.website ?? ""),
+    });
+  } catch (err) {
+    const message = constraintMessage(err);
+    if (message.includes("users_normalized_email_uq") || message.includes("users.normalized_email")) throw new ApiError(409, "EMAIL_EXISTS", "An account with this email address already exists");
+    throw err;
+  }
+  return { userId };
+}
+
+/**
+ * Changes the signed-in user's own name and position. Nothing else: the email is not editable here.
  * The name shown around the app ("display name") is kept as "first last".
  */
 export async function updateProfile(db: Database, who: Self, input: ProfileUpdate): Promise<{ firstName: string; lastName: string; position: string; displayName: string }> {
@@ -29,7 +84,7 @@ export async function updateProfile(db: Database, who: Self, input: ProfileUpdat
   const rows = await db
     .update(users)
     .set({ firstName, lastName, displayName, ...(position === undefined ? {} : { position }) })
-    .where(and(eq(users.id, who.userId), eq(users.tenantId, who.tenantId), eq(users.isDeleted, false)))
+    .where(eq(users.id, who.userId))
     .returning({ id: users.id, position: users.position });
   if (rows.length !== 1) throw new ApiError(404, "NOT_FOUND", "User not found");
   return { firstName, lastName, position: rows[0]!.position, displayName };
@@ -61,7 +116,7 @@ export async function changePassword(db: Database, who: Self, input: PasswordCha
   const [user] = await db
     .select({ passwordHash: users.passwordHash })
     .from(users)
-    .where(and(eq(users.id, who.userId), eq(users.tenantId, who.tenantId), eq(users.isDeleted, false)))
+    .where(eq(users.id, who.userId))
     .limit(1);
   if (!user) throw new ApiError(404, "NOT_FOUND", "User not found");
 
@@ -72,11 +127,11 @@ export async function changePassword(db: Database, who: Self, input: PasswordCha
 
   const passwordHash = await hashPassword(input.newPassword);
   await db.transaction(async (tx) => {
-    await tx.execute(sql`UPDATE users SET password_hash = ${passwordHash}, must_change_password = false, updated_at = ${now} WHERE id = ${who.userId} AND tenant_id = ${who.tenantId}`);
-    await tx.delete(sessions).where(and(eq(sessions.userId, who.userId), eq(sessions.tenantId, who.tenantId), ne(sessions.id, who.sessionId ?? "")));
+    await tx.execute(sql`UPDATE users SET password_hash = ${passwordHash}, must_change_password = false, updated_at = ${now} WHERE id = ${who.userId}`);
+    await tx.delete(sessions).where(and(eq(sessions.userId, who.userId), ne(sessions.id, who.sessionId ?? "")));
     await tx.delete(loginAttempts).where(eq(loginAttempts.key, key));
   });
-  console.log(JSON.stringify({ level: "info", event: "password_changed", tenantId: who.tenantId, userId: who.userId }));
+  console.log(JSON.stringify({ level: "info", event: "password_changed", userId: who.userId }));
 }
 
 /** Tidies a multi-line postal address: unified line breaks, no control characters, trimmed lines, no blank lines. */
@@ -90,18 +145,13 @@ export function cleanAddress(raw: string): string {
 }
 
 /**
- * Updates the caller's company details: the organization's name and its postal address (either or both). Administrators
- * only (the route enforces that). Always the caller's own tenant: the id comes from the signed-in user, never from the
- * request. The slug is deliberately left alone, so anything that refers to the organization by it keeps working. Two
- * organizations cannot share a name (ignoring letter case). The postal address may be cleared.
+ * Updates the caller's company details: the name and postal address printed in its emails, its website and its unsubscribe
+ * settings (any of them). Always the caller's own account: the id comes from the signed-in user, never from the request.
+ * The postal address may be cleared.
  */
-export async function updateTenant(db: Database, tenantId: string, input: TenantUpdate): Promise<MeDto["tenant"]> {
-  const changes: { name?: string; postalAddress?: string; website?: string; requireUnsubscribeLink?: boolean; oneClickUnsubscribe?: boolean } = {};
-  if (input.name !== undefined) {
-    const name = cleanName(input.name);
-    if (!name) throw badRequest("Validation failed", [{ path: "name", message: "Name is required" }], "VALIDATION_ERROR");
-    changes.name = name;
-  }
+export async function updateCompany(db: Database, userId: string, input: CompanyUpdate): Promise<MeDto["company"]> {
+  const changes: { companyName?: string; postalAddress?: string; website?: string; requireUnsubscribeLink?: boolean; oneClickUnsubscribe?: boolean } = {};
+  if (input.name !== undefined) changes.companyName = cleanName(input.name);
   if (input.postalAddress !== undefined) {
     const postalAddress = cleanAddress(input.postalAddress);
     if (postalAddress.length > POSTAL_ADDRESS_MAX) {
@@ -112,15 +162,12 @@ export async function updateTenant(db: Database, tenantId: string, input: Tenant
   if (input.requireUnsubscribeLink !== undefined) changes.requireUnsubscribeLink = input.requireUnsubscribeLink;
   if (input.oneClickUnsubscribe !== undefined) changes.oneClickUnsubscribe = input.oneClickUnsubscribe;
   if (input.website !== undefined) changes.website = cleanName(input.website); // already checked by the schema; tidied like any one-line value
-  try {
-    const [row] = await db.update(tenants).set(changes).where(eq(tenants.id, tenantId)).returning({ id: tenants.id, name: tenants.name, slug: tenants.slug, postalAddress: tenants.postalAddress, website: tenants.website, requireUnsubscribeLink: tenants.requireUnsubscribeLink, oneClickUnsubscribe: tenants.oneClickUnsubscribe });
-    if (!row) throw new ApiError(404, "NOT_FOUND", "Organization not found");
-    console.log(JSON.stringify({ level: "info", event: "tenant_updated", tenantId, fields: Object.keys(changes) }));
-    return row;
-  } catch (e) {
-    if (isUniqueViolation(e)) {
-      throw new ApiError(409, "TENANT_NAME_TAKEN", "That organization name is already in use", [{ path: "name", message: "That organization name is already in use" }]);
-    }
-    throw e;
-  }
+  const [row] = await db
+    .update(users)
+    .set(changes)
+    .where(eq(users.id, userId))
+    .returning({ name: users.companyName, postalAddress: users.postalAddress, website: users.website, requireUnsubscribeLink: users.requireUnsubscribeLink, oneClickUnsubscribe: users.oneClickUnsubscribe });
+  if (!row) throw new ApiError(404, "NOT_FOUND", "Account not found");
+  console.log(JSON.stringify({ level: "info", event: "company_updated", userId, fields: Object.keys(changes) }));
+  return row;
 }

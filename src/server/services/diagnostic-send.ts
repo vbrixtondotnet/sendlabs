@@ -38,23 +38,23 @@ export interface DiagnosticResult {
  */
 export async function sendDiagnosticEmail(
   deps: { db: Database; email: EmailProvider },
-  who: { tenantId: string; senderName: string },
+  who: { userId: string; senderName: string },
   input: { to: string; dryRun: boolean; variant: DiagnosticVariant; fromName?: string | undefined },
 ): Promise<DiagnosticResult> {
   const wanted = normalizeEmail(input.to);
-  const allowed = await testRecipientsRepo(deps.db, who.tenantId).emails();
+  const allowed = await testRecipientsRepo(deps.db, who.userId).emails();
   const to = allowed.find((a) => normalizeEmail(a) === wanted);
   if (!to) {
     throw new ApiError(400, "NOT_ON_ALLOWLIST", `Not on the test-send allowlist: ${input.to}`, [{ path: "to", message: "Only addresses on the test-send allowlist can be mailed" }]);
   }
 
-  const channel = await deps.email.open(who.tenantId);
+  const channel = await deps.email.open(who.userId);
   // Never an unsubscribe header or a reply-to. "plain" has no HTML either, and the individual-email type cannot carry it.
   // `fromName` overrides the display name, so the name the mailbox itself uses (Gmail web uses it) can be compared with the Sendrix user's.
   const individual: IndividualEmail = { fromName: input.fromName ?? (channel.fromName || who.senderName), to, subject: DIAGNOSTIC_SUBJECT, text: DIAGNOSTIC_BODY };
   const message: OutgoingEmail = input.variant === "web-like" ? { ...individual, html: DIAGNOSTIC_WEB_LIKE_HTML } : individual;
   const inspected = channel.inspect(message);
-  console.log(JSON.stringify({ level: "info", event: "diagnostic_email", tenantId: who.tenantId, provider: deps.email.id, dryRun: input.dryRun, variant: input.variant, headers: inspected.headers, parts: inspected.parts.map((p) => p.contentType) }));
+  console.log(JSON.stringify({ level: "info", event: "diagnostic_email", userId: who.userId, provider: deps.email.id, dryRun: input.dryRun, variant: input.variant, headers: inspected.headers, parts: inspected.parts.map((p) => p.contentType) }));
 
   if (!input.dryRun) {
     try {

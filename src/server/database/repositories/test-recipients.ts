@@ -2,17 +2,15 @@ import { and, asc, count, eq } from "drizzle-orm";
 import type { TestRecipientDto } from "../../../shared/api";
 import type { Database } from "../client";
 import { testRecipients } from "../schema";
-import { usersRepo } from "./users";
 
-/** Scoped to `tenantId`: another tenant's allowlist does not exist as far as this repository is concerned. */
-export function testRecipientsRepo(db: Database, tenantId: string) {
-  const mine = eq(testRecipients.tenantId, tenantId);
+/** Scoped to `userId`: another account's allowlist does not exist as far as this repository is concerned. */
+export function testRecipientsRepo(db: Database, userId: string) {
+  const mine = eq(testRecipients.userId, userId);
 
   return {
     async list(): Promise<TestRecipientDto[]> {
       const rows = await db.select().from(testRecipients).where(mine).orderBy(asc(testRecipients.createdAt), asc(testRecipients.id));
-      const who = await usersRepo(db, tenantId).emails(rows.map((r) => r.createdBy));
-      return rows.map((r) => ({ id: r.id, email: r.email, addedBy: who.get(r.createdBy) ?? "", createdAt: new Date(r.createdAt).toISOString() }));
+      return rows.map((r) => ({ id: r.id, email: r.email, createdAt: new Date(r.createdAt).toISOString() }));
     },
 
     /** Just the addresses, in the order they were added. This is what a test send mails. */
@@ -27,8 +25,8 @@ export function testRecipientsRepo(db: Database, tenantId: string) {
     },
 
     /** Returns the new row, or null if that address is already on the list. */
-    async add(input: { email: string; normalizedEmail: string; createdBy: string }) {
-      const [row] = await db.insert(testRecipients).values({ tenantId, ...input }).onConflictDoNothing().returning();
+    async add(input: { email: string; normalizedEmail: string }) {
+      const [row] = await db.insert(testRecipients).values({ userId, ...input }).onConflictDoNothing().returning();
       return row ?? null;
     },
 

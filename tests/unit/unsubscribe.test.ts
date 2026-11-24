@@ -4,7 +4,7 @@ import { maskEmail } from "../../src/server/services/unsubscribe";
 
 const KEY = btoa(String.fromCharCode(...Array.from({ length: 32 }, (_, i) => i + 1)));
 const OTHER_KEY = btoa(String.fromCharCode(...Array.from({ length: 32 }, (_, i) => 200 - i)));
-const WHO: UnsubscribePayload = { tenantId: "t-1", email: "ada@example.test", campaignId: "c-1", test: false };
+const WHO: UnsubscribePayload = { userId: "t-1", email: "ada@example.test", campaignId: "c-1", test: false };
 
 describe("unsubscribe tokens", () => {
   it("round-trip: what goes in comes out", async () => {
@@ -29,7 +29,7 @@ describe("unsubscribe tokens", () => {
   it("cannot be changed: a different address, tenant, or test flag breaks the signature", async () => {
     const token = await createUnsubscribeToken(KEY, WHO);
     const [, sig] = token.split(".") as [string, string];
-    for (const other of [{ ...WHO, email: "grace@example.test" }, { ...WHO, tenantId: "t-2" }, { ...WHO, test: true }, { ...WHO, campaignId: "c-2" }]) {
+    for (const other of [{ ...WHO, email: "grace@example.test" }, { ...WHO, userId: "t-2" }, { ...WHO, test: true }, { ...WHO, campaignId: "c-2" }]) {
       const [payload] = (await createUnsubscribeToken(KEY, other)).split(".") as [string];
       expect(await readUnsubscribeToken(KEY, `${payload}.${sig}`), JSON.stringify(other)).toBeNull(); // someone else's payload with this signature
     }
@@ -52,7 +52,7 @@ describe("unsubscribe tokens", () => {
       const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`sendrix-unsubscribe-v1.${payload}`)));
       return `${payload}.${btoa(String.fromCharCode(...sig)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "")}`;
     };
-    expect(await readUnsubscribeToken(KEY, await sign({ t: "t", e: "a@b.test", c: null, k: "l" }))).toEqual({ tenantId: "t", email: "a@b.test", campaignId: null, test: false }); // control: this shape is fine
+    expect(await readUnsubscribeToken(KEY, await sign({ t: "t", e: "a@b.test", c: null, k: "l" }))).toEqual({ userId: "t", email: "a@b.test", campaignId: null, test: false }); // control: this shape is fine
     for (const bad of [{}, { t: 1, e: "a@b.test", c: null, k: "l" }, { t: "t", e: "", c: null, k: "l" }, { t: "t", e: "a@b.test", c: 5, k: "l" }, { t: "t", e: "a@b.test", c: null, k: "x" }, { t: "", e: "a@b.test", c: null, k: "l" }, { t: "t", e: "x".repeat(321), c: null, k: "l" }, []]) {
       expect(await readUnsubscribeToken(KEY, await sign(bad)), JSON.stringify(bad).slice(0, 40)).toBeNull();
     }

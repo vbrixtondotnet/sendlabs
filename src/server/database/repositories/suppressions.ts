@@ -4,9 +4,9 @@ import { iso, offsetOf, pageOf } from "../../lib/http";
 import type { Database } from "../client";
 import { suppressions } from "../schema";
 
-/** Scoped to `tenantId`: another tenant's suppression list does not exist as far as this repository is concerned. */
-export function suppressionsRepo(db: Database, tenantId: string) {
-  const mine = eq(suppressions.tenantId, tenantId);
+/** Scoped to `userId`: another account's suppression list does not exist as far as this repository is concerned. */
+export function suppressionsRepo(db: Database, userId: string) {
+  const mine = eq(suppressions.userId, userId);
   return {
     /** Whether this address (already normalized) asked not to be emailed, or was added to the list. */
     async has(normalizedEmail: string): Promise<boolean> {

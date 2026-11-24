@@ -57,7 +57,7 @@ export class GoogleError extends Error {
 
 /**
  * A failed attempt to send. `kind` tells the caller what to do:
- *  - auth: Google rejected our token (revoked, expired, password changed): the tenant must reconnect.
+ *  - auth: Google rejected our token (revoked, expired, password changed): the account must reconnect.
  *  - rate_limit: Gmail is limiting this account right now: try again later.
  *  - transient: Google had a problem or the network failed: trying again may work.
  *  - permanent: Google refused this message: retrying the same message will not help.

@@ -184,19 +184,14 @@ describe("attachments: only PDF and Word", () => {
 });
 
 describe("who can send, and what happens when sending fails", () => {
-  it("is for Administrators and Campaign Managers; a Viewer cannot, and a visitor is not signed in", async () => {
-    const viewer = uniqueEmail("viewer");
-    await h.sql("INSERT INTO users (id,tenant_id,display_name,email,normalized_email,password_hash,access_id,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)", `u-${viewer}`, h.tenantId, "V", viewer, viewer, "x", "viewer", "Active", 1, 1);
-    expect((await send(GOOD, [], h.as(viewer))).status).toBe(403);
+  it("needs a signed-in account: a visitor is refused", async () => {
     expect((await send(GOOD, [], h.anonymous)).status).toBe(401);
-    const manager = uniqueEmail("manager");
-    await h.sql("INSERT INTO users (id,tenant_id,display_name,email,normalized_email,password_hash,access_id,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)", `u-${manager}`, h.tenantId, "M", manager, manager, "x", "campaign-manager", "Active", 1, 1);
-    expect((await send(GOOD, [], h.as(manager))).status).toBe(200);
+    expect((await send(GOOD, [])).status).toBe(200);
   });
 
-  it("says to connect Gmail when the organization has not", async () => {
+  it("says to connect Gmail when the account has not", async () => {
     const other = uniqueEmail("globex");
-    await h.addTenant("Globex Corp", other);
+    await h.addAccount("Globex Corp", other);
     const r = await send(GOOD, [], h.as(other));
     expect(r.status).toBe(409);
     expect(r.json.error.code).toBe("SENDER_REQUIRED");

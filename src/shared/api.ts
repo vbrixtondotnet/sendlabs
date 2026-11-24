@@ -4,14 +4,10 @@ import type {
   ConsentStatus,
   ContactFields,
   ImportRowOutcome,
-  AccessId,
   ImportStatus,
-  InvitationStatus,
   RecipientStatus,
-  Role,
   SenderProvider,
   SenderStatus,
-  UserStatus,
   SkipReason,
   SuppressionReason,
 } from "./types";
@@ -58,7 +54,6 @@ export interface CampaignDto {
   recipientImportId: string | null;
   /** When not empty: everyone whose industry is one of these. Never combined with an import. */
   recipientIndustries: string[];
-  createdBy: string;
   dailyLimit: number;
   sendWindowStart: string;
   sendWindowEnd: string;
@@ -122,7 +117,6 @@ export interface ImportDto {
   /** Rows kept, with a non-numeric # Employees / Annual Revenue left blank. */
   numericWarnings: number;
   error: string | null;
-  createdBy: string;
   createdAt: string;
   completedAt: string | null;
 }
@@ -134,33 +128,16 @@ export interface ImportRowDto {
   contactId: string | null;
 }
 
-/** The signed-in user and the tenant they belong to. */
+/** The signed-in account: who they are, and the company details they send email as. */
 export interface MeDto {
-  user: { id: string; email: string; firstName: string; lastName: string; position: string; displayName: string; access: Role; mustChangePassword: boolean; /** Credits left. Adding a person from Search People spends them. */ credits: number };
-  /** True when signed in through a real session (e.g. after accepting an invitation), false for the local development placeholder user. */
+  user: { id: string; email: string; firstName: string; lastName: string; position: string; displayName: string; mustChangePassword: boolean; /** Credits left. Adding a person from Search People spends them. */ credits: number };
+  /** True when signed in through a real session, false for the local development placeholder user. */
   session: boolean;
-  tenant: { id: string; name: string; slug: string; postalAddress: string; website: string; requireUnsubscribeLink: boolean; oneClickUnsubscribe: boolean };
+  /** The account's own company details: the name and address printed in its emails, and its unsubscribe settings. */
+  company: { name: string; postalAddress: string; website: string; requireUnsubscribeLink: boolean; oneClickUnsubscribe: boolean };
 }
 
-/** A user of the caller's tenant. Deliberately has no password or hash field. */
-export interface UserDto {
-  id: string;
-  email: string;
-  firstName: string;
-  lastName: string;
-  /** Job title. Empty when not set. */
-  position: string;
-  displayName: string;
-  access: Role;
-  accessId: AccessId;
-  status: UserStatus;
-  mustChangePassword: boolean;
-  /** Null until sign-in exists and the user has signed in. */
-  lastLoginAt: string | null;
-  createdAt: string;
-}
-
-/** The tenant's connected email account. Never carries a token. */
+/** The account's connected email account. Never carries a token. */
 export interface SenderDto {
   id: string;
   provider: SenderProvider;
@@ -169,10 +146,8 @@ export interface SenderDto {
   status: SenderStatus;
   /** The name recipients see on the From line. Empty when none was set (the sending user's name is used). */
   senderName: string;
-  /** What the tenant allowed, in plain words (e.g. "Send email"). */
+  /** What the account allowed, in plain words (e.g. "Send email"). */
   permissions: string[];
-  /** Email of the user who connected it. */
-  connectedBy: string;
   connectedAt: string;
 }
 
@@ -316,8 +291,6 @@ export interface UnsubscribeResultDto {
 export interface TestRecipientDto {
   id: string;
   email: string;
-  /** Who added it (their email). Empty if that user can no longer be found. */
-  addedBy: string;
   createdAt: string;
 }
 
@@ -329,34 +302,6 @@ export interface TestSendResultDto {
 export interface SenderStatusDto {
   /** False when this server has no Google credentials, so connecting is impossible until they are supplied. */
   configured: boolean;
-  /** Null when the tenant has not connected an account. */
+  /** Null when the account has not connected a Gmail address. */
   sender: SenderDto | null;
-}
-
-/** An invitation an Administrator sent. Never carries the link or the token: those exist only in the email. */
-export interface InvitationDto {
-  id: string;
-  email: string;
-  firstName: string;
-  lastName: string;
-  /** Job title the invitation was sent with. Empty when none. */
-  position: string;
-  access: Role;
-  accessId: AccessId;
-  /** Pending, or Expired once past its date. Accepted and revoked invitations are not listed. */
-  status: Extract<InvitationStatus, "Pending" | "Expired">;
-  /** Email of the Administrator who sent it. */
-  invitedBy: string;
-  createdAt: string;
-  expiresAt: string;
-}
-
-/** What the invitation page needs to greet the invited person. Returned for a valid, unused, unexpired link only. */
-export interface InvitationPreviewDto {
-  tenantName: string;
-  email: string;
-  firstName: string;
-  lastName: string;
-  access: Role;
-  expiresAt: string;
 }

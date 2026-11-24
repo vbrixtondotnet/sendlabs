@@ -10,7 +10,6 @@ import { CampaignEditor } from "@/pages/CampaignEditor";
 import { CampaignDetails } from "@/pages/CampaignDetails";
 import { Settings } from "@/pages/Settings";
 import { EmailTemplates } from "@/pages/EmailTemplates";
-import { AcceptInvitation } from "@/pages/AcceptInvitation";
 import { Login } from "@/pages/Login";
 import { Unsubscribe } from "@/pages/Unsubscribe";
 import { MySettings } from "@/pages/MySettings";
@@ -19,7 +18,6 @@ export function App() {
   return (
     <Routes>
       <Route path="login" element={<Login />} />
-      <Route path="invite/:token" element={<AcceptInvitation />} />
       <Route path="unsubscribe/:token" element={<Unsubscribe />} />
       <Route element={<Layout />}>
         <Route index element={<Overview />} />

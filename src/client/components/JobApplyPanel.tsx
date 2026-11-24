@@ -4,7 +4,6 @@ import type { JobDto } from "@shared/api";
 import { ATTACHMENT_ACCEPT, MAX_ATTACHMENTS, MAX_TOTAL_ATTACHMENT_BYTES, attachmentProblem, formatBytes } from "@shared/email-attachments";
 import { isValidEmail } from "@shared/email";
 import { Button, Field, Notice, SlidePanel, TextArea, TextInput } from "@/components/ui";
-import { useRole } from "@/hooks/useRole";
 import { useToast } from "@/hooks/useToast";
 import { ApiClientError } from "@/services/http";
 import { useSendApplicationEmail } from "@/services/jobs";
@@ -31,12 +30,11 @@ export function draftApplication(job: Pick<JobDto, "title" | "companyName">, you
 
 /**
  * The panel that slides in from the right when you press Apply Now on a job: write a personal email to the employer, attach your
- * resume (PDF or Word), and send it from your organization's connected Gmail account. One recipient; there is no CC or BCC.
+ * resume (PDF or Word), and send it from your connected Gmail account. One recipient; there is no CC or BCC.
  */
 export function JobApplyPanel({ job, open = true, onClose, onExited }: { job: JobDto; /** False slides it out. */ open?: boolean; onClose: () => void; /** Called once it has finished sliding out. */ onExited?: () => void }) {
   const me = useMe();
   const sender = useSender();
-  const { canEdit } = useRole();
   const { toast } = useToast();
   const send = useSendApplicationEmail();
 
@@ -74,7 +72,7 @@ export function JobApplyPanel({ job, open = true, onClose, onExited }: { job: Jo
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!valid || !canEdit || !connected || send.isPending) return;
+    if (!valid || !connected || send.isPending) return;
     setError(null);
     try {
       await send.mutateAsync({ to: to.trim(), subject: subject.trim(), body, attachments: files });
@@ -95,15 +93,14 @@ export function JobApplyPanel({ job, open = true, onClose, onExited }: { job: Jo
       footer={
         <>
           <Button type="button" variant="secondary" onClick={onClose} disabled={send.isPending}>Cancel</Button>
-          <Button type="submit" form="apply-email-form" variant="primary" disabled={!valid || !canEdit || !connected || send.isPending}>{send.isPending ? "Sending…" : "Send email"}</Button>
+          <Button type="submit" form="apply-email-form" variant="primary" disabled={!valid || !connected || send.isPending}>{send.isPending ? "Sending…" : "Send email"}</Button>
         </>
       }
     >
-      {!canEdit && <div className="mb-4"><Notice tone="warn" title="Your role cannot send email">You can read the jobs, but an Administrator or Campaign Manager sends the email.</Notice></div>}
-      {canEdit && !sender.isPending && !connected && (
+      {!sender.isPending && !connected && (
         <div className="mb-4">
           <Notice tone="warn" title="Connect your Gmail account first">
-            Emails are sent from your organization&apos;s connected Gmail account, and none is connected. An Administrator can connect one in <Link to="/settings" className="font-medium underline">Settings</Link>.
+            Emails are sent from your connected Gmail account, and none is connected. You can connect one in <Link to="/settings" className="font-medium underline">Settings</Link>.
           </Notice>
         </div>
       )}

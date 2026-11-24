@@ -48,15 +48,8 @@ export function Layout() {
     return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
   }
 
-  // Settings belong to Administrators: everyone else does not even see the menu item (the page and the API refuse them too).
-  const isAdmin = me.data?.user.access === "Administrator";
-  // Viewers have no access to Email Templates, so they do not see that item either.
-  const isViewer = me.data?.user.access === "Viewer";
-  // A SuperAdministrator belongs to no tenant: its only screen is Email Templates (the Available Templates it manages).
-  const isSuperAdmin = me.data?.user.access === "SuperAdministrator";
-  if (isSuperAdmin && location.pathname !== "/templates" && location.pathname !== "/account") return <Navigate to="/templates" replace />;
-  const items = NAV.filter((n) => (isSuperAdmin ? n.to === "/templates" : (n.to !== "/settings" || isAdmin) && (n.to !== "/templates" || !isViewer)));
-  const canCreate = !!me.data && !isViewer && !isSuperAdmin;
+  const items = NAV;
+  const canCreate = !!me.data;
   const wide = location.pathname.startsWith("/people"); // the people table wants the whole width
 
   const toggleCollapsed = () => {
@@ -129,7 +122,7 @@ export function Layout() {
         </button>
         <Link to="/" className="mr-2 flex shrink-0 items-center lg:w-44" aria-label="Sendrix home"><Logo className="h-8" /></Link>
 
-        {!isSuperAdmin && (
+        {(
           <form onSubmit={submitSearch} role="search" className="hidden max-w-2xl flex-1 sm:block">
             <label className="flex h-12 items-center gap-3 rounded-full bg-slate-200/60 px-4 text-slate-600 transition focus-within:bg-white focus-within:shadow-md dark:bg-slate-800 dark:text-slate-300 dark:focus-within:bg-slate-900">
               <svg viewBox="0 0 24 24" className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
@@ -147,11 +140,11 @@ export function Layout() {
 
         <div className="ml-auto flex items-center gap-3">
           {me.data ? (
-            <span className="hidden max-w-[14rem] truncate text-sm text-slate-600 dark:text-slate-300 md:block" title={me.data.tenant.slug}>{me.data.tenant.name}</span>
+            <span className="hidden max-w-[14rem] truncate text-sm text-slate-600 dark:text-slate-300 md:block" title={me.data.user.email}>{me.data.company.name || me.data.user.displayName}</span>
           ) : me.isError ? (
             <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">Not signed in</span>
           ) : null}
-          {me.data && !isSuperAdmin && <CreditsBadge credits={me.data.user.credits} />}
+          {me.data && <CreditsBadge credits={me.data.user.credits} />}
           {me.data && <UserMenu user={me.data.user} />}
         </div>
       </header>
@@ -173,7 +166,6 @@ export function Layout() {
         <aside className={`hidden shrink-0 flex-col overflow-y-auto pb-4 pt-1 transition-[width] lg:flex ${collapsed ? "w-[4.5rem]" : "w-64 pl-2 pr-3"}`}>
           {createButton(collapsed)}
           {nav(collapsed)}
-          {isAdmin && !collapsed && <p className="mt-auto px-4 pt-4 text-xs text-slate-400">Settings are a preview</p>}
         </aside>
 
         <main className="min-w-0 flex-1 overflow-y-auto bg-white px-4 py-5 dark:bg-slate-900 sm:mx-2 sm:mb-2 sm:rounded-2xl sm:px-6 lg:ml-0 lg:mr-4 lg:mb-4">

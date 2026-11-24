@@ -10,7 +10,7 @@ import { useChangePassword, useMe, useUpdateProfile } from "@/services/me";
 const TABS = ["User Details", "Account Details"] as const;
 type Tab = (typeof TABS)[number];
 
-/** The signed-in user's own settings: their name and position, and their password. (Organization-wide settings, including Company Details, are under Settings in the sidebar, for Administrators.) */
+/** The signed-in user's own settings: their name and position, and their password. (Company Details and the email service are under Settings in the sidebar.) */
 export function MySettings() {
   const [params] = useSearchParams();
   const [tab, setTab] = useState<Tab>(() => {
@@ -70,7 +70,7 @@ function UserDetailsTab({ me }: { me: MeDto }) {
 
   return (
     <Card className="max-w-2xl">
-      <CardHeader title="User details" subtitle="How your name and position appear to the rest of your organization." />
+      <CardHeader title="User details" subtitle="How your name and position appear in your email signature." />
       <form onSubmit={submit} noValidate>
         <div className="grid gap-4 p-5 sm:grid-cols-2">
           <Field label="First name" htmlFor="pf-first">
@@ -81,15 +81,12 @@ function UserDetailsTab({ me }: { me: MeDto }) {
             <TextInput id="pf-last" autoComplete="family-name" maxLength={100} value={last} onChange={(e) => setLast(e.target.value)} />
             {fieldError(save.error, "lastName") && <p className="mt-1 text-xs text-rose-600">{fieldError(save.error, "lastName")}</p>}
           </Field>
-          <Field label="Position" htmlFor="pf-position" hint="Your job title, shown to the rest of your organization. Optional.">
+          <Field label="Position" htmlFor="pf-position" hint="Your job title, shown in your email signature. Optional.">
             <TextInput id="pf-position" autoComplete="organization-title" maxLength={100} placeholder="e.g. Sales Director" value={position} onChange={(e) => setPosition(e.target.value)} />
             {fieldError(save.error, "position") && <p className="mt-1 text-xs text-rose-600">{fieldError(save.error, "position")}</p>}
           </Field>
-          <Field label="Email address" htmlFor="pf-email" hint="Your sign-in. Ask an Administrator if it needs to change.">
+          <Field label="Email address" htmlFor="pf-email" hint="Your sign-in.">
             <TextInput id="pf-email" value={me.user.email} readOnly disabled />
-          </Field>
-          <Field label="Role" htmlFor="pf-role" hint="Set by an Administrator of your organization.">
-            <TextInput id="pf-role" value={me.user.access} readOnly disabled />
           </Field>
         </div>
         {generalError(save.error, ["firstName", "lastName", "position"]) && <div className="px-5 pb-4"><Notice tone="error">{generalError(save.error, ["firstName", "lastName", "position"])}</Notice></div>}

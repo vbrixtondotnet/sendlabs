@@ -7,7 +7,7 @@ import { bytesToB64, type EmailAttachment } from "./attachments";
  * gets the full message and the link.
  *
  * Header injection is the danger here: a value containing a line break can add headers such as `Bcc:`. Values
- * that come from people (a tenant's name ends up in the subject) are therefore stripped of control characters,
+ * that come from people (a company's name ends up in the subject) are therefore stripped of control characters,
  * and addresses must pass strict validation. Bodies are base64, so nothing in them can be read as a header.
  */
 export interface OutgoingEmail {

@@ -36,7 +36,7 @@ async function connectAs(account: FakeAccount, who: Caller = h) {
 }
 
 const senderOf = async (who: Caller = h) => (await who.api("GET", "/api/sender")).json;
-const rowCount = async (tenantId: string) => (await h.rows<{ n: number }>("SELECT count(*) AS n FROM sender_accounts WHERE tenant_id = ?", tenantId))[0]!.n;
+const rowCount = async (userId: string) => (await h.rows<{ n: number }>("SELECT count(*) AS n FROM sender_accounts WHERE user_id = ?", userId))[0]!.n;
 
 describe("before anything is connected", () => {
   it("reports configured, with no sender", async () => {
@@ -73,7 +73,7 @@ describe("step 0: starting the connection", () => {
     const url = await startConnect();
     const state = FakeGoogle.stateOf(url);
     const [row] = await h.rows<{ state_hash: string; code_verifier_encrypted: string; used_at: number | null; expires_at: number }>(
-      "SELECT state_hash, code_verifier_encrypted, used_at, expires_at FROM oauth_states WHERE tenant_id = ? AND used_at IS NULL", h.tenantId);
+      "SELECT state_hash, code_verifier_encrypted, used_at, expires_at FROM oauth_states WHERE user_id = ? AND used_at IS NULL", h.userId);
     expect(row!.state_hash).not.toBe(state);
     expect(row!.state_hash).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(row!.code_verifier_encrypted).toMatch(/^v1\./);
@@ -85,7 +85,7 @@ describe("step 0: starting the connection", () => {
     expect(dump).not.toContain(state);
   });
 
-  it("keeps only the latest attempt valid per tenant", async () => {
+  it("keeps only the latest attempt valid per account", async () => {
     const first = await startConnect();
     const second = await startConnect();
     const stale = await comeBack(google.consent(first, { email: "stale@example.test" }));
@@ -104,15 +104,15 @@ describe("steps 1 to 5: Google sends the browser back", () => {
     expect(r.headers.get("referrer-policy")).toBe("no-referrer");
 
     const status = await senderOf();
-    expect(status.sender).toMatchObject({ provider: "gmail", email: "Owner@Gmail.com", status: "Connected", permissions: ["Send email"], connectedBy: h.adminEmail });
+    expect(status.sender).toMatchObject({ provider: "gmail", email: "Owner@Gmail.com", status: "Connected", permissions: ["Send email"] });
     expect(new Date(status.sender.connectedAt).toISOString()).toBe(status.sender.connectedAt);
 
-    // the token is in the database only as ciphertext, and it decrypts for THIS tenant
-    const [row] = await h.rows<{ refresh_token_encrypted: string; scopes: string; normalized_email: string; key_version: number }>("SELECT * FROM sender_accounts WHERE tenant_id = ?", h.tenantId);
+    // the token is in the database only as ciphertext, and it decrypts for THIS account
+    const [row] = await h.rows<{ refresh_token_encrypted: string; scopes: string; normalized_email: string; key_version: number }>("SELECT * FROM sender_accounts WHERE user_id = ?", h.userId);
     expect(row!.refresh_token_encrypted).toMatch(/^v1\./);
     expect(row).toMatchObject({ normalized_email: "owner@gmail.com", key_version: 1 });
     expect(row!.scopes).toContain(GMAIL_SEND_SCOPE);
-    const token = await refreshTokenFor(db(), cfg, h.tenantId);
+    const token = await refreshTokenFor(db(), cfg, h.userId);
     expect(token).toMatch(/^refresh-\d+$/);
     expect(row!.refresh_token_encrypted).not.toContain(token!);
     // and nothing about the answer reveals a token
@@ -127,7 +127,7 @@ describe("steps 1 to 5: Google sends the browser back", () => {
       const url = await startConnect();
       const state = FakeGoogle.stateOf(url);
       await comeBack(google.consent(url, { email: "secret.person@gmail.com" }));
-      const token = (await refreshTokenFor(db(), cfg, h.tenantId))!;
+      const token = (await refreshTokenFor(db(), cfg, h.userId))!;
       // and a failing run as well
       const url2 = await startConnect();
       await comeBack(google.consent(url2, { email: "x@example.test", exchange: "fail" }));
@@ -161,7 +161,7 @@ describe("steps 1 to 5: Google sends the browser back", () => {
       comeBack(google.consent(url, { email: "race-b@example.test" })),
     ]);
     expect([a.sender, b.sender].sort()).toEqual(["connected", "error"]);
-    expect(await rowCount(h.tenantId)).toBe(1);
+    expect(await rowCount(h.userId)).toBe(1);
     await h.api("DELETE", "/api/sender");
   });
 
@@ -175,9 +175,9 @@ describe("steps 1 to 5: Google sends the browser back", () => {
       expect(await comeBack(path), path.slice(0, 60)).toMatchObject({ sender: "error", reason: "invalid_state" });
     }
     const url = await startConnect();
-    await h.sql("UPDATE oauth_states SET expires_at = ? WHERE tenant_id = ? AND used_at IS NULL", Date.now() - 1000, h.tenantId);
+    await h.sql("UPDATE oauth_states SET expires_at = ? WHERE user_id = ? AND used_at IS NULL", Date.now() - 1000, h.userId);
     expect(await comeBack(google.consent(url, { email: "late@example.test" }))).toMatchObject({ reason: "invalid_state" });
-    expect(await rowCount(h.tenantId)).toBe(0);
+    expect(await rowCount(h.userId)).toBe(0);
   });
 
   it("refuses a callback without a code, after using up the state", async () => {
@@ -192,7 +192,7 @@ describe("steps 1 to 5: Google sends the browser back", () => {
     const state = FakeGoogle.stateOf(url);
     const r = await comeBack(`/api/sender/gmail/callback?error=access_denied&state=${encodeURIComponent(state)}`);
     expect(r).toMatchObject({ sender: "error", reason: "denied" });
-    expect(await rowCount(h.tenantId)).toBe(0);
+    expect(await rowCount(h.userId)).toBe(0);
     expect(await comeBack(google.consent(url, { email: "after@example.test" }))).toMatchObject({ reason: "invalid_state" }); // state burned
   });
 
@@ -200,7 +200,7 @@ describe("steps 1 to 5: Google sends the browser back", () => {
     const revokedBefore = google.revoked.length;
     const r = await connectAs({ email: "partial@example.test", scopes: ["openid", "https://www.googleapis.com/auth/userinfo.email"] });
     expect(r).toMatchObject({ sender: "error", reason: "missing_permission" });
-    expect(await rowCount(h.tenantId)).toBe(0);
+    expect(await rowCount(h.userId)).toBe(0);
     expect(google.revoked.length).toBe(revokedBefore + 1); // no orphaned authorization left at Google
   });
 
@@ -208,13 +208,13 @@ describe("steps 1 to 5: Google sends the browser back", () => {
     const revokedBefore = google.revoked.length;
     const r = await connectAs({ email: "norefresh@example.test", refreshToken: null });
     expect(r).toMatchObject({ sender: "error", reason: "no_refresh_token" });
-    expect(await rowCount(h.tenantId)).toBe(0);
+    expect(await rowCount(h.userId)).toBe(0);
     expect(google.revoked.length).toBe(revokedBefore + 1);
   });
 
   it("reports an exchange failure (Google refuses the code), storing nothing", async () => {
     expect(await connectAs({ email: "x@example.test", exchange: "fail" })).toMatchObject({ sender: "error", reason: "exchange_failed" });
-    expect(await rowCount(h.tenantId)).toBe(0);
+    expect(await rowCount(h.userId)).toBe(0);
   });
 
   it("rejects a code that was issued for a different PKCE challenge", async () => {
@@ -226,7 +226,7 @@ describe("steps 1 to 5: Google sends the browser back", () => {
     const r = await comeBack(`/api/sender/gmail/callback?code=${wrongCode}&state=${encodeURIComponent(FakeGoogle.stateOf(other))}`);
     expect(r).toMatchObject({ sender: "error", reason: "exchange_failed" });
     expect(forged).toBeTruthy();
-    expect(await rowCount(h.tenantId)).toBe(0);
+    expect(await rowCount(h.userId)).toBe(0);
   });
 
   it("reports when the address cannot be read or is not verified, and cancels the token", async () => {
@@ -235,15 +235,15 @@ describe("steps 1 to 5: Google sends the browser back", () => {
       expect(await connectAs(account), account.email).toMatchObject({ sender: "error", reason: "email_unavailable" });
       expect(google.revoked.length).toBe(revokedBefore + 1);
     }
-    expect(await rowCount(h.tenantId)).toBe(0);
+    expect(await rowCount(h.userId)).toBe(0);
   });
 
-  it("refuses when the tenant or the user became inactive while the user was on Google's screen", async () => {
+  it("refuses when the account became inactive while the user was on Google's screen", async () => {
     const url = await startConnect();
-    await h.sql("UPDATE tenants SET status = 'Suspended' WHERE id = ?", h.tenantId);
+    await h.sql("UPDATE users SET status = 'Disabled' WHERE id = ?", h.userId);
     expect(await comeBack(google.consent(url, { email: "inactive@example.test" }))).toMatchObject({ reason: "inactive" });
-    await h.sql("UPDATE tenants SET status = 'Active' WHERE id = ?", h.tenantId);
-    expect(await rowCount(h.tenantId)).toBe(0);
+    await h.sql("UPDATE users SET status = 'Active' WHERE id = ?", h.userId);
+    expect(await rowCount(h.userId)).toBe(0);
   });
 
   it("only ever redirects to the configured app address, with a code from a fixed list", async () => {
@@ -274,51 +274,51 @@ describe("steps 1 to 5: Google sends the browser back", () => {
 describe("reconnecting and disconnecting", () => {
   it("reconnecting the same account replaces the token in place and cancels the old one", async () => {
     await connectAs({ email: "same@example.test" });
-    const oldToken = (await refreshTokenFor(db(), cfg, h.tenantId))!;
+    const oldToken = (await refreshTokenFor(db(), cfg, h.userId))!;
     const first = (await senderOf()).sender;
     await new Promise((r) => setTimeout(r, 5));
 
     expect((await connectAs({ email: "same@example.test" })).sender).toBe("connected");
-    const newToken = (await refreshTokenFor(db(), cfg, h.tenantId))!;
+    const newToken = (await refreshTokenFor(db(), cfg, h.userId))!;
     expect(newToken).not.toBe(oldToken);
     expect(google.revoked).toContain(oldToken);
     expect(google.revoked).not.toContain(newToken);
-    expect(await rowCount(h.tenantId)).toBe(1);
+    expect(await rowCount(h.userId)).toBe(1);
     const second = (await senderOf()).sender;
     expect(second.id).toBe(first.id);
     expect(second.connectedAt > first.connectedAt).toBe(true);
     await h.api("DELETE", "/api/sender");
   });
 
-  it("connecting a different account replaces the first (one sender per tenant)", async () => {
+  it("connecting a different account replaces the first (one sender per account)", async () => {
     await connectAs({ email: "first@example.test" });
-    const oldToken = (await refreshTokenFor(db(), cfg, h.tenantId))!;
+    const oldToken = (await refreshTokenFor(db(), cfg, h.userId))!;
     await connectAs({ email: "second@example.test" });
     expect((await senderOf()).sender.email).toBe("second@example.test");
     expect(google.revoked).toContain(oldToken);
-    expect(await rowCount(h.tenantId)).toBe(1);
+    expect(await rowCount(h.userId)).toBe(1);
     await h.api("DELETE", "/api/sender");
   });
 
   it("a failed reconnect leaves the existing connection untouched", async () => {
     await connectAs({ email: "keep@example.test" });
     const before = await senderOf();
-    const token = await refreshTokenFor(db(), cfg, h.tenantId);
+    const token = await refreshTokenFor(db(), cfg, h.userId);
     expect(await connectAs({ email: "new@example.test", exchange: "fail" })).toMatchObject({ reason: "exchange_failed" });
     expect(await connectAs({ email: "new@example.test", scopes: ["openid"] })).toMatchObject({ reason: "missing_permission" });
     expect(await senderOf()).toEqual(before);
-    expect(await refreshTokenFor(db(), cfg, h.tenantId)).toBe(token);
+    expect(await refreshTokenFor(db(), cfg, h.userId)).toBe(token);
     await h.api("DELETE", "/api/sender");
   });
 
   it("disconnecting removes the account and tells Google to cancel the token", async () => {
     await connectAs({ email: "bye@example.test" });
-    const token = (await refreshTokenFor(db(), cfg, h.tenantId))!;
+    const token = (await refreshTokenFor(db(), cfg, h.userId))!;
     const r = await h.api("DELETE", "/api/sender");
     expect(r.status).toBe(204);
     expect(google.revoked).toContain(token);
     expect(await senderOf()).toEqual({ configured: true, sender: null });
-    expect(await rowCount(h.tenantId)).toBe(0);
+    expect(await rowCount(h.userId)).toBe(0);
     const again = await h.api("DELETE", "/api/sender");
     expect(again.status).toBe(404);
     expect(again.json.error.code).toBe("NOT_FOUND");
@@ -328,7 +328,7 @@ describe("reconnecting and disconnecting", () => {
     await connectAs({ email: "offline@example.test" });
     google.revokeFails = true;
     expect((await h.api("DELETE", "/api/sender")).status).toBe(204);
-    expect(await rowCount(h.tenantId)).toBe(0);
+    expect(await rowCount(h.userId)).toBe(0);
   });
 
   it("a successful reconnect is not undone when the old token cannot be cancelled", async () => {
@@ -340,55 +340,34 @@ describe("reconnecting and disconnecting", () => {
   });
 });
 
-describe("who may do what", () => {
-  const addUser = (tenantId: string, email: string, accessId: string) =>
-    h.sql("INSERT INTO users (id,tenant_id,email,normalized_email,password_hash,access_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)",
-      `u-${email}`, tenantId, email, email, "pbkdf2-sha256$1$AA$AA", accessId, Date.now(), Date.now());
-
-  it("lets every signed-in user see the status, but only Administrators connect or disconnect", async () => {
-    await addUser(h.tenantId, "mgr@a.test", "campaign-manager");
-    await addUser(h.tenantId, "view@a.test", "viewer");
-    await connectAs({ email: "roles@example.test" });
-    for (const email of ["mgr@a.test", "view@a.test"]) {
-      const who = h.as(email);
-      expect((await who.api("GET", "/api/sender")).json.sender.email, email).toBe("roles@example.test");
-      const connect = await who.api("POST", "/api/sender/gmail/connect");
-      expect(connect.status, email).toBe(403);
-      expect(connect.json.error.code).toBe("FORBIDDEN");
-      expect((await who.api("DELETE", "/api/sender")).status, email).toBe(403);
-    }
-    expect(await senderOf()).not.toEqual({ configured: true, sender: null }); // still connected
-    await h.api("DELETE", "/api/sender");
-  });
-
+describe("who may use it", () => {
   it("refuses unknown users", async () => {
     expect((await h.as("nobody@nowhere.test").api("GET", "/api/sender")).status).toBe(401);
   });
 });
 
-describe("tenants cannot reach each other's connected account", () => {
-  let other: { tenantId: string; userId: string };
+describe("accounts cannot reach each other's connected account", () => {
+  let other: { userId: string };
   const otherEmail = "admin@globex.test";
   let b: Caller;
   beforeAll(async () => {
-    other = await h.addTenant("Globex Corp", otherEmail);
+    other = await h.addAccount("Globex Corp", otherEmail);
     b = h.as(otherEmail);
   });
 
-  it("each tenant has its own connection, and sees only its own", async () => {
+  it("each account has its own connection, and sees only its own", async () => {
     await connectAs({ email: "a-sender@example.test" });
     expect((await senderOf(b)).sender).toBeNull();
     await connectAs({ email: "b-sender@example.test" }, b);
     expect((await senderOf()).sender.email).toBe("a-sender@example.test");
     expect((await senderOf(b)).sender.email).toBe("b-sender@example.test");
-    expect((await senderOf(b)).sender.connectedBy).toBe(otherEmail);
     // disconnecting one leaves the other
     expect((await b.api("DELETE", "/api/sender")).status).toBe(204);
     expect((await senderOf()).sender.email).toBe("a-sender@example.test");
     await h.api("DELETE", "/api/sender");
   });
 
-  it("the attempt, not whoever finishes the callback, decides the tenant", async () => {
+  it("the attempt, not whoever finishes the callback, decides the account", async () => {
     const url = await startConnect(h); // tenant A starts...
     const back = google.consent(url, { email: "for-a@example.test" });
     await comeBack(back, b); // ...and tenant B's browser happens to complete it
@@ -397,15 +376,15 @@ describe("tenants cannot reach each other's connected account", () => {
     await h.api("DELETE", "/api/sender");
   });
 
-  it("an encrypted token copied into another tenant's row cannot be decrypted there", async () => {
+  it("an encrypted token copied into another account's row cannot be decrypted there", async () => {
     await connectAs({ email: "bound@example.test" });
-    const [a] = await h.rows<{ refresh_token_encrypted: string }>("SELECT refresh_token_encrypted FROM sender_accounts WHERE tenant_id = ?", h.tenantId);
+    const [a] = await h.rows<{ refresh_token_encrypted: string }>("SELECT refresh_token_encrypted FROM sender_accounts WHERE user_id = ?", h.userId);
     await h.sql(
-      "INSERT INTO sender_accounts (id,tenant_id,email,normalized_email,refresh_token_encrypted,scopes,connected_by,connected_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-      "stolen", other.tenantId, "thief@example.test", "thief@example.test", a!.refresh_token_encrypted, GMAIL_SEND_SCOPE, other.userId, Date.now(), Date.now(), Date.now(),
+      "INSERT INTO sender_accounts (id,user_id,email,normalized_email,refresh_token_encrypted,scopes,connected_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+      "stolen", other.userId, "thief@example.test", "thief@example.test", a!.refresh_token_encrypted, GMAIL_SEND_SCOPE, Date.now(), Date.now(), Date.now(),
     );
-    expect(await refreshTokenFor(db(), cfg, h.tenantId)).toMatch(/^refresh-/); // fine where it belongs
-    await expect(refreshTokenFor(db(), cfg, other.tenantId)).rejects.toThrow("Could not decrypt"); // useless anywhere else
+    expect(await refreshTokenFor(db(), cfg, h.userId)).toMatch(/^refresh-/); // fine where it belongs
+    await expect(refreshTokenFor(db(), cfg, other.userId)).rejects.toThrow("Could not decrypt"); // useless anywhere else
     await h.sql("DELETE FROM sender_accounts WHERE id = 'stolen'");
     await h.api("DELETE", "/api/sender");
   });
@@ -413,30 +392,28 @@ describe("tenants cannot reach each other's connected account", () => {
 
 describe("the database enforces the same rules", () => {
   const insert = (over: Partial<Record<string, unknown>> = {}) => {
-    const v = { id: "s1", tenant_id: h.tenantId, provider: "gmail", email: "x@example.test", normalized_email: "x@example.test", status: "Connected", token: "v1.a.b", connected_by: h.userId, ...over };
+    const v = { id: "s1", user_id: h.userId, provider: "gmail", email: "x@example.test", normalized_email: "x@example.test", status: "Connected", token: "v1.a.b", ...over };
     return h.sql(
-      "INSERT INTO sender_accounts (id,tenant_id,provider,email,normalized_email,status,refresh_token_encrypted,scopes,connected_by,connected_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-      v.id, v.tenant_id, v.provider, v.email, v.normalized_email, v.status, v.token, GMAIL_SEND_SCOPE, v.connected_by, 1, 1, 1,
+      "INSERT INTO sender_accounts (id,user_id,provider,email,normalized_email,status,refresh_token_encrypted,scopes,connected_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+      v.id, v.user_id, v.provider, v.email, v.normalized_email, v.status, v.token, GMAIL_SEND_SCOPE, 1, 1, 1,
     );
   };
 
-  it("allows one connected account per tenant", async () => {
+  it("allows one connected account per account", async () => {
     await insert({ id: "ok-1" });
     await expect(insert({ id: "ok-2", email: "y@example.test", normalized_email: "y@example.test" })).rejects.toThrow(/UNIQUE|constraint/i);
     await h.sql("DELETE FROM sender_accounts WHERE id = 'ok-1'");
   });
 
-  it("rejects an unknown provider or status, a blank token, a non-normalized email, and a connector from another tenant", async () => {
-    const other = await h.addTenant("Fk Test Co", "boss@fk.test");
-    for (const bad of [{ provider: "outlook" }, { status: "Maybe" }, { token: "" }, { email: "A@B.com", normalized_email: "A@B.com" }, { connected_by: other.userId }]) {
+  it("rejects an unknown provider or status, a blank token, and a non-normalized email", async () => {
+    for (const bad of [{ provider: "outlook" }, { status: "Maybe" }, { token: "" }, { email: "A@B.com", normalized_email: "A@B.com" }]) {
       await expect(insert({ id: "bad", ...bad }), JSON.stringify(bad)).rejects.toThrow(/constraint|FOREIGN KEY/i);
     }
-    expect(await rowCount(h.tenantId)).toBe(0);
+    expect(await rowCount(h.userId)).toBe(0);
   });
 
-  it("will not delete a tenant, or a user, that has a connected account", async () => {
+  it("will not delete an account that has a connected account", async () => {
     await insert({ id: "held" });
-    await expect(h.sql("DELETE FROM tenants WHERE id = ?", h.tenantId)).rejects.toThrow(/constraint|FOREIGN KEY/i);
     await expect(h.sql("DELETE FROM users WHERE id = ?", h.userId)).rejects.toThrow(/constraint|FOREIGN KEY/i);
     await h.sql("DELETE FROM sender_accounts WHERE id = 'held'");
   });

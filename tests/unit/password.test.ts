@@ -8,7 +8,6 @@ import {
   PBKDF2_ITERATIONS,
   verifyPassword,
 } from "../../src/server/lib/password";
-import { slugify } from "../../src/server/services/tenants";
 
 describe("password hashing", () => {
   it("produces a self-describing PBKDF2 hash that never contains the password", async () => {
@@ -91,25 +90,5 @@ describe("password rules", () => {
     expect(passwordProblem("")).toMatch(/at least/);
     expect(passwordProblem("a".repeat(PASSWORD_MAX_LENGTH))).toBeNull();
     expect(passwordProblem("a".repeat(PASSWORD_MAX_LENGTH + 1))).toMatch(/at most/);
-  });
-});
-
-describe("tenant slugs", () => {
-  it("makes URL-safe identifiers", () => {
-    expect(slugify("Sabertooth Software Labs")).toBe("sabertooth-software-labs");
-    expect(slugify("  Globex   Corp.  ")).toBe("globex-corp");
-    expect(slugify("Café Münster & Söhne")).toBe("cafe-munster-sohne");
-    expect(slugify("A--B__C")).toBe("a-b-c");
-  });
-  it("always returns something valid, even for names with no letters or digits", () => {
-    expect(slugify("!!!")).toBe("tenant");
-    expect(slugify("")).toBe("tenant");
-    expect(slugify("日本語")).toBe("tenant");
-  });
-  it("caps the length without leaving a trailing hyphen", () => {
-    const s = slugify(`${"a".repeat(49)} bbbbbbbb`);
-    expect(s.length).toBeLessThanOrEqual(50);
-    expect(s.endsWith("-")).toBe(false);
-    expect(s).toMatch(/^[a-z0-9-]+$/);
   });
 });

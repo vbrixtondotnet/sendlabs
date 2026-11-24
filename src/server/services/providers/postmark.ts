@@ -5,7 +5,7 @@ import { EmailSendError, type EmailChannel, type EmailProvider, type OutgoingEma
 
 const POSTMARK_URL = "https://api.postmarkapp.com/email";
 
-/** Everything Postmark needs, read from the environment. Nothing is stored per organization. */
+/** Everything Postmark needs, read from the environment. Nothing is stored per account. */
 export interface PostmarkConfig {
   /** The Server API token. A secret: it travels only in the `X-Postmark-Server-Token` header, and is never logged or returned. */
   token: string;

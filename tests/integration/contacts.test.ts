@@ -176,8 +176,8 @@ describe("contacts", () => {
     const c = (await mk()).json;
     const camp = (await h.api("POST", "/api/campaigns", { name: "History", subject: "s", htmlBody: "<p>b</p>" })).json;
     await h.sql(
-      "INSERT INTO campaign_recipients (id,tenant_id,campaign_id,contact_id,email_snapshot,personalization_snapshot,sequence,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
-      "rcp-del-1", h.tenantId, camp.id, c.id, c.email, JSON.stringify({ firstName: "Gone" }), 1, Date.now(), Date.now(),
+      "INSERT INTO campaign_recipients (id,user_id,campaign_id,contact_id,email_snapshot,personalization_snapshot,sequence,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+      "rcp-del-1", h.userId, camp.id, c.id, c.email, JSON.stringify({ firstName: "Gone" }), 1, Date.now(), Date.now(),
     );
     expect((await h.api("DELETE", `/api/contacts/${c.id}`)).status).toBe(204);
     expect((await h.api("GET", `/api/contacts/${c.id}`)).status).toBe(404);

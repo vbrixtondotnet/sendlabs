@@ -2,7 +2,7 @@ import type { ContactFields } from "./types";
 
 /** The only placeholders that are ever substituted. No arbitrary template code runs. Shared by the editor preview and test sends. */
 export type MergeContext = Partial<ContactFields> & {
-  /** The sending organization's name (the tenant's company name), not the recipient's company. */
+  /** The sending organization's name (the account's company name), not the recipient's company. */
   senderCompany?: string;
 };
 
@@ -101,10 +101,10 @@ export function applySignature(bodyHtml: string, signature: string): string {
  *
  * A missing position leaves just the company on that line, and a missing website drops its line.
  */
-export function defaultSignature(who: { name: string; position: string }, tenant: { name: string; website: string }): string {
+export function defaultSignature(who: { name: string; position: string }, company: { name: string; website: string }): string {
   const clean = (v: string) => v.replace(/\s+/g, " ").trim();
-  const identity = [clean(who.position), clean(tenant.name)].filter(Boolean).join(" | ");
-  return ["Best regards,", clean(who.name), identity, clean(tenant.website)].filter(Boolean).join("\n");
+  const identity = [clean(who.position), clean(company.name)].filter(Boolean).join(" | ");
+  return ["Best regards,", clean(who.name), identity, clean(company.website)].filter(Boolean).join("\n");
 }
 
 /** The company's postal address as a small grey footer block (escaped, line breaks kept). Empty when there is no address. */
@@ -131,9 +131,9 @@ export const EMAIL_FOOTER_ENABLED = true;
 export const LIST_UNSUBSCRIBE_HEADERS_ENABLED = false;
 
 /** What `composeEmailHtml` is given for the footer, following the switch above. */
-export const footerFor = (tenant: { name: string; postalAddress: string }) => ({
-  companyName: tenant.name,
-  postalAddress: EMAIL_FOOTER_ENABLED ? tenant.postalAddress : "",
+export const footerFor = (company: { name: string; postalAddress: string }) => ({
+  companyName: company.name,
+  postalAddress: EMAIL_FOOTER_ENABLED ? company.postalAddress : "",
   unsubscribeFooter: EMAIL_FOOTER_ENABLED,
 });
 
@@ -185,8 +185,8 @@ export function composeEmailHtml(parts: EmailParts, contact: Partial<ContactFiel
 }
 
 /** The same starting signature as HTML, which is what the signature editor holds. */
-export function defaultSignatureHtml(who: { name: string; position: string }, tenant: { name: string; website: string }): string {
-  return textToHtml(defaultSignature(who, tenant));
+export function defaultSignatureHtml(who: { name: string; position: string }, company: { name: string; website: string }): string {
+  return textToHtml(defaultSignature(who, company));
 }
 
 /** Plain text for the text part when the campaign has none: tags dropped, links kept, entities for the few that matter. */

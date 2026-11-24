@@ -5,7 +5,7 @@ import { isValidEmail, normalizeEmail } from "./email";
 import { isBlankHtml } from "./merge";
 import { PASSWORD_MAX_LENGTH } from "./password-rules";
 import { PEOPLE_COMPANY_SIZES, PEOPLE_MAX_INDUSTRIES, PEOPLE_MAX_TITLES } from "./people";
-import { ACCESS_LEVELS, CAMPAIGN_STATUSES, CONSENT_STATUSES, IMPORT_ROW_OUTCOMES, RECIPIENT_STATUSES, type AccessId } from "./types";
+import { CAMPAIGN_STATUSES, CONSENT_STATUSES, IMPORT_ROW_OUTCOMES, RECIPIENT_STATUSES } from "./types";
 
 /* ------------------------------ primitives ------------------------------ */
 
@@ -208,24 +208,12 @@ export const importRowsQuery = pageQuery.extend({
 });
 export type ImportRowsQuery = z.infer<typeof importRowsQuery>;
 
-/* ------------------------------ invitations ------------------------------ */
+/* ------------------------------ account ------------------------------ */
 
 /** Longest position (job title) accepted, in characters. */
 export const POSITION_MAX = 100;
 
-const ACCESS_IDS = ACCESS_LEVELS.map((a) => a.id) as unknown as [AccessId, ...AccessId[]];
 const personName = (label: string) => z.string().trim().min(1, `${label} is required`).max(100);
-
-/** Who to invite. Unknown properties are rejected, so a tenant or status can never be smuggled in. */
-export const invitationCreateSchema = z.strictObject({
-  email,
-  firstName: personName("First name"),
-  lastName: personName("Last name"),
-  /** Optional job title; becomes the user's position when they accept. */
-  position: z.string().max(POSITION_MAX, `Use at most ${POSITION_MAX} characters`).optional(),
-  accessId: z.enum(ACCESS_IDS),
-});
-export type InvitationCreate = z.infer<typeof invitationCreateSchema>;
 
 /** The name shown on the From line of every email. Letters, spaces and ordinary punctuation; may be left empty. */
 export const SENDER_NAME_MAX = 100;
@@ -292,13 +280,10 @@ export type TestSendInput = z.infer<typeof testSendSchema>;
 /** Test sends fan out to everyone on the list, so the list is kept small. */
 export const MAX_TEST_RECIPIENTS = 20;
 
-/** The invited person's chosen password. Length rules live in password-rules.ts and are applied by the service. */
-export const acceptInvitationSchema = z.strictObject({ password: z.string().min(1, "Choose a password").max(PASSWORD_MAX_LENGTH) });
-
 
 /**
- * The signed-in user editing their own details: name and position. Email, role and tenant are not editable here, so they
- * are not accepted. `position` may be left out (unchanged) or sent empty (cleared).
+ * The signed-in user editing their own details: name and position. The email is not editable here, so it
+ * is not accepted. `position` may be left out (unchanged) or sent empty (cleared).
  */
 export const profileUpdateSchema = z.strictObject({
   firstName: personName("First name"),
@@ -320,10 +305,10 @@ export const websiteField = z
 export const POSTAL_ADDRESS_MAX = 500;
 
 /**
- * Editing the organization's company details: its name and its postal address. Send only what changes. The slug,
- * status and everything else are not editable. The postal address may be cleared (empty string).
+ * Editing the account's company details: the name and postal address printed in its emails, its website and its unsubscribe
+ * settings. Send only what changes. The postal address may be cleared (empty string).
  */
-export const tenantUpdateSchema = z
+export const companyUpdateSchema = z
   .strictObject({
     name: z.string().trim().min(1, "Name is required").max(100, "Use at most 100 characters").optional(),
     postalAddress: z.string().max(POSTAL_ADDRESS_MAX, `Use at most ${POSTAL_ADDRESS_MAX} characters`).optional(),
@@ -332,7 +317,7 @@ export const tenantUpdateSchema = z
     oneClickUnsubscribe: z.boolean().optional(),
   })
   .refine((v) => Object.values(v).some((x) => x !== undefined), { message: "Nothing to change" });
-export type TenantUpdate = z.infer<typeof tenantUpdateSchema>;
+export type CompanyUpdate = z.infer<typeof companyUpdateSchema>;
 
 /** Changing your own password. Length rules live in password-rules.ts and are applied by the service. */
 export const passwordChangeSchema = z.strictObject({

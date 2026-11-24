@@ -7,7 +7,6 @@ import {
   Button, CampaignStatusBadge, Empty, ErrorNotice, FillPage, LoadingRows, Modal, PageHeader, Pagination, Select, StackedBar, Table, TableCard, TextInput, Td, Th, fmt, fmtDay,
 } from "@/components/ui";
 import { useDebounced } from "@/hooks/useDebounced";
-import { useRole } from "@/hooks/useRole";
 import { useToast } from "@/hooks/useToast";
 import { ApiClientError } from "@/services/http";
 import { useArchiveCampaign, useCampaigns, useDeleteCampaign, useDuplicateCampaign } from "@/services/campaigns";
@@ -17,7 +16,6 @@ const statusLabel = (s: CampaignStatus) => (s === "CompletedWithErrors" ? "Compl
 const recipientCount = (c: CampaignSummaryDto) => Object.values(c.totals).reduce((a, b) => a + b, 0);
 
 export function Campaigns() {
-  const { canEdit } = useRole();
   const { toast } = useToast();
   const nav = useNavigate();
   const [q, setQ] = useState("");
@@ -47,7 +45,7 @@ export function Campaigns() {
       <PageHeader
         title="Campaigns"
         description="Each recipient gets their own individually addressed email."
-        actions={canEdit && <Link to="/campaigns/new"><Button variant="primary">New campaign</Button></Link>}
+        actions={<Link to="/campaigns/new"><Button variant="primary">New campaign</Button></Link>}
       />
       <TableCard>
         <div className="flex shrink-0 flex-wrap gap-3 border-b border-slate-200 p-4 dark:border-slate-800">
@@ -84,9 +82,9 @@ export function Campaigns() {
                     <Td><CampaignStatusBadge status={c.status} /></Td>
                     <Td className="w-48">{recipientCount(c) > 0 ? <StackedBar totals={c.totals} /> : <span className="text-xs text-slate-400">Not launched</span>}</Td>
                     <Td className="text-right tabular-nums">{recipientCount(c) > 0 ? fmt(recipientCount(c)) : "n/a"}</Td>
-                    <Td className="whitespace-nowrap text-slate-500">{fmtDay(c.createdAt)}<br /><span className="text-xs">{c.createdBy}</span></Td>
+                    <Td className="whitespace-nowrap text-slate-500">{fmtDay(c.createdAt)}</Td>
                     <Td className="text-right">
-                      {canEdit && (
+                      {(
                         <div className="flex justify-end gap-1">
                           <Button variant="ghost" disabled={duplicate.isPending} onClick={() => run(async () => { const d = await duplicate.mutateAsync(c.id); nav(`/campaigns/${d.id}/edit`); }, "Duplicated as a new draft")}>Duplicate</Button>
                           {c.archivedAt ? (

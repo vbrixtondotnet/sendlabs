@@ -3,38 +3,36 @@ import { normalizeEmail } from "../../shared/email";
 import type { SenderConnectError } from "../../shared/types";
 import type { Database } from "../database/client";
 import { oauthStatesRepo, senderRepo } from "../database/repositories/sender";
-import { usersRepo } from "../database/repositories/users";
 import type { SenderAccountRow } from "../database/schema/sender";
 import { decryptSecret, encryptSecret, randomToken, sha256Base64Url } from "../lib/crypto";
 import { GMAIL_SEND_SCOPE, GoogleError, type GoogleConfig, type GoogleOAuth } from "./google-oauth";
 
-/** How long the Administrator has to finish on Google's screen. */
+/** How long the person has to finish on Google's screen. */
 const STATE_TTL_MS = 10 * 60 * 1000;
 
-/** Ciphertext is bound to these, so a stored secret only decrypts for the tenant (and attempt) it was made for. */
-const tokenContext = (tenantId: string) => `sender-refresh-token:${tenantId}`;
-const verifierContext = (tenantId: string, userId: string) => `oauth-verifier:${tenantId}:${userId}`;
+/** Ciphertext is bound to these, so a stored secret only decrypts for the account it was made for. */
+const tokenContext = (userId: string) => `sender-refresh-token:${userId}`;
+const verifierContext = (userId: string) => `oauth-verifier:${userId}`;
 
 /** What the granted scopes mean to a person. */
 function permissionsOf(scopes: string): string[] {
   return scopes.split(/\s+/).includes(GMAIL_SEND_SCOPE) ? ["Send email"] : [];
 }
 
-/** Step 0: the Administrator clicks Connect. Returns Google's consent-screen address. */
+/** Step 0: the person clicks Connect. Returns Google's consent-screen address. */
 export async function startGmailConnect(
   db: Database,
   google: GoogleOAuth,
   cfg: GoogleConfig,
-  who: { tenantId: string; userId: string },
+  who: { userId: string },
 ): Promise<{ url: string }> {
   const state = randomToken();
   const codeVerifier = randomToken(48);
   await oauthStatesRepo(db).start({
-    tenantId: who.tenantId,
     userId: who.userId,
     // Only a hash of `state` is stored. Google gets the value, the database never does.
     stateHash: await sha256Base64Url(state),
-    codeVerifierEncrypted: await encryptSecret(codeVerifier, cfg.encryptionKey, verifierContext(who.tenantId, who.userId)),
+    codeVerifierEncrypted: await encryptSecret(codeVerifier, cfg.encryptionKey, verifierContext(who.userId)),
     ttlMs: STATE_TTL_MS,
   });
   return { url: google.authorizationUrl(cfg, { state, codeChallenge: await sha256Base64Url(codeVerifier) }) };
@@ -48,7 +46,7 @@ export type ConnectResult = { ok: true } | { ok: false; reason: SenderConnectErr
  *  2. exchange it for tokens
  *  3. store the refresh token, encrypted
  *  4. read the authenticated email address
- *  5. the account is now the tenant's campaign sender
+ *  5. the account is now the campaign sender
  * It returns a reason code rather than throwing, because every failure ends the same way: back to the app with an
  * explanation. Tokens, codes and addresses are never logged.
  */
@@ -66,11 +64,11 @@ export async function completeGmailConnect(
   if (!attempt) return { ok: false, reason: "invalid_state" };
   if (input.googleError) return { ok: false, reason: "denied" };
   if (!input.code) return { ok: false, reason: "invalid_state" };
-  if (!(await oauthStatesRepo(db).isActive(attempt.tenantId, attempt.userId))) return { ok: false, reason: "inactive" };
+  if (!(await oauthStatesRepo(db).isActive(attempt.userId))) return { ok: false, reason: "inactive" };
 
   let verifier: string;
   try {
-    verifier = await decryptSecret(attempt.codeVerifierEncrypted, cfg.encryptionKey, verifierContext(attempt.tenantId, attempt.userId));
+    verifier = await decryptSecret(attempt.codeVerifierEncrypted, cfg.encryptionKey, verifierContext(attempt.userId));
   } catch {
     return { ok: false, reason: "invalid_state" };
   }
@@ -80,7 +78,7 @@ export async function completeGmailConnect(
   try {
     tokens = await google.exchangeCode(cfg, input.code, verifier);
   } catch (e) {
-    console.error(JSON.stringify({ level: "error", event: "gmail_exchange_failed", tenantId: attempt.tenantId, googleCode: e instanceof GoogleError ? e.googleCode : null }));
+    console.error(JSON.stringify({ level: "error", event: "gmail_exchange_failed", userId: attempt.userId, googleCode: e instanceof GoogleError ? e.googleCode : null }));
     return { ok: false, reason: "exchange_failed" };
   }
 
@@ -104,22 +102,21 @@ export async function completeGmailConnect(
     return { ok: false, reason: "email_unavailable" };
   }
 
-  // 3 + 5. store it, replacing any earlier connection of this tenant
-  const repo = senderRepo(db, attempt.tenantId);
+  // 3 + 5. store it, replacing any earlier connection of this account
+  const repo = senderRepo(db, attempt.userId);
   const previous = await repo.get();
   await repo.upsert({
     email,
     normalizedEmail: normalizeEmail(email),
-    refreshTokenEncrypted: await encryptSecret(tokens.refreshToken, cfg.encryptionKey, tokenContext(attempt.tenantId)),
+    refreshTokenEncrypted: await encryptSecret(tokens.refreshToken, cfg.encryptionKey, tokenContext(attempt.userId)),
     scopes: tokens.scopes.join(" "),
-    connectedBy: attempt.userId,
   });
-  console.log(JSON.stringify({ level: "info", event: "gmail_connected", tenantId: attempt.tenantId, replaced: previous !== null }));
+  console.log(JSON.stringify({ level: "info", event: "gmail_connected", userId: attempt.userId, replaced: previous !== null }));
 
   // The token it replaced is now dead weight at Google: cancel it. Best effort.
   if (previous) {
     try {
-      await google.revoke(await decryptSecret(previous.refreshTokenEncrypted, cfg.encryptionKey, tokenContext(attempt.tenantId)));
+      await google.revoke(await decryptSecret(previous.refreshTokenEncrypted, cfg.encryptionKey, tokenContext(attempt.userId)));
     } catch {
       /* an undecryptable old token cannot be revoked, and that must not undo the new connection */
     }
@@ -127,13 +124,13 @@ export async function completeGmailConnect(
   return { ok: true };
 }
 
-/** Disconnects the tenant's account and tells Google to cancel its token. Returns false if nothing was connected. */
-export async function disconnectSender(db: Database, google: GoogleOAuth, cfg: GoogleConfig | null, tenantId: string): Promise<boolean> {
-  const removed = await senderRepo(db, tenantId).remove();
+/** Disconnects the account's Gmail and tells Google to cancel its token. Returns false if nothing was connected. */
+export async function disconnectSender(db: Database, google: GoogleOAuth, cfg: GoogleConfig | null, userId: string): Promise<boolean> {
+  const removed = await senderRepo(db, userId).remove();
   if (!removed) return false;
   if (cfg) {
     try {
-      await google.revoke(await decryptSecret(removed.refreshTokenEncrypted, cfg.encryptionKey, tokenContext(tenantId)));
+      await google.revoke(await decryptSecret(removed.refreshTokenEncrypted, cfg.encryptionKey, tokenContext(userId)));
     } catch {
       /* the account is disconnected here either way */
     }
@@ -142,16 +139,15 @@ export async function disconnectSender(db: Database, google: GoogleOAuth, cfg: G
 }
 
 /**
- * The tenant's refresh token, decrypted. Only the sending code will call this. It exists now so the binding of
- * a token to its tenant is real and tested before anything depends on it.
+ * The account's refresh token, decrypted. Only the sending code will call this. It exists now so the binding of
+ * a token to its account is real and tested before anything depends on it.
  */
-export async function refreshTokenFor(db: Database, cfg: GoogleConfig, tenantId: string): Promise<string | null> {
-  const row = await senderRepo(db, tenantId).get();
-  return row ? decryptSecret(row.refreshTokenEncrypted, cfg.encryptionKey, tokenContext(tenantId)) : null;
+export async function refreshTokenFor(db: Database, cfg: GoogleConfig, userId: string): Promise<string | null> {
+  const row = await senderRepo(db, userId).get();
+  return row ? decryptSecret(row.refreshTokenEncrypted, cfg.encryptionKey, tokenContext(userId)) : null;
 }
 
-async function toDto(db: Database, tenantId: string, row: SenderAccountRow): Promise<SenderDto> {
-  const emails = await usersRepo(db, tenantId).emails([row.connectedBy]);
+function toDto(row: SenderAccountRow): SenderDto {
   return {
     id: row.id,
     provider: row.provider,
@@ -159,13 +155,12 @@ async function toDto(db: Database, tenantId: string, row: SenderAccountRow): Pro
     status: row.status,
     senderName: row.senderName,
     permissions: permissionsOf(row.scopes),
-    connectedBy: emails.get(row.connectedBy) ?? "",
     connectedAt: new Date(row.connectedAt).toISOString(),
   };
 }
 
 /** What the Sender tab shows. Never contains a token. */
-export async function senderStatus(db: Database, tenantId: string, configured: boolean): Promise<SenderStatusDto> {
-  const row = await senderRepo(db, tenantId).get();
-  return { configured, sender: row ? await toDto(db, tenantId, row) : null };
+export async function senderStatus(db: Database, userId: string, configured: boolean): Promise<SenderStatusDto> {
+  const row = await senderRepo(db, userId).get();
+  return { configured, sender: row ? toDto(row) : null };
 }

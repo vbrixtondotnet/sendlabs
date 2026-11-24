@@ -13,7 +13,7 @@ import type { OutgoingEmail } from "./email-provider";
  */
 export function buildCampaignEmail(input: {
   campaign: { subject: string; htmlBody: string; signature: string; plainText: boolean };
-  tenant: { name: string; postalAddress: string };
+  company: { name: string; postalAddress: string };
   contact: Partial<ContactFields>;
   to: string;
   fromName: string;
@@ -21,16 +21,16 @@ export function buildCampaignEmail(input: {
   unsubscribe: { page: string; oneClick: string };
   subjectPrefix?: string;
 }): OutgoingEmail {
-  const { campaign, tenant, contact, unsubscribe } = input;
+  const { campaign, company, contact, unsubscribe } = input;
   const html = composeEmailHtml(
-    { body: campaign.htmlBody, signature: campaign.signature, ...footerFor(tenant) },
+    { body: campaign.htmlBody, signature: campaign.signature, ...footerFor(company) },
     contact,
     unsubscribe.page,
   );
   return {
     fromName: input.fromName,
     to: input.to,
-    subject: `${input.subjectPrefix ?? ""}${renderTemplate(campaign.subject, contact, false, undefined, tenant.name)}`,
+    subject: `${input.subjectPrefix ?? ""}${renderTemplate(campaign.subject, contact, false, undefined, company.name)}`,
     text: textFromHtml(html),
     ...(campaign.plainText ? {} : { html }),
     ...(LIST_UNSUBSCRIBE_HEADERS_ENABLED ? { listUnsubscribe: { url: unsubscribe.oneClick, oneClick: true } } : {}),

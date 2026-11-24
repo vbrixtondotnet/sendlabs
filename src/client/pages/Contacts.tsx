@@ -6,7 +6,6 @@ import {
   Button, Empty, ErrorNotice, Field, FillPage, LoadingRows, Modal, Notice, PageHeader, Pagination, Select, Table, TableCard, TextInput, Td, Th, fmt, fmtDay,
 } from "@/components/ui";
 import { useDebounced } from "@/hooks/useDebounced";
-import { useRole } from "@/hooks/useRole";
 import { useToast } from "@/hooks/useToast";
 import { ApiClientError } from "@/services/http";
 import { useContacts, useCreateContact, useDeleteContact, useIndustries, useUpdateContact } from "@/services/contacts";
@@ -16,7 +15,6 @@ const location = (c: ContactDto) => [c.city, c.state].filter(Boolean).join(", ")
 const fullName = (c: { firstName: string; lastName: string }) => [c.firstName, c.lastName].filter(Boolean).join(" ");
 
 export function Contacts() {
-  const { canEdit } = useRole();
   // The search box in the top bar sends you here with ?q=...; typing in this page's own box works as before.
   const [params] = useSearchParams();
   const [q, setQ] = useState(params.get("q") ?? "");
@@ -36,7 +34,7 @@ export function Contacts() {
       <PageHeader
         title="Contacts"
         description={list.data ? `${fmt(total)} contact${total === 1 ? "" : "s"} match. One row per email address across all imports.` : "One row per email address across all imports."}
-        actions={canEdit && <Button variant="primary" onClick={() => setEditing("new")}>Add contact</Button>}
+        actions={<Button variant="primary" onClick={() => setEditing("new")}>Add contact</Button>}
       />
       <TableCard>
         <div className="flex shrink-0 flex-wrap gap-3 border-b border-slate-200 p-4 dark:border-slate-800">
@@ -106,7 +104,6 @@ const toForm = (c: ContactDto | null): Form => ({
 const num = (s: string) => (s.trim() === "" ? null : Number(s));
 
 function ContactDialog({ contact, onClose }: { contact: ContactDto | null; onClose: () => void }) {
-  const { canEdit } = useRole();
   const { toast } = useToast();
   const create = useCreateContact();
   const update = useUpdateContact();
@@ -145,7 +142,7 @@ function ContactDialog({ contact, onClose }: { contact: ContactDto | null; onClo
 
   const field = (id: string, label: string, key: keyof Form, extra?: { type?: string; hint?: string }) => (
     <Field label={label} htmlFor={id} {...(extra?.hint ? { hint: extra.hint } : {})}>
-      <TextInput id={id} type={extra?.type ?? "text"} value={form[key]} onChange={set(key)} disabled={!canEdit || busy} aria-invalid={err(key) ? true : undefined} />
+      <TextInput id={id} type={extra?.type ?? "text"} value={form[key]} onChange={set(key)} disabled={busy} aria-invalid={err(key) ? true : undefined} />
       {err(key) && <p className="mt-1 text-xs text-rose-600">{err(key)}</p>}
     </Field>
   );
@@ -165,9 +162,9 @@ function ContactDialog({ contact, onClose }: { contact: ContactDto | null; onClo
           </>
         ) : (
           <>
-            {contact && canEdit && <Button variant="ghost" className="mr-auto text-rose-600" onClick={() => setConfirmDelete(true)}>Delete</Button>}
-            <Button onClick={onClose}>{canEdit ? "Cancel" : "Close"}</Button>
-            {canEdit && <Button variant="primary" disabled={busy || form.email.trim() === ""} onClick={save}>{busy ? "Saving…" : contact ? "Save changes" : "Add contact"}</Button>}
+            {contact && <Button variant="ghost" className="mr-auto text-rose-600" onClick={() => setConfirmDelete(true)}>Delete</Button>}
+            <Button onClick={onClose}>Cancel</Button>
+            <Button variant="primary" disabled={busy || form.email.trim() === ""} onClick={save}>{busy ? "Saving…" : contact ? "Save changes" : "Add contact"}</Button>
           </>
         )
       }
@@ -199,7 +196,7 @@ function ContactDialog({ contact, onClose }: { contact: ContactDto | null; onClo
         </div>
         {field("c-li", "Person LinkedIn URL", "linkedinUrl", { hint: "http(s) URL" })}
         <Field label="Consent" htmlFor="c-consent" hint="The CSV has no consent column, so imported contacts start as Unknown.">
-          <Select id="c-consent" value={form.consentStatus} onChange={set("consentStatus")} disabled={!canEdit || busy}>
+          <Select id="c-consent" value={form.consentStatus} onChange={set("consentStatus")} disabled={busy}>
             {CONSENT_STATUSES.map((s) => <option key={s}>{s}</option>)}
           </Select>
         </Field>

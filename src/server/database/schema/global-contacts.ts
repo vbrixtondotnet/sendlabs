@@ -4,7 +4,7 @@ import { createdAt, idColumn, nonNegativeOrNull, updatedAt } from "./helpers";
 
 /**
  * The platform's shared directory of people (what the Search People page will read once Apollo data is stored). It belongs to
- * NO tenant: unlike `contacts`, there is no tenant_id, and every organization searches the same rows. A tenant's own
+ * NO account: unlike `contacts`, there is no user_id, and everyone searches the same rows. An account's own
  * `contacts` are a separate table, so adding someone here never changes anyone's contact list.
  *
  * The columns are the ones asked for (FirstName, LastName, Title, Company, Email, EmployeeCount, Industry, Website, City, State,

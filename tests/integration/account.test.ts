@@ -15,12 +15,12 @@ const cookieOf = (r: { headers: Headers }) => /sendrix_session=([^;]+)/.exec(r.h
 const asSession = (s: string) => ({ cookie: `sendrix_session=${s}` });
 
 /** A user with a known password who is signed in (twice, to have two sessions). */
-async function person(over: { tenantId?: string; first?: string; last?: string } = {}) {
+async function person(over: { first?: string; last?: string } = {}) {
   const email = uniqueEmail("person");
   const id = `u-${email}`;
   await h.sql(
-    "INSERT INTO users (id,tenant_id,first_name,last_name,display_name,email,normalized_email,password_hash,must_change_password,access_id,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-    id, over.tenantId ?? h.tenantId, over.first ?? "Pat", over.last ?? "Lee", `${over.first ?? "Pat"} ${over.last ?? "Lee"}`, email, email, await hashPassword(PASSWORD), 1, "viewer", "Active", 1, 1,
+    "INSERT INTO users (id,first_name,last_name,display_name,email,normalized_email,password_hash,must_change_password,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+    id, over.first ?? "Pat", over.last ?? "Lee", `${over.first ?? "Pat"} ${over.last ?? "Lee"}`, email, email, await hashPassword(PASSWORD), true, "Active", 1, 1,
   );
   const signIn = async (password = PASSWORD) => cookieOf(await h.anonymous.api("POST", "/api/auth/login", { email, password }));
   return { email, id, signIn, first: await signIn(), second: await signIn() };
@@ -40,23 +40,20 @@ describe("the position (job title)", () => {
   const patch = (session: string, body: unknown) => h.anonymous.api("PATCH", "/api/me", body, asSession(session));
   const NAMES = { firstName: "Pat", lastName: "Lee" };
   const positionOf = async (id: string) => (await h.rows<{ position: string }>("SELECT position FROM users WHERE id = ?", id))[0]!.position;
-  const listedPosition = async (email: string) => (await h.api("GET", "/api/users")).json.items.find((u: { email: string }) => u.email === email).position;
 
-  it("starts empty, and /api/me and the users list report it", async () => {
+  it("starts empty, and /api/me reports it", async () => {
     const p = await person();
     expect(await positionOf(p.id)).toBe("");
     expect((await me(p.first)).json.user.position).toBe("");
-    expect(await listedPosition(p.email)).toBe("");
   });
 
-  it("is saved with the profile, returned, and then shown everywhere the user is", async () => {
+  it("is saved with the profile, returned, and then shown on every session", async () => {
     const p = await person();
     const r = await patch(p.first, { ...NAMES, position: "Sales Director" });
     expect(r.status).toBe(200);
     expect(r.json.position).toBe("Sales Director");
     expect(await positionOf(p.id)).toBe("Sales Director");
     expect((await me(p.second)).json.user.position).toBe("Sales Director");
-    expect(await listedPosition(p.email)).toBe("Sales Director");
   });
 
   it("is left alone when the request does not mention it, and cleared when sent empty", async () => {
@@ -93,13 +90,13 @@ describe("the position (job title)", () => {
     expect(await positionOf(p.id)).toBe("Original");
   });
 
-  it("is only ever the signed-in user's own, and never crosses organizations", async () => {
+  it("is only ever the signed-in user's own, and never crosses accounts", async () => {
     const a = await person({ first: "Alice", last: "A" });
     const b = await person({ first: "Bob", last: "B" });
     await patch(a.first, { firstName: "Alice", lastName: "A", position: "Alice's job" });
     expect(await positionOf(b.id)).toBe("");
-    await h.addTenant("Position Test Org", "boss@position-test.test");
-    expect(JSON.stringify((await h.as("boss@position-test.test").api("GET", "/api/users")).json)).not.toContain("Alice's job");
+    await h.addAccount("Position Test Co", "boss@position-test.test");
+    expect(JSON.stringify((await h.as("boss@position-test.test").api("GET", "/api/me")).json)).not.toContain("Alice's job");
   });
 });
 
@@ -123,18 +120,18 @@ describe("updating your profile", () => {
 
   it("requires both names, within a sane length, and refuses anything else", async () => {
     const p = await person();
-    for (const body of [{ firstName: "", lastName: "X" }, { firstName: "X", lastName: "  " }, { firstName: "X" }, { lastName: "X" }, { firstName: "x".repeat(200), lastName: "X" }, { firstName: "X", lastName: "Y", email: "evil@x.test" }, { firstName: "X", lastName: "Y", accessId: "administrator" }, { firstName: "X", lastName: "Y", tenantId: "t" }, {}]) {
+    for (const body of [{ firstName: "", lastName: "X" }, { firstName: "X", lastName: "  " }, { firstName: "X" }, { lastName: "X" }, { firstName: "x".repeat(200), lastName: "X" }, { firstName: "X", lastName: "Y", email: "evil@x.test" }, { firstName: "X", lastName: "Y", accessId: "administrator" }, { firstName: "X", lastName: "Y", userId: "t" }, {}]) {
       expect((await patch(p.first, body)).status, JSON.stringify(body).slice(0, 60)).toBe(400);
     }
     expect((await h.anonymous.api("PATCH", "/api/me", "{nope", asSession(p.first))).status).toBe(400);
     expect((await me(p.first)).json.user).toMatchObject({ firstName: "Pat", lastName: "Lee" }); // nothing changed
   });
 
-  it("never changes email, role or tenant, whatever is sent", async () => {
+  it("never changes the email or anything else but the profile, whatever is sent", async () => {
     const p = await person();
-    await patch(p.first, { firstName: "A", lastName: "B", email: "evil@x.test", accessId: "administrator", tenantId: "other" });
-    const [row] = await h.rows<{ email: string; access_id: string; tenant_id: string }>("SELECT email, access_id, tenant_id FROM users WHERE id = ?", p.id);
-    expect(row).toEqual({ email: p.email, access_id: "viewer", tenant_id: h.tenantId });
+    await patch(p.first, { firstName: "A", lastName: "B", email: "evil@x.test", accessId: "administrator", userId: "other", credits: 9999 });
+    const [row] = await h.rows<{ email: string; credits: number }>("SELECT email, credits FROM users WHERE id = ?", p.id);
+    expect(row).toEqual({ email: p.email, credits: 100 });
   });
 
   it("only ever edits the signed-in user, never anyone else", async () => {
@@ -142,7 +139,7 @@ describe("updating your profile", () => {
     const b = await person({ first: "Bob", last: "B" });
     await patch(a.first, { firstName: "Changed", lastName: "Name" });
     expect((await me(b.first)).json.user).toMatchObject({ firstName: "Bob", lastName: "B" });
-    const t = await h.addTenant("Globex Corp", "admin@globex.test");
+    const t = await h.addAccount("Globex Corp", "admin@globex.test");
     expect((await h.rows<{ first_name: string }>("SELECT first_name FROM users WHERE id = ?", t.userId))[0]!.first_name).not.toBe("Changed");
   });
 

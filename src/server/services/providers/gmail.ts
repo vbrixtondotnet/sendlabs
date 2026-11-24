@@ -9,7 +9,7 @@ import { GmailSendError, GoogleError, type GoogleConfig, type GoogleOAuth } from
 const RECONNECT_MESSAGE = "Google no longer accepts your Gmail connection. Reconnect it in Settings, then try again";
 
 /**
- * Sends through the organization's connected Gmail account (OAuth). Everything Gmail-specific lives here: the saved
+ * Sends through the account's connected Gmail (OAuth). Everything Gmail-specific lives here: the saved
  * refresh token, the access-token refresh, the MIME message, and Gmail's error codes.
  */
 export class GmailProvider implements EmailProvider {
@@ -17,10 +17,10 @@ export class GmailProvider implements EmailProvider {
 
   constructor(private readonly deps: { db: Database; google: GoogleOAuth; cfg: GoogleConfig | null }) {}
 
-  async open(tenantId: string): Promise<EmailChannel> {
+  async open(userId: string): Promise<EmailChannel> {
     const { db, google, cfg } = this.deps;
     if (!cfg) throw new ApiError(503, "GMAIL_NOT_CONFIGURED", "Gmail connection is not set up on this server yet");
-    const senders = senderRepo(db, tenantId);
+    const senders = senderRepo(db, userId);
     const sender = await senders.get();
     if (!sender) throw new ApiError(409, "SENDER_REQUIRED", "Connect a Gmail account in Settings before sending email");
     if (sender.status !== "Connected") throw new ApiError(409, "SENDER_RECONNECT", "Reconnect your Gmail account in Settings before sending email");
@@ -33,7 +33,7 @@ export class GmailProvider implements EmailProvider {
 
     let refreshToken: string;
     try {
-      refreshToken = await decryptSecret(sender.refreshTokenEncrypted, cfg.encryptionKey, `sender-refresh-token:${tenantId}`);
+      refreshToken = await decryptSecret(sender.refreshTokenEncrypted, cfg.encryptionKey, `sender-refresh-token:${userId}`);
     } catch {
       throw await reconnect();
     }

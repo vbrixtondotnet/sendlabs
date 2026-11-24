@@ -1,30 +1,27 @@
 /**
- * Creates the FIRST organization and its Administrator in an empty PostgreSQL database (a new live deployment).
+ * Creates an account in a PostgreSQL database (a new live deployment, or any extra account).
  *
- * Runs the app's own `provisionTenant` (the same validation, password hashing and tenant-plus-admin creation the sign-up flow
- * uses) directly against the target database, so run it AFTER `npm run db:migrate` has created the tables:
+ * Runs the app's own `createAccount` (the same validation and password hashing every other way of making an account uses)
+ * directly against the target database, so run it AFTER `npm run db:migrate` has created the tables:
  *
- *   npx vite-node scripts/provision-production.ts -- --url "postgres://..." --name "Sabertooth Software Labs" --email you@yourcompany.com \
- *     [--display-name "Your Name"] [--first-name F --last-name L] [--website example.com] [--password "..."]
+ *   npx vite-node scripts/provision-production.ts -- --url "postgres://..." --email you@yourcompany.com  *     [--first-name F --last-name L] [--company "Sabertooth Software Labs"] [--website example.com] [--password "..."]
  *
  * `--url` may be left out to use DATABASE_URL from .dev.vars. A strong temporary password is generated and printed ONCE here;
  * only its hash is stored, and the account is flagged "must change password": change it from My Settings after the first
  * sign-in. Running it twice for the same address fails on the unique email, changing nothing.
  */
-import { sql } from "drizzle-orm";
-import { provisionTenant } from "../src/server/services/tenants";
+import { createAccount } from "../src/server/services/account";
 import { arg } from "./lib/env";
 import { openDb } from "./lib/db";
 
-const name = arg("name");
 const email = arg("email");
 const firstName = arg("first-name") ?? "";
 const lastName = arg("last-name") ?? "";
-const displayName = arg("display-name") ?? [firstName, lastName].filter(Boolean).join(" ");
+const company = arg("company") ?? "";
 const website = arg("website") ?? "";
 const givenPassword = arg("password");
-if (!name || !email) {
-  console.error('Usage: provision-production.ts [--url postgres://...] --name "Organization" --email admin@example.com [--display-name "Name"]');
+if (!email) {
+  console.error('Usage: provision-production.ts [--url postgres://...] --email you@example.com [--first-name F --last-name L] [--company "Name"] [--website example.com]');
   process.exit(1);
 }
 
@@ -44,13 +41,14 @@ function temporaryPassword(): string {
 const { db, close } = openDb();
 try {
   const password = givenPassword ?? temporaryPassword();
-  const { tenantId, userId } = await provisionTenant(db, { name, admin: { email, displayName, password, mustChangePassword: true } });
-  if (website) await db.execute(sql`UPDATE tenants SET website = ${website} WHERE id = ${tenantId}`);
-  if (firstName || lastName) await db.execute(sql`UPDATE users SET first_name = ${firstName}, last_name = ${lastName} WHERE id = ${userId}`);
+  await createAccount(db, { email, firstName, lastName, password, mustChangePassword: true, company: { name: company, website } });
 
-  console.log(`\nOrganization: ${name}`);
-  console.log(`Administrator: ${email}`);
-  if (!givenPassword) console.log(`\nTEMPORARY PASSWORD (shown once, not saved anywhere): ${password}\n`);
+  console.log(`
+Account: ${email}`);
+  if (company) console.log(`Company: ${company}`);
+  if (!givenPassword) console.log(`
+TEMPORARY PASSWORD (shown once, not saved anywhere): ${password}
+`);
 } finally {
   await close();
 }

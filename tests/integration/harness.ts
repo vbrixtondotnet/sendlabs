@@ -5,7 +5,7 @@ import { withDatabase } from "../../scripts/lib/migrations";
 import { createApp } from "../../src/server/app";
 import { closeDb, createDb, type Database } from "../../src/server/database/client";
 import { GoogleOAuth } from "../../src/server/services/google-oauth";
-import { provisionTenant } from "../../src/server/services/tenants";
+import { createAccount } from "../../src/server/services/account";
 
 /**
  * Real PostgreSQL, real migrations, real Hono app. Nothing is mocked.
@@ -62,18 +62,17 @@ export interface Harness extends Caller {
   env: Env;
   /** The test database, for tests that call repositories directly. One shared client: closed by `dispose`. */
   db: Database;
-  /** The default tenant ("Sabertooth Software Labs") and its Administrator, who is the default caller. */
-  tenantId: string;
+  /** The default account ("Sabertooth Software Labs"), which is the default caller. */
   userId: string;
   adminEmail: string;
   /** A caller with no session and no shortcut user: what a stranger's browser looks like. */
   anonymous: Caller;
-  /** Act as another user: pass their email (the placeholder auth resolves the tenant from the user row). */
+  /** Act as another user: pass their email (the placeholder auth resolves the account from the user row). */
   as: (email: string) => Caller;
   /** Same as `api` but with env overrides, e.g. { ENVIRONMENT: "production" }. */
   withEnv: (override: EnvOverride) => Caller;
-  /** Creates another tenant with its own Administrator. */
-  addTenant: (name: string, adminEmail: string) => Promise<{ tenantId: string; userId: string }>;
+  /** Creates another account, with data of its own. */
+  addAccount: (name: string, email: string) => Promise<{ userId: string }>;
   /** Run a statement. Write `?` for each bound value, as in SQLite; it is turned into PostgreSQL's `$1`, `$2`... */
   sql: (statement: string, ...params: unknown[]) => Promise<void>;
   /** Run a SELECT and get the rows back. */
@@ -145,11 +144,13 @@ export async function startHarness(options: { google?: GoogleOAuth; fetch?: type
     },
   });
 
-  // The default tenant and its Administrator: what `npm run db:seed:tenant:local` creates for development.
+  // The default account: what `npm run db:seed:account:local` creates for development.
   const adminEmail = "admin@sabertoothsoftwarelabs.net";
-  const seeded = await provisionTenant(db, {
-    name: "Sabertooth Software Labs",
-    admin: { email: adminEmail, displayName: "Administrator", password: "Password@123" },
+  const seeded = await createAccount(db, {
+    email: adminEmail,
+    displayName: "Administrator",
+    password: "Password@123",
+    company: { name: "Sabertooth Software Labs" },
   });
 
   // The shortcut user is opt-in (DEV_ACTOR_EMAIL in .dev.vars), so tests that want it ask for it explicitly.
@@ -158,13 +159,12 @@ export async function startHarness(options: { google?: GoogleOAuth; fetch?: type
     env,
     db,
     ...base,
-    tenantId: seeded.tenantId,
     userId: seeded.userId,
     adminEmail,
     anonymous: caller({}),
     as: (email) => caller({ DEV_ACTOR_EMAIL: email }),
     withEnv: (override) => caller(override),
-    addTenant: (name, email) => provisionTenant(db, { name, admin: { email, displayName: name, password: "Password@123" } }),
+    addAccount: (name, email) => createAccount(db, { email, displayName: name, password: "Password@123", company: { name } }),
     sql: async (statement, ...params) => {
       await raw.unsafe(toPg(statement), params as never[]);
     },

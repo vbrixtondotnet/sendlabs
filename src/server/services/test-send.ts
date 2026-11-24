@@ -21,20 +21,20 @@ export interface TestSendDeps {
 export const TEST_SUBJECT_PREFIX = "[TEST] ";
 
 /**
- * Mails the campaign to EVERY address on the tenant's test-send allowlist, and to nobody else: the recipients come
- * from the allowlist only, never from the request. It goes through the tenant's connected Gmail account, and never
+ * Mails the campaign to EVERY address on the account's test-send allowlist, and to nobody else: the recipients come
+ * from the allowlist only, never from the request. It goes through the account's connected Gmail, and never
  * touches the campaign's real recipients or its status. The sender name recipients see is the full name of the user who sends it.
  */
 /**
  * The name recipients see as the sender: the full name of the user who sends. A user with no name falls back to the
  * company's, so the From line is never just a bare address.
  */
-export const senderNameOf = (t: { senderName: string; tenantName: string }): string => t.senderName.trim() || t.tenantName;
+export const senderNameOf = (t: { senderName: string; companyName: string }): string => t.senderName.trim() || t.companyName;
 
-/** What a test send needs to know about the organization: who it is, and its compliance settings. */
-export interface TestSendTenant {
-  tenantId: string;
-  tenantName: string;
+/** What a test send needs to know about the account: who it is, and the company details its emails carry. */
+export interface TestSendAccount {
+  userId: string;
+  companyName: string;
   /** The full name of the signed-in user who sends the test: the name recipients see on the email. */
   senderName: string;
   postalAddress: string;
@@ -44,11 +44,11 @@ export interface TestSendTenant {
  * `only` narrows a test to some of the allowlisted addresses (the editor lets you pick). Each must be on the allowlist: an
  * address that is not is refused, never mailed. Without it a test goes to the whole allowlist.
  */
-export async function sendTestEmail(deps: TestSendDeps, tenant: TestSendTenant, campaignId: string, only?: string[]): Promise<TestSendResultDto> {
+export async function sendTestEmail(deps: TestSendDeps, account: TestSendAccount, campaignId: string, only?: string[]): Promise<TestSendResultDto> {
   const { db, email, unsubscribe } = deps;
-  const { tenantId } = tenant;
-  const campaign = await campaignsRepo(db, tenantId).get(campaignId); // 404 for a campaign of another tenant
-  const allowed = await testRecipientsRepo(db, tenantId).emails();
+  const { userId } = account;
+  const campaign = await campaignsRepo(db, userId).get(campaignId); // 404 for a campaign of another account
+  const allowed = await testRecipientsRepo(db, userId).emails();
   if (allowed.length === 0) {
     throw new ApiError(409, "NO_TEST_RECIPIENTS", "Add at least one address to the test-send allowlist in Settings first");
   }
@@ -67,30 +67,30 @@ export async function sendTestEmail(deps: TestSendDeps, tenant: TestSendTenant, 
     if (e instanceof EmailSendError && (e.kind === "auth" || e.kind === "rate_limit")) {
       return new ApiError(e.kind === "auth" ? 409 : 429, e.kind === "auth" ? "SENDER_RECONNECT" : "GMAIL_RATE_LIMITED", e.userMessage, e.kind === "auth" ? undefined : { sent });
     }
-    console.error(JSON.stringify({ level: "error", event: "test_send_failed", tenantId, provider: email.id, kind: e instanceof EmailSendError ? e.kind : "other", sent: sent.length }));
+    console.error(JSON.stringify({ level: "error", event: "test_send_failed", userId, provider: email.id, kind: e instanceof EmailSendError ? e.kind : "other", sent: sent.length }));
     return new ApiError(502, "TEST_SEND_FAILED", sent.length ? `The test was sent to ${sent.length} of ${to.length} addresses, then sending failed. Please try again` : "The test email could not be sent. Please try again", { sent });
   };
 
   // Opening throws an actionable ApiError (not set up, no sender, reconnect), or an EmailSendError if the provider is down.
-  const channel = await email.open(tenantId).catch((e: unknown) => { throw e instanceof EmailSendError ? failed(e) : e; });
+  const channel = await email.open(userId).catch((e: unknown) => { throw e instanceof EmailSendError ? failed(e) : e; });
   if (!unsubscribe) throw new ApiError(503, "GMAIL_NOT_CONFIGURED", "Email sending is not set up on this server yet");
 
   try {
     for (const address of to) {
       // Every recipient gets their own unsubscribe link, and so one message each. In a test it is a "test" link: it opens
       // the real page but unsubscribes nobody (the address is on the allowlist, not a contact).
-      const token = await createUnsubscribeToken(unsubscribe.encryptionKey, { tenantId, email: normalizeEmail(address), campaignId: campaign.id, test: true });
+      const token = await createUnsubscribeToken(unsubscribe.encryptionKey, { userId, email: normalizeEmail(address), campaignId: campaign.id, test: true });
       const links = unsubscribeLinks(unsubscribe.appBaseUrl, token);
       // The very email a recipient gets (filled in with a made-up contact, exactly as the editor's preview does, so the tags can
       // be seen working), built by the same function a real send uses.
       await channel.send(
         buildCampaignEmail({
           campaign,
-          tenant: { name: tenant.tenantName, postalAddress: tenant.postalAddress },
+          company: { name: account.companyName, postalAddress: account.postalAddress },
           contact: SAMPLE_CONTACT,
           to: address,
           // The sender's own name first (what Gmail itself shows for the mailbox), then the sending user's, then the company's.
-          fromName: channel.fromName || senderNameOf(tenant),
+          fromName: channel.fromName || senderNameOf(account),
           unsubscribe: links,
           subjectPrefix: TEST_SUBJECT_PREFIX,
         }),

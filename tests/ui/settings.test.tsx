@@ -3,54 +3,15 @@ import { EMAIL_FOOTER_ENABLED, LIST_UNSUBSCRIBE_HEADERS_ENABLED } from "../../sr
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { Settings } from "../../src/client/pages/Settings";
-import { ACCESS_LEVELS } from "../../src/shared/types";
-import type { InvitationDto } from "../../src/shared/api";
 import type { MeDto, SuppressionDto } from "../../src/shared/api";
-import { invitationDto, meDto, page, renderAt, senderDto, senderStatus, stubApi, testRecipientDto, userDto, type Call, type Handler } from "./harness";
+import { meDto, page, renderAt, senderDto, senderStatus, stubApi, testRecipientDto, type Call, type Handler } from "./harness";
 
-const team = [
-  userDto(),
-  userDto({ id: "u2", email: "mgr@sabertoothsoftwarelabs.net", displayName: "Morgan", access: "Campaign Manager", accessId: "campaign-manager", lastLoginAt: "2026-11-05T15:00:00.000Z" }),
-  userDto({ id: "u3", email: "view@sabertoothsoftwarelabs.net", displayName: "", access: "Viewer", accessId: "viewer", status: "Disabled" }),
-];
-const usersApi = (items = team): Handler => ({ method, path }) =>
-  method === "GET" && path === "/api/users" ? { json: page(items) }
-  : method === "GET" && path === "/api/users/invitations" ? { json: { items: [] } }
-  : method === "GET" && path === "/api/sender" ? { json: senderStatus(null) }
+const usersApi = (): Handler => ({ method, path }) =>
+  method === "GET" && path === "/api/sender" ? { json: senderStatus(null) }
   : method === "GET" && path === "/api/test-recipients" ? { json: { items: [] } }
   : method === "GET" && path === "/api/me" ? { json: meDto() }
   : method === "GET" && path === "/api/suppressions" ? { json: page([]) }
   : undefined;
-
-/** A server with a connected sender and a changing list of invitations. */
-function inviteServer(opts: { invitations?: InvitationDto[]; sender?: boolean; reply?: { status: number; json: unknown } } = {}) {
-  let open = opts.invitations ?? [];
-  const handler: Handler = ({ method, path, body }) => {
-    if (method === "GET" && path === "/api/users") return { json: page(team) };
-    if (method === "GET" && path === "/api/sender") return { json: senderStatus(opts.sender === false ? null : senderDto()) };
-    if (method === "GET" && path === "/api/users/invitations") return { json: { items: open } };
-    if (method === "GET" && path === "/api/test-recipients") return { json: { items: [] } };
-    if (method === "GET" && path === "/api/me") return { json: meDto() };
-    if (method === "GET" && path === "/api/suppressions") return { json: page([]) };
-    if (method === "POST" && path === "/api/users/invitations") {
-      if (opts.reply) return opts.reply;
-      const made = invitationDto({ id: "new1", email: body.email, firstName: body.firstName, lastName: body.lastName, accessId: body.accessId });
-      open = [made, ...open];
-      return { status: 201, json: made };
-    }
-    const m = /^\/api\/users\/invitations\/([^/]+)(\/resend)?$/.exec(path);
-    if (m && method === "POST" && m[2]) return { status: 201, json: invitationDto({ id: m[1]! }) };
-    if (m && method === "DELETE") { open = open.filter((i) => i.id !== m[1]); return { status: 204 }; }
-    return undefined;
-  };
-  return handler;
-}
-const fillInvite = (v: { first?: string; last?: string; email?: string; role?: string } = {}) => {
-  fireEvent.change(screen.getByLabelText("First name"), { target: { value: v.first ?? "Pat" } });
-  fireEvent.change(screen.getByLabelText("Last name"), { target: { value: v.last ?? "Lee" } });
-  fireEvent.change(screen.getByLabelText("Email address"), { target: { value: v.email ?? "pat@example.test" } });
-  if (v.role) fireEvent.change(screen.getByLabelText("Role"), { target: { value: v.role } });
-};
 
 /** Opens Settings and goes to the Email Service tab, where the Gmail sender, test-send list and unsubscribe rules are. */
 const openEmailService = () => {
@@ -58,16 +19,11 @@ const openEmailService = () => {
   fireEvent.click(screen.getByRole("tab", { name: "Email Service" }));
 };
 
-const openUsers = () => {
-  renderAt(<Settings />);
-  fireEvent.click(screen.getByRole("tab", { name: "Users & access" }));
-};
-
 describe("Settings tabs", () => {
-  it("has three tabs, in this order: Company Details, Users & access, Email Service", () => {
+  it("has two tabs, in this order: Company Details, Email Service", () => {
     stubApi(usersApi());
     renderAt(<Settings />);
-    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Company Details", "Users & access", "Email Service"]);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Company Details", "Email Service"]);
     expect(screen.getByRole("tab", { name: "Company Details" }).getAttribute("aria-selected")).toBe("true"); // opens on the first
   });
 
@@ -173,42 +129,30 @@ describe("Settings tabs", () => {
     expect(screen.getByText("Not connected yet: nothing was saved")).toBeTruthy();
   });
 
-  it("is for Administrators only: anyone else is sent back to the start page, and the API is never asked", () => {
-    const calls = stubApi(usersApi());
-    for (const role of ["Campaign Manager", "Viewer"] as const) {
-      const view = renderAt(<Settings />, { role, path: "/settings", route: "/settings" });
-      expect(screen.getByTestId("elsewhere").getAttribute("data-location")).toBe("/");
-      expect(screen.queryByRole("tab")).toBeNull();
-      expect(screen.queryByText("Settings")).toBeNull();
-      view.unmount();
-    }
-    expect(calls).toHaveLength(0);
-  });
-
-  it("stays on the page for an Administrator", () => {
+  it("stays on the page", () => {
     stubApi(usersApi());
     renderAt(<Settings />, { path: "/settings", route: "/settings" });
     expect(screen.queryByTestId("elsewhere")).toBeNull();
-    expect(screen.getAllByRole("tab")).toHaveLength(3);
+    expect(screen.getAllByRole("tab")).toHaveLength(2);
   });
 });
 
 describe("Company Details tab", () => {
-  const tenant = (over: Partial<MeDto["tenant"]> = {}): MeDto["tenant"] => ({ id: "t", name: "Acme", slug: "acme", postalAddress: "", website: "", requireUnsubscribeLink: true, oneClickUnsubscribe: true, ...over });
+  const company = (over: Partial<MeDto["company"]> = {}): MeDto["company"] => ({ name: "Acme", postalAddress: "", website: "", requireUnsubscribeLink: true, oneClickUnsubscribe: true, ...over });
   const fail = (status: number, code: string, message: string, details?: unknown) => ({ status, json: { error: { code, message, details, correlationId: "x" } } });
 
   /** A server that remembers what was saved, like the real one. */
-  function companyServer(opts: { tenant?: Partial<MeDto["tenant"]>; reply?: ReturnType<typeof fail> } = {}): Handler {
-    let me: MeDto = { user: { id: "u1", email: "a@acme.test", firstName: "A", lastName: "B", position: "", displayName: "A B", access: "Administrator", mustChangePassword: false, credits: 100 }, tenant: tenant(opts.tenant), session: true };
+  function companyServer(opts: { company?: Partial<MeDto["company"]>; reply?: ReturnType<typeof fail> } = {}): Handler {
+    let me: MeDto = { user: { id: "u1", email: "a@acme.test", firstName: "A", lastName: "B", position: "", displayName: "A B", mustChangePassword: false, credits: 100 }, company: company(opts.company), session: true };
     return ({ method, path, body }) => {
       if (method === "GET" && path === "/api/me") return { json: me };
       if (method === "GET" && path === "/api/sender") return { json: senderStatus(null) };
       if (method === "GET" && path === "/api/test-recipients") return { json: { items: [] } };
-      if (method === "PATCH" && path === "/api/tenant") {
+      if (method === "PATCH" && path === "/api/me/company") {
         if (opts.reply) return opts.reply;
-        const postal = typeof body.postalAddress === "string" ? body.postalAddress.split("\n").map((l: string) => l.trim()).filter(Boolean).join("\n") : me.tenant.postalAddress;
-        me = { ...me, tenant: { ...me.tenant, name: body.name ?? me.tenant.name, website: body.website ?? me.tenant.website, postalAddress: postal } };
-        return { json: me.tenant };
+        const postal = typeof body.postalAddress === "string" ? body.postalAddress.split("\n").map((l: string) => l.trim()).filter(Boolean).join("\n") : me.company.postalAddress;
+        me = { ...me, company: { ...me.company, name: body.name ?? me.company.name, website: body.website ?? me.company.website, postalAddress: postal } };
+        return { json: me.company };
       }
       return undefined;
     };
@@ -227,7 +171,7 @@ describe("Company Details tab", () => {
   const patches = (calls: Call[]) => calls.filter((c) => c.method === "PATCH");
 
   it("shows Name, Website and Postal address, filled in with what is saved", async () => {
-    await openCompany(companyServer({ tenant: { name: "Acme", website: "acme.test", postalAddress: "Acme Inc.\n1 Road" } }));
+    await openCompany(companyServer({ company: { name: "Acme", website: "acme.test", postalAddress: "Acme Inc.\n1 Road" } }));
     expect(input("Name").value).toBe("Acme");
     expect(input("Website").value).toBe("acme.test");
     expect(area("Postal address").value).toBe("Acme Inc.\n1 Road");
@@ -269,14 +213,14 @@ describe("Company Details tab", () => {
     fireEvent.click(save());
     expect(await screen.findByText("Company details updated")).toBeTruthy();
     expect(patches(calls)).toHaveLength(1);
-    expect(patches(calls)[0]!.path).toBe("/api/tenant");
+    expect(patches(calls)[0]!.path).toBe("/api/me/company");
     expect(patches(calls)[0]!.body).toEqual({ website: "sabertoothsoftwarelabs.net" });
     expect(input("Website").value).toBe("sabertoothsoftwarelabs.net");
     expect(save().disabled).toBe(true);
   });
 
   it("can clear the website again", async () => {
-    const calls = await openCompany(companyServer({ tenant: { website: "old.test" } }));
+    const calls = await openCompany(companyServer({ company: { website: "old.test" } }));
     type("Website", "");
     fireEvent.click(save());
     await screen.findByText("Company details updated");
@@ -313,7 +257,7 @@ describe("Company Details tab", () => {
   });
 
   it("clearing the address is a change, and saves an empty one", async () => {
-    const calls = await openCompany(companyServer({ tenant: { postalAddress: "Old address" } }));
+    const calls = await openCompany(companyServer({ company: { postalAddress: "Old address" } }));
     type("Postal address", "");
     fireEvent.click(save());
     await screen.findByText("Company details updated");
@@ -321,7 +265,7 @@ describe("Company Details tab", () => {
   });
 
   it("retyping the same address with different spacing is not a change", async () => {
-    await openCompany(companyServer({ tenant: { postalAddress: "Acme Inc.\n1 Road" } }));
+    await openCompany(companyServer({ company: { postalAddress: "Acme Inc.\n1 Road" } }));
     type("Postal address", "  Acme   Inc. \r\n\r\n 1 Road ");
     expect(save().disabled).toBe(true);
   });
@@ -491,336 +435,21 @@ describe("Test-send allowlist", () => {
   });
 });
 
-describe("Users & access tab", () => {
-  it("shows each user's position, and a dash where none is set", async () => {
-    stubApi(usersApi([userDto({ position: "Sales Director" }), userDto({ id: "u2", email: "mgr@sabertoothsoftwarelabs.net", displayName: "Morgan", position: "" })]));
-    openUsers();
-    expect(await screen.findByText("admin@sabertoothsoftwarelabs.net")).toBeTruthy();
-    expect(screen.getByRole("columnheader", { name: "Position" })).toBeTruthy();
-    const row = (email: string) => screen.getByText(email).closest("tr")!;
-    expect(within(row("admin@sabertoothsoftwarelabs.net")).getByText("Sales Director")).toBeTruthy();
-    expect(within(row("mgr@sabertoothsoftwarelabs.net")).getByText("-")).toBeTruthy();
-  });
-
-  it("lists the tenant's users from the API, with role, status and last activity", async () => {
-    stubApi(usersApi());
-    openUsers();
-    expect(await screen.findByText("admin@sabertoothsoftwarelabs.net")).toBeTruthy();
-    const row = (email: string) => screen.getByText(email).closest("tr")!;
-
-    expect(within(row("admin@sabertoothsoftwarelabs.net")).getByText("Administrator", { selector: "td" })).toBeTruthy();
-    expect((within(row("admin@sabertoothsoftwarelabs.net")).getByRole("combobox") as HTMLSelectElement).value).toBe("Administrator");
-    expect(within(row("admin@sabertoothsoftwarelabs.net")).getByText("Never")).toBeTruthy(); // has not signed in
-
-    expect((within(row("mgr@sabertoothsoftwarelabs.net")).getByRole("combobox") as HTMLSelectElement).value).toBe("Campaign Manager");
-    expect(within(row("mgr@sabertoothsoftwarelabs.net")).queryByText("Never")).toBeNull();
-    expect(within(row("mgr@sabertoothsoftwarelabs.net")).getByText("Active")).toBeTruthy();
-
-    expect(within(row("view@sabertoothsoftwarelabs.net")).getByText("Disabled")).toBeTruthy();
-    expect(within(row("view@sabertoothsoftwarelabs.net")).getByText("(no name)")).toBeTruthy();
-  });
-
-  it("shows no invented people, only what the API returned", async () => {
-    stubApi(usersApi([userDto()]));
-    openUsers();
-    await screen.findByText("admin@sabertoothsoftwarelabs.net");
-    expect(screen.getAllByRole("row")).toHaveLength(2); // header + the one real user
-    expect(document.body.textContent).not.toMatch(/Brian|Dana L|Marcus T|Priya S|itimpact/);
-  });
-
-  it("describes the three access levels from the shared catalog", async () => {
-    stubApi(usersApi());
-    openUsers();
-    await screen.findByText("admin@sabertoothsoftwarelabs.net");
-    for (const a of ACCESS_LEVELS) {
-      expect(screen.getByText(a.description)).toBeTruthy();
-    }
-    const select = screen.getAllByRole("combobox")[0] as HTMLSelectElement;
-    expect([...select.options].map((o) => o.textContent)).toEqual(["Administrator", "Campaign Manager", "Viewer"]);
-  });
-
-  it("keeps changing access disabled, and says it is not built", async () => {
-    const calls = stubApi(usersApi());
-    openUsers();
-    await screen.findByText("admin@sabertoothsoftwarelabs.net");
-    for (const select of screen.getAllByRole("combobox")) expect((select as HTMLSelectElement).disabled).toBe(true);
-    expect(calls.every((c) => c.method === "GET")).toBe(true); // nothing was written
-  });
-
-  describe("Remove user", () => {
-    /** A server where DELETE removes the user from the list, like the real one. */
-    function removeServer(reply?: { status: number; json: unknown }) {
-      let items = [...team];
-      const handler: Handler = ({ method, path }) => {
-        if (method === "GET" && path === "/api/me") return { json: { user: { id: "u1", email: "admin@sabertoothsoftwarelabs.net", displayName: "Administrator", access: "Administrator", mustChangePassword: false }, tenant: { id: "t", name: "Sabertooth Software Labs", slug: "s" }, session: false } };
-        if (method === "GET" && path === "/api/users") return { json: page(items) };
-        if (method === "GET" && path === "/api/users/invitations") return { json: { items: [] } };
-        if (method === "GET" && path === "/api/sender") return { json: senderStatus(senderDto()) };
-        const m = /^\/api\/users\/([^/]+)$/.exec(path);
-        if (m && method === "DELETE") {
-          if (reply) return reply;
-          items = items.filter((u) => u.id !== m[1]);
-          return { status: 204 };
-        }
-        return undefined;
-      };
-      return handler;
-    }
-
-    it("offers Remove for other people but not for yourself", async () => {
-      stubApi(removeServer());
-      openUsers();
-      await screen.findByText("mgr@sabertoothsoftwarelabs.net");
-      await screen.findByText("You");
-      expect(within(screen.getByText("admin@sabertoothsoftwarelabs.net").closest("tr")!).queryByRole("button", { name: /Remove/ })).toBeNull();
-      expect(screen.getByRole("button", { name: "Remove Morgan" })).toBeTruthy();
-    });
-
-    it("asks first, and removing takes them off the list", async () => {
-      const calls = stubApi(removeServer());
-      openUsers();
-      fireEvent.click(await screen.findByRole("button", { name: "Remove Morgan" }));
-      expect(screen.getByText(/can invite them again later/)).toBeTruthy();
-      fireEvent.click(screen.getByRole("button", { name: "Keep user" }));
-      expect(calls.some((c) => c.method === "DELETE")).toBe(false);
-
-      fireEvent.click(screen.getByRole("button", { name: "Remove Morgan" }));
-      fireEvent.click(screen.getByRole("button", { name: "Remove user" }));
-      expect(await screen.findByText("Morgan was removed")).toBeTruthy();
-      expect(calls.some((c) => c.method === "DELETE" && c.path === "/api/users/u2")).toBe(true);
-      await waitFor(() => expect(screen.queryByText("mgr@sabertoothsoftwarelabs.net")).toBeNull());
-      expect(screen.getByText("admin@sabertoothsoftwarelabs.net")).toBeTruthy();
-    });
-
-    it("shows the server's reason when it refuses, and the user stays listed", async () => {
-      stubApi(removeServer({ status: 409, json: { error: { code: "LAST_ADMINISTRATOR", message: "At least one active Administrator must remain", correlationId: "x" } } }));
-      openUsers();
-      fireEvent.click(await screen.findByRole("button", { name: "Remove Morgan" }));
-      fireEvent.click(screen.getByRole("button", { name: "Remove user" }));
-      expect(await screen.findByText("At least one active Administrator must remain")).toBeTruthy();
-      expect(screen.getByText("mgr@sabertoothsoftwarelabs.net")).toBeTruthy();
-    });
-  });
-
-  describe("Add user", () => {
-    it("asks for first name, last name, email and a role, and sends the invitation", async () => {
-      const calls = stubApi(inviteServer());
-      openUsers();
-      await screen.findByText("admin@sabertoothsoftwarelabs.net");
-      fireEvent.click(screen.getByRole("button", { name: "Add user" }));
-
-      const role = screen.getByLabelText("Role") as HTMLSelectElement;
-      expect([...role.options].map((o) => o.textContent)).toEqual(["Administrator", "Campaign Manager", "Viewer"]);
-      expect(role.value).toBe("campaign-manager");
-      expect((screen.getByRole("button", { name: "Send invitation" }) as HTMLButtonElement).disabled).toBe(true); // nothing typed yet
-
-      fillInvite({ first: " Pat ", last: "Lee", email: "pat@example.test", role: "viewer" });
-      fireEvent.click(screen.getByRole("button", { name: "Send invitation" }));
-
-      expect(await screen.findByText("Invitation sent to pat@example.test")).toBeTruthy();
-      const post = calls.find((c) => c.method === "POST" && c.path === "/api/users/invitations")!;
-      expect(post.body).toEqual({ email: "pat@example.test", firstName: "Pat", lastName: "Lee", position: "", accessId: "viewer" });
-      expect(screen.queryByLabelText("First name")).toBeNull(); // dialog closed
-      // the list now shows it as pending
-      expect(await screen.findByText("Pending invitations")).toBeTruthy();
-      expect(within(screen.getByText("pat@example.test").closest("tr")!).getByText("Pending")).toBeTruthy();
-    });
-
-    it("keeps focus in the field while typing (regression: focus jumped away after one character)", async () => {
-      stubApi(inviteServer());
-      openUsers();
-      await screen.findByText("admin@sabertoothsoftwarelabs.net");
-      fireEvent.click(screen.getByRole("button", { name: "Add user" }));
-      for (const label of ["First name", "Last name", "Email address"]) {
-        const input = screen.getByLabelText(label) as HTMLInputElement;
-        input.focus();
-        for (const text of ["a", "ab", "abc"]) {
-          fireEvent.change(input, { target: { value: text } });
-          expect(document.activeElement, `${label} after typing "${text}"`).toBe(input);
-        }
-      }
-    });
-
-    it("explains that Gmail must be connected first, and sends nothing", async () => {
-      const calls = stubApi(inviteServer({ sender: false }));
-      openUsers();
-      await screen.findByText("admin@sabertoothsoftwarelabs.net");
-      fireEvent.click(screen.getByRole("button", { name: "Add user" }));
-      expect(await screen.findByText("Connect Gmail first")).toBeTruthy();
-      fillInvite();
-      expect((screen.getByRole("button", { name: "Send invitation" }) as HTMLButtonElement).disabled).toBe(true);
-      expect(calls.some((c) => c.method === "POST")).toBe(false);
-    });
-
-    it("shows the server's reason and keeps what was typed when sending fails", async () => {
-      stubApi(inviteServer({ reply: { status: 409, json: { error: { code: "ALREADY_MEMBER", message: "That person is already a user of your account", correlationId: "x" } } } }));
-      openUsers();
-      await screen.findByText("admin@sabertoothsoftwarelabs.net");
-      fireEvent.click(screen.getByRole("button", { name: "Add user" }));
-      fillInvite({ email: "mgr@sabertoothsoftwarelabs.net" });
-      fireEvent.click(screen.getByRole("button", { name: "Send invitation" }));
-      expect(await screen.findByText("That person is already a user of your account")).toBeTruthy();
-      expect((screen.getByLabelText("Email address") as HTMLInputElement).value).toBe("mgr@sabertoothsoftwarelabs.net");
-    });
-
-    it("cancel closes it without sending, and reopening starts blank", async () => {
-      const calls = stubApi(inviteServer());
-      openUsers();
-      await screen.findByText("admin@sabertoothsoftwarelabs.net");
-      fireEvent.click(screen.getByRole("button", { name: "Add user" }));
-      fillInvite();
-      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-      expect(screen.queryByLabelText("First name")).toBeNull();
-      fireEvent.click(screen.getByRole("button", { name: "Add user" }));
-      expect((screen.getByLabelText("First name") as HTMLInputElement).value).toBe("");
-      expect(calls.some((c) => c.method === "POST")).toBe(false);
-    });
-  });
-
-  describe("pending invitations", () => {
-    it("lists them with status and expiry, and says nothing when there are none", async () => {
-      stubApi(inviteServer({ invitations: [invitationDto(), invitationDto({ id: "inv2", email: "old@example.test", status: "Expired" })] }));
-      openUsers();
-      expect(await screen.findByText("Pending invitations")).toBeTruthy();
-      expect(within(screen.getByText("pat@example.test").closest("tr")!).getByText("Pending")).toBeTruthy();
-      expect(within(screen.getByText("old@example.test").closest("tr")!).getByText("Expired")).toBeTruthy();
-
-      stubApi(usersApi());
-      document.body.innerHTML = "";
-      openUsers();
-      await screen.findByText("admin@sabertoothsoftwarelabs.net");
-      expect(screen.queryByText("Pending invitations")).toBeNull();
-    });
-
-    it("resends an invitation", async () => {
-      const calls = stubApi(inviteServer({ invitations: [invitationDto()] }));
-      openUsers();
-      fireEvent.click(await screen.findByRole("button", { name: "Resend invitation to pat@example.test" }));
-      expect(await screen.findByText("Invitation sent again to pat@example.test")).toBeTruthy();
-      expect(calls.some((c) => c.method === "POST" && c.path === "/api/users/invitations/inv1/resend")).toBe(true);
-    });
-
-    it("revokes only after confirming, then removes it from the list", async () => {
-      const calls = stubApi(inviteServer({ invitations: [invitationDto()] }));
-      openUsers();
-      fireEvent.click(await screen.findByRole("button", { name: "Revoke invitation to pat@example.test" }));
-      expect(calls.some((c) => c.method === "DELETE")).toBe(false);
-      fireEvent.click(screen.getByRole("button", { name: "Keep it" }));
-      expect(calls.some((c) => c.method === "DELETE")).toBe(false);
-
-      fireEvent.click(screen.getByRole("button", { name: "Revoke invitation to pat@example.test" }));
-      fireEvent.click(screen.getByRole("button", { name: "Withdraw" }));
-      await waitFor(() => expect(calls.some((c) => c.method === "DELETE" && c.path === "/api/users/invitations/inv1")).toBe(true));
-      await waitFor(() => expect(screen.queryByText("Pending invitations")).toBeNull());
-    });
-  });
-
-  it("asks for the first page and pages through the list", async () => {
-    const calls = stubApi(({ method, path, query }) =>
-      method === "GET" && path === "/api/users" ? { json: page([userDto({ id: `p${query.get("page")}` })], 60, Number(query.get("page")), 25) } : undefined,
-    );
-    openUsers();
-    await screen.findByText("admin@sabertoothsoftwarelabs.net");
-    const first = calls.find((c) => c.path === "/api/users")!;
-    expect(first.query.get("page")).toBe("1");
-    expect(first.query.get("pageSize")).toBe("25");
-    fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    await waitFor(() => expect([...calls].reverse().find((c) => c.path === "/api/users")!.query.get("page")).toBe("2"));
-    expect(screen.getByText("Page 2 / 3")).toBeTruthy();
-  });
-
-  it("shows why it could not load, instead of an empty table", async () => {
-    stubApi(({ path }) =>
-      path === "/api/users" ? { status: 403, json: { error: { code: "FORBIDDEN", message: "Your access level does not allow this", correlationId: "ref-403" } } } : undefined,
-    );
-    openUsers();
-    expect(await screen.findByText("Your access level does not allow this")).toBeTruthy();
-    expect(screen.getByText("Reference: ref-403")).toBeTruthy();
-    expect(screen.queryByText("Never")).toBeNull();
-  });
-
-  it("tells you when the API is not running", async () => {
-    stubApi(() => { throw new Error("offline"); });
-    openUsers();
-    expect((await screen.findAllByText(/npm run dev:api/)).length).toBeGreaterThan(0); // the users list, and the invitations list
-  });
-});
-
-describe("Add user: position", () => {
-  const openAdd = (handler: Handler = inviteServer()) => {
-    const calls = stubApi(handler);
-    openUsers();
-    return calls;
-  };
-  const clickAdd = async () => {
-    await screen.findByText("admin@sabertoothsoftwarelabs.net");
-    fireEvent.click(screen.getByRole("button", { name: "Add user" }));
-    await screen.findByLabelText("First name");
-  };
-
-  it("has an optional Position field, and the form is complete without it", async () => {
-    openAdd();
-    await clickAdd();
-    const position = screen.getByLabelText("Position") as HTMLInputElement;
-    expect(position.value).toBe("");
-    expect(position.maxLength).toBe(100);
-    expect(screen.getByText(/Optional; they can change it themselves later/)).toBeTruthy();
-    fillInvite();
-    expect((screen.getByRole("button", { name: "Send invitation" }) as HTMLButtonElement).disabled).toBe(false);
-  });
-
-  it("sends the position with the invitation, trimmed", async () => {
-    const calls = openAdd();
-    await clickAdd();
-    fillInvite();
-    fireEvent.change(screen.getByLabelText("Position"), { target: { value: "  Sales Director " } });
-    fireEvent.click(screen.getByRole("button", { name: "Send invitation" }));
-    await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/users/invitations")).toBe(true));
-    expect(calls.find((c) => c.method === "POST")!.body).toEqual({ email: "pat@example.test", firstName: "Pat", lastName: "Lee", position: "Sales Director", accessId: "campaign-manager" });
-  });
-
-  it("sends an empty position when none was typed", async () => {
-    const calls = openAdd();
-    await clickAdd();
-    fillInvite();
-    fireEvent.click(screen.getByRole("button", { name: "Send invitation" }));
-    await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
-    expect(calls.find((c) => c.method === "POST")!.body.position).toBe("");
-  });
-
-  it("starts empty again the next time the dialog opens", async () => {
-    openAdd();
-    await clickAdd();
-    fireEvent.change(screen.getByLabelText("Position"), { target: { value: "Leftover" } });
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    fireEvent.click(screen.getByRole("button", { name: "Add user" }));
-    expect((await screen.findByLabelText("Position") as HTMLInputElement).value).toBe("");
-  });
-
-  it("shows the position in the pending invitations list, and a dash where there is none", async () => {
-    openAdd(inviteServer({ invitations: [invitationDto({ position: "Sales Director" }), invitationDto({ id: "inv2", email: "old@example.test", position: "" })] }));
-    expect(await screen.findByText("Pending invitations")).toBeTruthy();
-    const row = (email: string) => screen.getByText(email).closest("tr")!;
-    expect(within(row("pat@example.test")).getByText("Sales Director")).toBeTruthy();
-    expect(within(row("old@example.test")).getByText("-")).toBeTruthy();
-  });
-});
-
 describe("Unsubscribe and compliance (Email Service tab)", () => {
   const fail = (status: number, code: string, message: string) => ({ status, json: { error: { code, message, correlationId: "x" } } });
 
   /** A server that remembers what was saved, like the real one. */
-  function complianceServer(opts: { tenant?: Partial<MeDto["tenant"]>; reply?: ReturnType<typeof fail> } = {}): Handler {
-    let me = meDto({}, opts.tenant);
+  function complianceServer(opts: { company?: Partial<MeDto["company"]>; reply?: ReturnType<typeof fail> } = {}): Handler {
+    let me = meDto({}, opts.company);
     return ({ method, path, body }) => {
       if (method === "GET" && path === "/api/me") return { json: me };
       if (method === "GET" && path === "/api/sender") return { json: senderStatus(null) };
       if (method === "GET" && path === "/api/test-recipients") return { json: { items: [] } };
       if (method === "GET" && path === "/api/suppressions") return { json: page([]) };
-      if (method === "PATCH" && path === "/api/tenant") {
+      if (method === "PATCH" && path === "/api/me/company") {
         if (opts.reply) return opts.reply;
-        me = { ...me, tenant: { ...me.tenant, ...body } };
-        return { json: me.tenant };
+        me = { ...me, company: { ...me.company, ...body } };
+        return { json: me.company };
       }
       return undefined;
     };
@@ -862,7 +491,7 @@ describe("Unsubscribe and compliance (Email Service tab)", () => {
   });
 
   it.runIf(EMAIL_FOOTER_ENABLED && LIST_UNSUBSCRIBE_HEADERS_ENABLED)("shows them as always on even when the stored setting says off", async () => {
-    await open(complianceServer({ tenant: { requireUnsubscribeLink: false, oneClickUnsubscribe: false } }));
+    await open(complianceServer({ company: { requireUnsubscribeLink: false, oneClickUnsubscribe: false } }));
     expect(requireBox().checked).toBe(true);
     expect(oneClickBox().checked).toBe(true);
   });
@@ -886,7 +515,7 @@ describe("Unsubscribe and compliance (Email Service tab)", () => {
   });
 
   it.runIf(EMAIL_FOOTER_ENABLED)("says where the postal address in the footer comes from, and shows it", async () => {
-    await open(complianceServer({ tenant: { postalAddress: "Acme Inc.\n1 Road" } }));
+    await open(complianceServer({ company: { postalAddress: "Acme Inc.\n1 Road" } }));
     expect(within(card()).getByText("Company Details")).toBeTruthy();
     expect(within(card()).getByText(/Acme Inc\./).textContent).toBe("Acme Inc.\n1 Road");
     expect(screen.queryByText(/not set yet/)).toBeNull();
@@ -899,7 +528,7 @@ describe("Unsubscribe and compliance (Email Service tab)", () => {
   });
 
   it.runIf(EMAIL_FOOTER_ENABLED)("warns that campaigns cannot launch while the company has no postal address", async () => {
-    await open(complianceServer({ tenant: { postalAddress: "" } }));
+    await open(complianceServer({ company: { postalAddress: "" } }));
     expect(screen.getByText(/not set yet, so campaigns cannot be launched/)).toBeTruthy();
   });
 

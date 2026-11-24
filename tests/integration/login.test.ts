@@ -17,12 +17,12 @@ const asSession = (s: string) => ({ cookie: `sendrix_session=${s}` });
 const attempts = (key: string) => h.rows<{ failures: number; locked_until: number | null }>("SELECT failures, locked_until FROM login_attempts WHERE key = ?", key);
 
 /** A user with a known password, made the way the app makes them. */
-async function addUser(over: { status?: string; deleted?: boolean; tenantId?: string } = {}) {
+async function addUser(over: { status?: string } = {}) {
   const email = uniqueEmail("person");
   const { hashPassword } = await import("../../src/server/lib/password");
   await h.sql(
-    "INSERT INTO users (id,tenant_id,display_name,email,normalized_email,password_hash,access_id,status,is_deleted,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-    `u-${email}`, over.tenantId ?? h.tenantId, "Pat", email, email, await hashPassword("Correct-horse-1"), "viewer", over.status ?? "Active", over.deleted ? 1 : 0, 1, 1,
+    "INSERT INTO users (id,display_name,email,normalized_email,password_hash,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)",
+    `u-${email}`, "Pat", email, email, await hashPassword("Correct-horse-1"), over.status ?? "Active", 1, 1,
   );
   return { email, id: `u-${email}` };
 }
@@ -52,7 +52,7 @@ describe("signing in", () => {
     const session = cookieOf(r);
     const me = await h.anonymous.api("GET", "/api/me", undefined, asSession(session));
     expect(me.status).toBe(200);
-    expect(me.json).toMatchObject({ user: { email: EMAIL, access: "Administrator" }, tenant: { name: "Sabertooth Software Labs" }, session: true });
+    expect(me.json).toMatchObject({ user: { email: EMAIL }, company: { name: "Sabertooth Software Labs" }, session: true });
     expect(JSON.stringify(await h.rows("SELECT * FROM sessions"))).not.toContain(session);
     expect((await h.rows<{ n: number }>("SELECT count(*) AS n FROM sessions WHERE token_hash = ?", await sha256Base64Url(session)))[0]!.n).toBe(1);
   });
@@ -81,7 +81,7 @@ describe("signing in", () => {
     expect((await h.anonymous.api("GET", "/api/me", undefined, asSession(b))).status).toBe(200);
   });
 
-  it("a user who accepted an invitation can sign in later with the password they chose", async () => {
+  it("an account added later signs in with its own password", async () => {
     const u = await addUser();
     const r = await login(u.email, "Correct-horse-1");
     expect(r.status).toBe(200);
@@ -89,7 +89,7 @@ describe("signing in", () => {
   });
 
   it("without a session, protected routes answer 401, not another user's data", async () => {
-    for (const path of ["/api/me", "/api/contacts", "/api/campaigns", "/api/users", "/api/sender"]) {
+    for (const path of ["/api/me", "/api/contacts", "/api/campaigns", "/api/sender"]) {
       const r = await h.anonymous.api("GET", path);
       expect(r.status, path).toBe(401);
       expect(r.json.error.code).toBe("NO_ACTIVE_USER");
@@ -98,10 +98,10 @@ describe("signing in", () => {
 });
 
 describe("wrong answers all look the same", () => {
-  it("unknown address, wrong password, and a removed user get the identical response", async () => {
-    const removed = await addUser({ deleted: true });
+  it("unknown address and wrong password get the identical response", async () => {
+    const other = await addUser();
     const seen = new Set<string>();
-    for (const [email, password] of [["nobody@example.test", "whatever-1"], [EMAIL, "wrong-password"], [removed.email, "Correct-horse-1"]] as const) {
+    for (const [email, password] of [["nobody@example.test", "whatever-1"], [EMAIL, "wrong-password"], [other.email, "wrong-password-2"]] as const) {
       const r = await login(email, password);
       expect(r.status).toBe(401);
       expect(r.headers.get("set-cookie")).toBeNull();
@@ -136,19 +136,11 @@ describe("wrong answers all look the same", () => {
     expect(r.headers.get("set-cookie")).toBeNull();
   });
 
-  it("a suspended organization cannot sign in", async () => {
-    const t = await h.addTenant("Frozen Inc", "boss@frozen.test");
-    await h.sql("UPDATE tenants SET status = 'Suspended' WHERE id = ?", t.tenantId);
-    const r = await login("boss@frozen.test", "Password@123");
-    expect(r.status).toBe(403);
-    expect(r.json.error.code).toBe("TENANT_SUSPENDED");
-  });
-
-  it("another tenant's user signs in to their own tenant, never ours", async () => {
-    await h.addTenant("Globex Corp", "admin@globex.test");
+  it("another account signs in to its own data, never ours", async () => {
+    await h.addAccount("Globex Corp", "admin@globex.test");
     const r = await login("admin@globex.test", "Password@123");
     const me = await h.anonymous.api("GET", "/api/me", undefined, asSession(cookieOf(r)));
-    expect(me.json.tenant.name).toBe("Globex Corp");
+    expect(me.json.company.name).toBe("Globex Corp");
     expect((await h.anonymous.api("GET", "/api/contacts", undefined, asSession(cookieOf(r)))).json.total).toBe(0);
   });
 });

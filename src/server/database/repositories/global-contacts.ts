@@ -27,10 +27,10 @@ export const toPersonDto = (r: GlobalContactRow, revealed: boolean): PersonDto =
 });
 
 /**
- * The shared directory. Not scoped to a tenant: every organization searches the same rows. The tenant is only needed to tell
+ * The shared directory. Not scoped to an account: everyone searches the same rows. The account is only needed to tell
  * which people are already its contacts, because those (and only those) show their email address.
  */
-export function globalContactsRepo(db: Database, tenantId: string) {
+export function globalContactsRepo(db: Database, userId: string) {
   return {
     /**
      * One page of people matching every filter that was given (a filter left empty is not applied). Paging happens in the
@@ -61,8 +61,8 @@ export function globalContactsRepo(db: Database, tenantId: string) {
         db
           .select({ person: globalContacts, contactId: contacts.id })
           .from(globalContacts)
-          // A person is "added" when this tenant holds a contact with the same address (the unique index makes this a point lookup).
-          .leftJoin(contacts, and(eq(contacts.tenantId, tenantId), sql`${globalContacts.email} <> ''`, eq(contacts.normalizedEmail, sql`lower(trim(${globalContacts.email}))`)))
+          // A person is "added" when this account holds a contact with the same address (the unique index makes this a point lookup).
+          .leftJoin(contacts, and(eq(contacts.userId, userId), sql`${globalContacts.email} <> ''`, eq(contacts.normalizedEmail, sql`lower(trim(${globalContacts.email}))`)))
           .where(condition)
           .orderBy(asc(globalContacts.company), asc(globalContacts.id))
           .limit(q.pageSize)
