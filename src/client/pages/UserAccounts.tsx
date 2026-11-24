@@ -1,18 +1,13 @@
 import { useState } from "react";
 import type { UserAccountDto } from "@shared/api";
-import { ROLES, type Role } from "@shared/types";
-import { Badge, Button, Empty, ErrorNotice, Field, FillPage, LoadingRows, Modal, Notice, PageHeader, Select, Table, TableCard, TextInput, Td, Th, fmtDate } from "@/components/ui";
+import { Badge, Button, Empty, ErrorNotice, FillPage, LoadingRows, Modal, PageHeader, Table, TableCard, Td, Th, fmtDate } from "@/components/ui";
 import { RowActions, type RowAction } from "@/components/RowActions";
+import { UserAccountPanel } from "@/components/panels/UserAccountPanel";
+import { usePanel } from "@/hooks/usePanel";
 import { useMe } from "@/services/me";
 import { useToast } from "@/hooks/useToast";
 import { ApiClientError } from "@/services/http";
-import { useAddUserAccount, useChangeUserAccount, useRemoveUserAccount, useUserAccounts } from "@/services/users";
-
-const ROLE_HELP: Record<Role, string> = {
-  SuperAdmin: "Manages Email Templates and User Accounts.",
-  JobSeeker: "Everything except Campaigns.",
-  Agency: "Everything except Jobs.",
-};
+import { useChangeUserAccount, useRemoveUserAccount, useUserAccounts } from "@/services/users";
 
 const errorText = (e: unknown) => (e instanceof ApiClientError ? e.fieldErrors[0]?.message ?? e.message : "Something went wrong. Please try again.");
 
@@ -23,8 +18,7 @@ export function UserAccounts() {
   const list = useUserAccounts();
   const change = useChangeUserAccount();
   const remove = useRemoveUserAccount();
-  const [adding, setAdding] = useState(false);
-  const [editing, setEditing] = useState<UserAccountDto | null>(null);
+  const panel = usePanel<UserAccountDto | "new">();
   const [removing, setRemoving] = useState<UserAccountDto | null>(null);
   const myId = me.data?.user.id;
 
@@ -53,7 +47,7 @@ export function UserAccounts() {
       <PageHeader
         title="User Accounts"
         description="Every account, and what it may use."
-        actions={<Button variant="primary" onClick={() => setAdding(true)}>Add account</Button>}
+        actions={<Button variant="primary" onClick={() => panel.show("new")}>Add account</Button>}
       />
       <TableCard>
         {list.isError ? (
@@ -79,7 +73,7 @@ export function UserAccounts() {
                     <RowActions
                       label={`Actions for ${u.email}`}
                       actions={[
-                        { label: "Edit", icon: "edit", ariaLabel: `Edit ${u.email}`, onSelect: () => setEditing(u) },
+                        { label: "Edit", icon: "edit", ariaLabel: `Edit ${u.email}`, onSelect: () => panel.show(u) },
                         ...(u.id === myId
                           ? []
                           : [
@@ -96,8 +90,7 @@ export function UserAccounts() {
         )}
       </TableCard>
 
-      {adding && <AccountModal onClose={() => setAdding(false)} />}
-      {editing && <AccountModal account={editing} isSelf={editing.id === myId} onClose={() => setEditing(null)} />}
+      {panel.item && <UserAccountPanel key={`${panel.item === "new" ? "new" : panel.item.id}-${panel.nonce}`} {...(panel.item === "new" ? {} : { account: panel.item, isSelf: panel.item.id === myId })} open={panel.open} onClose={panel.close} onExited={panel.onExited} />}
 
       <Modal
         open={removing !== null}
@@ -113,74 +106,5 @@ export function UserAccounts() {
         <p className="text-sm"><strong>{removing?.email}</strong> will be removed. An account that already has data cannot be deleted: disable it instead.</p>
       </Modal>
     </FillPage>
-  );
-}
-
-function AccountModal({ account, isSelf = false, onClose }: { account?: UserAccountDto; isSelf?: boolean; onClose: () => void }) {
-  const { toast } = useToast();
-  const add = useAddUserAccount();
-  const change = useChangeUserAccount();
-  const [email, setEmail] = useState(account?.email ?? "");
-  const [firstName, setFirstName] = useState(account?.firstName ?? "");
-  const [lastName, setLastName] = useState(account?.lastName ?? "");
-  const [role, setRole] = useState<Role>(account?.role ?? "JobSeeker");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const busy = add.isPending || change.isPending;
-  const editing = account !== undefined;
-
-  async function save() {
-    setError(null);
-    try {
-      if (editing) {
-        await change.mutateAsync({
-          id: account.id,
-          firstName,
-          lastName,
-          ...(role !== account.role ? { role } : {}),
-          ...(password ? { password } : {}),
-        });
-        toast("Account saved");
-      } else {
-        await add.mutateAsync({ email, firstName, lastName, role, password });
-        toast(`${email} added`);
-      }
-      onClose();
-    } catch (e) {
-      setError(errorText(e));
-    }
-  }
-
-  return (
-    <Modal
-      open
-      title={editing ? `Edit ${account.email}` : "Add account"}
-      onClose={onClose}
-      footer={
-        <>
-          <Button onClick={onClose}>Cancel</Button>
-          <Button variant="primary" disabled={busy || (!editing && (email.trim() === "" || password === ""))} onClick={() => void save()}>{busy ? "Saving…" : editing ? "Save changes" : "Add account"}</Button>
-        </>
-      }
-    >
-      <div className="space-y-4">
-        <Field label="Email address" htmlFor="ua-email">
-          <TextInput id="ua-email" type="email" autoComplete="off" value={email} disabled={editing} onChange={(e) => setEmail(e.target.value)} />
-        </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="First name" htmlFor="ua-first"><TextInput id="ua-first" value={firstName} onChange={(e) => setFirstName(e.target.value)} /></Field>
-          <Field label="Last name" htmlFor="ua-last"><TextInput id="ua-last" value={lastName} onChange={(e) => setLastName(e.target.value)} /></Field>
-        </div>
-        <Field label="Role" htmlFor="ua-role" hint={isSelf ? "You cannot change your own role." : ROLE_HELP[role]}>
-          <Select id="ua-role" value={role} disabled={isSelf} onChange={(e) => setRole(e.target.value as Role)}>
-            {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
-          </Select>
-        </Field>
-        <Field label={editing ? "New password" : "Password"} htmlFor="ua-password" hint={editing ? "Leave empty to keep the current one. A new password is temporary: the person must change it at their next sign-in." : "Temporary: the person must change it at their first sign-in."}>
-          <TextInput id="ua-password" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
-        </Field>
-        {error && <Notice tone="error">{error}</Notice>}
-      </div>
-    </Modal>
   );
 }

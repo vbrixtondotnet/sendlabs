@@ -1,14 +1,13 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { ContactDto } from "@shared/api";
-import { CONSENT_STATUSES, type ConsentStatus } from "@shared/types";
 import {
-  Button, Empty, ErrorNotice, Field, FillPage, LoadingRows, Modal, Notice, PageHeader, Pagination, Select, Table, TableCard, TextInput, Td, Th, fmt, fmtDay,
+  Button, Empty, ErrorNotice, FillPage, LoadingRows, PageHeader, Pagination, Select, Table, TableCard, TextInput, Td, Th, fmt,
 } from "@/components/ui";
+import { ContactPanel } from "@/components/panels/ContactPanel";
 import { useDebounced } from "@/hooks/useDebounced";
-import { useToast } from "@/hooks/useToast";
-import { ApiClientError } from "@/services/http";
-import { useContacts, useCreateContact, useDeleteContact, useIndustries, useUpdateContact } from "@/services/contacts";
+import { usePanel } from "@/hooks/usePanel";
+import { useContacts, useIndustries } from "@/services/contacts";
 
 const PAGE_SIZE = 50;
 const location = (c: ContactDto) => [c.city, c.state].filter(Boolean).join(", ") || "n/a"; // the country has its own column
@@ -22,7 +21,7 @@ export function Contacts() {
   useEffect(() => { setQ(fromBar); setPage(1); }, [fromBar]);
   const [industry, setIndustry] = useState("");
   const [page, setPage] = useState(1);
-  const [editing, setEditing] = useState<ContactDto | "new" | null>(null);
+  const panel = usePanel<ContactDto | "new">();
 
   const search = useDebounced(q.trim());
   const list = useContacts({ page, pageSize: PAGE_SIZE, q: search, industry });
@@ -34,7 +33,7 @@ export function Contacts() {
       <PageHeader
         title="Contacts"
         description={list.data ? `${fmt(total)} contact${total === 1 ? "" : "s"} match. One row per email address across all imports.` : "One row per email address across all imports."}
-        actions={<Button variant="primary" onClick={() => setEditing("new")}>Add contact</Button>}
+        actions={<Button variant="primary" onClick={() => panel.show("new")}>Add contact</Button>}
       />
       <TableCard>
         <div className="flex shrink-0 flex-wrap gap-3 border-b border-slate-200 p-4 dark:border-slate-800">
@@ -57,9 +56,9 @@ export function Contacts() {
               </thead>
               <tbody>
                 {list.data.items.map((c) => (
-                  <tr key={c.id} className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40" onClick={() => setEditing(c)}>
+                  <tr key={c.id} className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40" onClick={() => panel.show(c)}>
                     <Td>
-                      <button className="text-left font-medium hover:text-brand-600 dark:hover:text-brand-400" onClick={(e) => { e.stopPropagation(); setEditing(c); }}>
+                      <button className="text-left font-medium hover:text-brand-600 dark:hover:text-brand-400" onClick={(e) => { e.stopPropagation(); panel.show(c); }}>
                         {fullName(c) || "(no name)"}
                       </button>
                       <p className="max-w-[16rem] truncate text-xs text-slate-500">{c.title}</p>
@@ -81,132 +80,7 @@ export function Contacts() {
         )}
       </TableCard>
 
-      {editing !== null && <ContactDialog key={editing === "new" ? "new" : editing.id} contact={editing === "new" ? null : editing} onClose={() => setEditing(null)} />}
+      {panel.item !== null && <ContactPanel key={`${panel.item === "new" ? "new" : panel.item.id}-${panel.nonce}`} contact={panel.item === "new" ? null : panel.item} open={panel.open} onClose={panel.close} onExited={panel.onExited} />}
     </FillPage>
-  );
-}
-
-/* ------------------------------ add / edit ------------------------------ */
-
-interface Form {
-  email: string; firstName: string; lastName: string; title: string; companyName: string; industry: string;
-  city: string; state: string; country: string; employees: string; annualRevenue: string; website: string;
-  linkedinUrl: string; consentStatus: ConsentStatus;
-}
-
-const toForm = (c: ContactDto | null): Form => ({
-  email: c?.email ?? "", firstName: c?.firstName ?? "", lastName: c?.lastName ?? "", title: c?.title ?? "",
-  companyName: c?.companyName ?? "", industry: c?.industry ?? "", city: c?.city ?? "", state: c?.state ?? "",
-  country: c?.country ?? "", employees: c?.employees?.toString() ?? "", annualRevenue: c?.annualRevenue?.toString() ?? "",
-  website: c?.website ?? "", linkedinUrl: c?.linkedinUrl ?? "", consentStatus: c?.consentStatus ?? "Unknown",
-});
-
-const num = (s: string) => (s.trim() === "" ? null : Number(s));
-
-function ContactDialog({ contact, onClose }: { contact: ContactDto | null; onClose: () => void }) {
-  const { toast } = useToast();
-  const create = useCreateContact();
-  const update = useUpdateContact();
-  const del = useDeleteContact();
-  const [form, setForm] = useState<Form>(() => toForm(contact));
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const error = (create.error ?? update.error ?? del.error) as unknown;
-  const busy = create.isPending || update.isPending || del.isPending;
-  const fieldErrors = error instanceof ApiClientError ? error.fieldErrors : [];
-  const set = (k: keyof Form) => (e: { target: { value: string } }) => setForm({ ...form, [k]: e.target.value });
-  const err = (path: string) => fieldErrors.find((f) => f.path === path)?.message;
-
-  const body = () => ({
-    email: form.email, firstName: form.firstName, lastName: form.lastName, title: form.title, companyName: form.companyName,
-    industry: form.industry, city: form.city, state: form.state, country: form.country, website: form.website,
-    linkedinUrl: form.linkedinUrl, consentStatus: form.consentStatus,
-    employees: num(form.employees), annualRevenue: num(form.annualRevenue),
-  });
-
-  async function save() {
-    try {
-      if (contact) await update.mutateAsync({ id: contact.id, patch: body() });
-      else await create.mutateAsync(body());
-      toast(contact ? "Contact saved" : "Contact added");
-      onClose();
-    } catch { /* shown below */ }
-  }
-  async function remove() {
-    if (!contact) return;
-    try {
-      await del.mutateAsync(contact.id);
-      toast("Contact deleted", "info");
-      onClose();
-    } catch { /* shown below */ }
-  }
-
-  const field = (id: string, label: string, key: keyof Form, extra?: { type?: string; hint?: string }) => (
-    <Field label={label} htmlFor={id} {...(extra?.hint ? { hint: extra.hint } : {})}>
-      <TextInput id={id} type={extra?.type ?? "text"} value={form[key]} onChange={set(key)} disabled={busy} aria-invalid={err(key) ? true : undefined} />
-      {err(key) && <p className="mt-1 text-xs text-rose-600">{err(key)}</p>}
-    </Field>
-  );
-
-  return (
-    <Modal
-      open
-      wide
-      title={contact ? "Contact details" : "Add contact"}
-      onClose={onClose}
-      footer={
-        confirmDelete ? (
-          <>
-            <span className="mr-auto self-center text-sm">Delete this contact? Past campaigns keep their records.</span>
-            <Button onClick={() => setConfirmDelete(false)}>Keep</Button>
-            <Button variant="danger" disabled={busy} onClick={remove}>Delete contact</Button>
-          </>
-        ) : (
-          <>
-            {contact && <Button variant="ghost" className="mr-auto text-rose-600" onClick={() => setConfirmDelete(true)}>Delete</Button>}
-            <Button onClick={onClose}>Cancel</Button>
-            <Button variant="primary" disabled={busy || form.email.trim() === ""} onClick={save}>{busy ? "Saving…" : contact ? "Save changes" : "Add contact"}</Button>
-          </>
-        )
-      }
-    >
-      <div className="space-y-4">
-        {error !== null && error !== undefined && (
-          <Notice tone="error" title={error instanceof ApiClientError && error.code === "EMAIL_EXISTS" ? "That email already exists" : "Could not save"}>
-            {error instanceof ApiClientError ? (
-              <>
-                <p>{error.message}</p>
-                {fieldErrors.length > 0 && <ul className="mt-1 list-disc pl-5">{fieldErrors.map((f) => <li key={f.path}>{f.path}: {f.message}</li>)}</ul>}
-              </>
-            ) : "Something went wrong."}
-          </Notice>
-        )}
-        <div className="grid gap-4 sm:grid-cols-2">
-          {field("c-first", "First name", "firstName")}
-          {field("c-last", "Last name", "lastName")}
-          {field("c-title", "Title", "title")}
-          {field("c-company", "Company name", "companyName")}
-          {field("c-email", "Email", "email", { type: "email", hint: "Stored trimmed and lower-case. Must be unique." })}
-          {field("c-industry", "Industry", "industry")}
-          {field("c-city", "City", "city")}
-          {field("c-state", "State", "state")}
-          {field("c-country", "Country", "country")}
-          {field("c-emp", "# Employees", "employees", { type: "number" })}
-          {field("c-rev", "Annual revenue (USD)", "annualRevenue", { type: "number" })}
-          {field("c-web", "Website", "website", { hint: "http(s) URL" })}
-        </div>
-        {field("c-li", "Person LinkedIn URL", "linkedinUrl", { hint: "http(s) URL" })}
-        <Field label="Consent" htmlFor="c-consent" hint="The CSV has no consent column, so imported contacts start as Unknown.">
-          <Select id="c-consent" value={form.consentStatus} onChange={set("consentStatus")} disabled={busy}>
-            {CONSENT_STATUSES.map((s) => <option key={s}>{s}</option>)}
-          </Select>
-        </Field>
-        {contact && (
-          <dl className="grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3 text-sm dark:bg-slate-800/50">
-            <div><dt className="text-slate-500">Added</dt><dd>{fmtDay(contact.createdAt)}</dd></div>
-            <div><dt className="text-slate-500">Last updated</dt><dd>{fmtDay(contact.updatedAt)}</dd></div>
-          </dl>
-        )}
-      </div>
-    </Modal>
   );
 }
