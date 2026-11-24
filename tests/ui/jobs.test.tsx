@@ -9,12 +9,13 @@ import type { JobDto } from "../../src/shared/api";
 import { page, renderAt, stubApi, type Call, type Handler } from "./harness";
 
 const job = (over: Partial<JobDto> = {}): JobDto => ({
+  remote: true,
   id: "1", title: "Senior .NET Developer", companyName: "Acme Corp", companyLogo: "https://remotive.com/job/1/logo", category: "Software Development",
   employmentType: "Full-time", location: "Worldwide", salary: "$3,000-$5,000", skills: ["c#", ".net 8", "sql server", "azure"],
   url: "https://remotive.com/remote-jobs/software-dev/job-1", source: "Remotive", publishedAt: new Date(Date.now() - 2 * 3_600_000).toISOString(), ...over,
 });
 
-const reply = (items: JobDto[], total = items.length, p = 1) => ({ json: page(items, total, p, 25) });
+const reply = (items: JobDto[], total = items.length, p = 1, unavailable: string[] = []) => ({ json: { ...page(items, total, p, 25), unavailable } });
 const side = (path: string) =>
   path === "/api/jobs/categories" ? { json: { items: [{ value: "software-dev", label: "Software Development" }, { value: "design", label: "Design" }] } }
   : path === "/api/jobs/locations" ? { json: { items: ["USA", "Worldwide"] } }
@@ -60,7 +61,9 @@ describe("Jobs page: the live list", () => {
     expect(within(card).getByText("c# · .net 8 · sql server · azure")).toBeTruthy();
     expect(within(card).getByText(/Posted 2 hours ago/)).toBeTruthy();
     expect(within(card).getByRole("link", { name: "Remotive" }).getAttribute("href")).toBe("https://remotive.com/remote-jobs/software-dev/job-1");
-    expect(screen.getByRole("link", { name: /Remote jobs from Remotive/ }).getAttribute("href")).toBe("https://remotive.com");
+    const header = screen.getByText(/^Jobs from/);
+    expect(within(header).getByRole("link", { name: "Remotive" }).getAttribute("href")).toBe("https://remotive.com");
+    expect(within(header).getByRole("link", { name: "Arbeitnow" }).getAttribute("href")).toBe("https://www.arbeitnow.com");
   });
 
   it("copes with a missing logo, salary, location and link", async () => {
@@ -85,6 +88,43 @@ describe("Jobs page: the live list", () => {
     expect(safeApplyUrl("javascript:alert(1)")).toBe("");
     expect(safeApplyUrl("http://remotive.com/x")).toBe("");
     expect(safeApplyUrl("https://jobs.remotive.com/x")).toBe("https://jobs.remotive.com/x");
+  });
+});
+
+describe("Jobs page: both sources in one list", () => {
+  const berlin = job({ id: "arbeitnow:berlin", title: "Backend Engineer", companyName: "Tulip", companyLogo: "", category: "Engineering", remote: false, location: "Berlin", salary: "", skills: ["Engineering"], source: "Arbeitnow", url: "https://www.arbeitnow.com/jobs/companies/tulip/berlin" });
+  const remoteArb = job({ id: "arbeitnow:r", title: "Sales Lead", companyName: "Gamma", companyLogo: "", remote: true, location: "Paris", salary: "", skills: ["Sales"], source: "Arbeitnow", url: "https://www.arbeitnow.com/jobs/companies/gamma/r" });
+  const mixed: Handler = ({ path }) => side(path) ?? (path === "/api/jobs" ? reply([job(), berlin, remoteArb]) : undefined);
+
+  it("shows Remotive and Arbeitnow jobs as the same kind of card, each crediting and linking its own source", async () => {
+    stubApi(mixed);
+    renderAt(<Jobs />);
+    const rem = await screen.findByRole("article", { name: "Senior .NET Developer, Acme Corp" });
+    const arbCard = screen.getByRole("article", { name: "Backend Engineer, Tulip" });
+    expect(within(rem).getByRole("link", { name: "Remotive" }).getAttribute("href")).toBe("https://remotive.com/remote-jobs/software-dev/job-1");
+    expect(within(arbCard).getByRole("link", { name: "Arbeitnow" }).getAttribute("href")).toBe("https://www.arbeitnow.com/jobs/companies/tulip/berlin");
+    expect(within(arbCard).getByRole("link", { name: "Apply now: Backend Engineer" }).getAttribute("href")).toBe("https://www.arbeitnow.com/jobs/companies/tulip/berlin");
+    expect(screen.getByText("Showing 3 jobs")).toBeTruthy();
+  });
+
+  it("says Remote for a remote job and the place for an on-site one, and where the person is based when it is remote on Arbeitnow", async () => {
+    stubApi(mixed);
+    renderAt(<Jobs />);
+    expect(within(await screen.findByRole("article", { name: "Senior .NET Developer, Acme Corp" })).getByText("Remote · Full-time · $3,000-$5,000")).toBeTruthy();
+    const onsite = screen.getByRole("article", { name: "Backend Engineer, Tulip" });
+    expect(within(onsite).getByText("Berlin · Full-time")).toBeTruthy();
+    expect(within(onsite).queryByText(/Candidates from|Based in/)).toBeNull();
+    const remoteOnArbeitnow = screen.getByRole("article", { name: "Sales Lead, Gamma" });
+    expect(within(remoteOnArbeitnow).getByText("Remote · Full-time")).toBeTruthy();
+    expect(within(remoteOnArbeitnow).getByText("Based in: Paris")).toBeTruthy();
+  });
+
+  it("when one source cannot be reached, still shows the other's jobs and says which one is missing", async () => {
+    stubApi(({ path }) => side(path) ?? (path === "/api/jobs" ? reply([job()], 1, 1, ["Arbeitnow"]) : undefined));
+    renderAt(<Jobs />);
+    expect(await screen.findByText("Senior .NET Developer")).toBeTruthy();
+    expect(screen.getByText("Arbeitnow could not be reached")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
   });
 });
 

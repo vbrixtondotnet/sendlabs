@@ -215,7 +215,7 @@ export interface AddContactResultDto {
 
 /** One job in the Jobs list. The source's description is not included: it is HTML from outside and is never shown. */
 export interface JobDto {
-  /** The job's id at its source (Remotive's numeric id, as text). Jobs are not stored, so this is not a database id. */
+  /** The source's name and the job's id there ("remotive:2091177", "arbeitnow:some-slug"), so ids never clash. Jobs are not stored. */
   id: string;
   title: string;
   companyName: string;
@@ -224,16 +224,23 @@ export interface JobDto {
   category: string;
   /** "Full-time", "Part-time", "Contract"... */
   employmentType: string;
-  /** Where the person may work from: "Worldwide", "USA, Canada"... */
+  /** Can be done remotely. */
+  remote: boolean;
+  /** Remotive: where the person may work from ("Worldwide", "USA, Canada"). Arbeitnow: where the job is ("Berlin"). May be empty. */
   location: string;
   salary: string;
   skills: string[];
   /** The job's page at its source: where Apply goes. */
   url: string;
-  /** The source's name ("Remotive"), which must be shown with the job. */
+  /** The source's name ("Remotive", "Arbeitnow"), which must be shown with the job. */
   source: string;
   /** ISO time the source published it, or null. */
   publishedAt: string | null;
+}
+
+/** A page of jobs, plus the sources that could not be reached for it (the others are still shown). */
+export interface JobsPageDto extends Page<JobDto> {
+  unavailable: string[];
 }
 
 /** One choice of the Job Category filter: Remotive's category, by the value its API takes and the name people read. */

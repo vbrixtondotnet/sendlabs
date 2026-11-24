@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import type { JobCategoryDto, JobDto, Page } from "@shared/api";
+import type { JobCategoryDto, JobsPageDto } from "@shared/api";
 import type { JobSort } from "@shared/schemas";
 import { api, withQuery } from "./http";
 
@@ -13,14 +13,14 @@ export interface JobFilters {
 }
 
 /**
- * One page of live jobs. Our server asks Remotive (the browser never does), filters, sorts and pages them. React Query hands the
+ * One page of live jobs, from Remotive and Arbeitnow merged. Our server asks them (the browser never does), filters, sorts and pages them. React Query hands the
  * request an abort signal, so a search that has already been replaced is cancelled instead of finished.
  */
 export function useJobs(filters: JobFilters, page: number, pageSize: number) {
   return useQuery({
     queryKey: ["jobs", filters, page, pageSize],
     queryFn: ({ signal }) =>
-      api<Page<JobDto>>(
+      api<JobsPageDto>(
         "GET",
         withQuery("/api/jobs", {
           page,

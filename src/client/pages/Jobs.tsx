@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import type { JobDto, Page } from "@shared/api";
-import { REMOTIVE, safeApplyUrl } from "@shared/jobs";
+import type { JobDto, JobsPageDto } from "@shared/api";
+import { ARBEITNOW, REMOTIVE, safeApplyUrl } from "@shared/jobs";
 import { JOB_SORTS, type JobSort } from "@shared/schemas";
 import { Button, Card, Empty, ErrorNotice, Field, FillPage, Notice, PageHeader, Pagination, Select, TextInput } from "@/components/ui";
 import { MultiSelect } from "@/components/MultiSelect";
@@ -21,8 +21,8 @@ const PanelTitle = ({ children }: { children: string }) => (
 
 /** One job as a card: title, company, kind / pay, where it can be done from, skills, how long ago, source, and Apply Now. */
 function JobCard({ job }: { job: JobDto }) {
-  const meta = ["Remote", job.employmentType, job.salary].filter(Boolean).join(" · ");
-  // Checked again here, before the link is ever drawn: only an https address on remotive.com can be opened.
+  const meta = [job.remote ? "Remote" : job.location || "Location not given", job.employmentType, job.salary].filter(Boolean).join(" · ");
+  // Checked again here, before the link is ever drawn: only an https address on a job source's own site can be opened.
   const applyUrl = safeApplyUrl(job.url);
   return (
     <article className="rounded-2xl border border-slate-200 bg-white p-5 transition hover:shadow-md dark:border-slate-800 dark:bg-slate-900" aria-label={`${job.title}, ${job.companyName}`}>
@@ -34,7 +34,8 @@ function JobCard({ job }: { job: JobDto }) {
         </div>
       </div>
       <p className="mt-3 text-slate-700 dark:text-slate-200">{meta}</p>
-      {job.location && <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">Candidates from: {job.location}</p>}
+      {/* On Remotive the location is where candidates may be; on Arbeitnow it is where the job is (shown in the line above unless the job is remote) */}
+      {job.remote && job.location && <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">{job.source === REMOTIVE.name ? "Candidates from" : "Based in"}: {job.location}</p>}
       {job.skills.length > 0 && <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{job.skills.slice(0, 8).join(" · ")}</p>}
       <div className="mt-3 flex items-center justify-between gap-3">
         <p className="text-sm text-slate-500 dark:text-slate-400">
@@ -118,7 +119,7 @@ export function Jobs() {
   const locations = useJobLocations();
 
   // The last results that loaded. A failed refresh must not wipe what the person is looking at.
-  const [lastGood, setLastGood] = useState<Page<JobDto> | null>(null);
+  const [lastGood, setLastGood] = useState<JobsPageDto | null>(null);
   useEffect(() => { if (jobs.data && !jobs.isPlaceholderData) setLastGood(jobs.data); }, [jobs.data, jobs.isPlaceholderData]);
   const data = jobs.data ?? lastGood;
 
@@ -155,7 +156,7 @@ export function Jobs() {
             <div className="flex flex-wrap items-center gap-3">
               <Button type="submit" variant="primary">Search Jobs</Button>
               <Button type="button" variant="secondary" onClick={() => { setDraft({ keyword: "", category: "", locations: [], remoteOnly: false, sort: "newest" }); setKeyword(""); setPage(1); }}>Reset</Button>
-              <label className="ml-1 inline-flex cursor-pointer items-center gap-2 text-sm" title="Only jobs that are open to candidates anywhere (Worldwide)">
+              <label className="ml-1 inline-flex cursor-pointer items-center gap-2 text-sm" title="Only jobs that can be done remotely">
                 <input type="checkbox" checked={draft.remoteOnly} onChange={(e) => change({ remoteOnly: e.target.checked })} className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-brand-600" />
                 Remote only
               </label>
@@ -171,7 +172,12 @@ export function Jobs() {
                   {JOB_SORTS.map((s) => <option key={s} value={s}>{SORT_LABEL[s]}</option>)}
                 </Select>
               </label>
-              <a href={REMOTIVE.homepage} target="_blank" rel="noopener noreferrer" className="text-brand-700 hover:underline dark:text-brand-300">Remote jobs from {REMOTIVE.name}</a>
+              <span>
+                Jobs from{" "}
+                <a href={REMOTIVE.homepage} target="_blank" rel="noopener noreferrer" className="text-brand-700 hover:underline dark:text-brand-300">{REMOTIVE.name}</a>
+                {" and "}
+                <a href={ARBEITNOW.homepage} target="_blank" rel="noopener noreferrer" className="text-brand-700 hover:underline dark:text-brand-300">{ARBEITNOW.name}</a>
+              </span>
             </div>
           </div>
 
@@ -183,10 +189,18 @@ export function Jobs() {
             </div>
           ) : (
             <>
+              {data.unavailable.length > 0 && !jobs.isError && (
+                <div className="shrink-0 px-4 pt-3">
+                  <Notice tone="warn" title={`${data.unavailable.join(" and ")} could not be reached`}>
+                    Showing the jobs from the other source for now.{" "}
+                    <button type="button" className="cursor-pointer font-medium underline" onClick={() => void jobs.refetch()}>Try again</button>
+                  </Notice>
+                </div>
+              )}
               {jobs.isError && (
                 <div className="shrink-0 px-4 pt-3">
                   <Notice tone="warn" title="Could not refresh the jobs">
-                    Remotive did not answer, so the jobs below are the ones loaded before.{" "}
+                    The jobs below are the ones loaded before.{" "}
                     <button type="button" className="cursor-pointer font-medium underline" onClick={() => void jobs.refetch()}>Try again</button>
                   </Notice>
                 </div>
