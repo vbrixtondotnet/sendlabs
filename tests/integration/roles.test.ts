@@ -20,6 +20,7 @@ describe("what each kind of account can use", () => {
     ["/api/people/filters", false, true, true],
     ["/api/sender", false, true, true],
     ["/api/users", true, false, false],
+    ["/api/global-contacts", true, false, false],
     ["/api/email-templates/available", true, true, true],
     ["/api/email-templates", false, true, true],
     ["/api/me", true, true, true],
@@ -115,6 +116,40 @@ describe("User Accounts", () => {
       expect(await status(who, "GET", "/api/users")).toBe(403);
       expect(await status(who, "POST", "/api/users", { email: "z@example.test", role: "SuperAdmin", password: "Password@123" })).toBe(403);
       expect(await status(who, "PATCH", "/api/users/anything", { role: "SuperAdmin" })).toBe(403);
+    }
+  });
+});
+
+describe("Global Contacts", () => {
+  const person = { firstName: "Ada", lastName: "Lovelace", title: "CTO", company: "Analytical Co", email: "ada@analytical.test", employeeCount: 40, industry: "Software", country: "United Kingdom" };
+
+  it("a SuperAdmin adds, finds, edits and deletes people, and Search People sees them", async () => {
+    const made = await h.superAdmin.api("POST", "/api/global-contacts", person);
+    expect(made.status).toBe(201);
+    expect(made.json).toMatchObject({ firstName: "Ada", email: "ada@analytical.test", employeeCount: 40 });
+    expect((await h.superAdmin.api("GET", "/api/global-contacts?q=lovelace")).json.total).toBe(1);
+    expect((await h.superAdmin.api("GET", "/api/global-contacts?q=nobody-here")).json.total).toBe(0);
+    // The directory is what everyone searches, though the email stays hidden from them.
+    const found = (await h.jobSeeker.api("GET", "/api/people?titles=CTO")).json.items as { id: string; email: string | null }[];
+    expect(found.find((p) => p.id === made.json.id)?.email).toBeNull();
+    const saved = await h.superAdmin.api("PUT", `/api/global-contacts/${made.json.id}`, { ...person, title: "Chief Engineer" });
+    expect(saved.json.title).toBe("Chief Engineer");
+    expect(await status(h.superAdmin, "DELETE", `/api/global-contacts/${made.json.id}`)).toBe(204);
+    expect(await status(h.superAdmin, "DELETE", `/api/global-contacts/${made.json.id}`)).toBe(404);
+  });
+
+  it("refuses a duplicate email (ignoring case), a bad email and unknown fields", async () => {
+    await h.superAdmin.api("POST", "/api/global-contacts", { ...person, email: "dup@analytical.test" });
+    expect(await status(h.superAdmin, "POST", "/api/global-contacts", { ...person, email: "DUP@analytical.test" })).toBe(409);
+    expect(await status(h.superAdmin, "POST", "/api/global-contacts", { ...person, email: "not-an-email" })).toBe(400);
+    expect(await status(h.superAdmin, "POST", "/api/global-contacts", { ...person, email: "x@analytical.test", id: "mine" })).toBe(400);
+  });
+
+  it("is closed to JobSeeker and Agency, for every method", async () => {
+    for (const who of [h, h.jobSeeker]) {
+      expect(await status(who, "POST", "/api/global-contacts", person)).toBe(403);
+      expect(await status(who, "PUT", "/api/global-contacts/x", person)).toBe(403);
+      expect(await status(who, "DELETE", "/api/global-contacts/x")).toBe(403);
     }
   });
 });

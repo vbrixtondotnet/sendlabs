@@ -53,9 +53,9 @@ describe("what the menu shows for each kind of account", () => {
     expect(screen.getByRole("link", { name: "New campaign" }).getAttribute("href")).toBe("/campaigns/new");
   });
 
-  it("SuperAdmin: only Email Templates and User Accounts, with no search box or credits", async () => {
+  it("SuperAdmin: only Email Templates, Global Contacts and User Accounts, with no search box or credits", async () => {
     await openAs("SuperAdmin");
-    expect(nav()).toEqual(["Email Templates", "User Accounts"]);
+    expect(nav()).toEqual(["Email Templates", "Global Contacts", "User Accounts"]);
     expect(screen.getByRole("link", { name: "User Accounts" }).getAttribute("href")).toBe("/users");
     expect(screen.queryByRole("searchbox")).toBeNull();
     expect(screen.queryByText("100 Credits")).toBeNull();

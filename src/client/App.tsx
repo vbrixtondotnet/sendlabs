@@ -14,6 +14,7 @@ import { Login } from "@/pages/Login";
 import { Unsubscribe } from "@/pages/Unsubscribe";
 import { MySettings } from "@/pages/MySettings";
 import { UserAccounts } from "@/pages/UserAccounts";
+import { GlobalContacts } from "@/pages/GlobalContacts";
 
 export function App() {
   return (
@@ -23,6 +24,7 @@ export function App() {
       <Route element={<Layout />}>
         <Route index element={<Overview />} />
         <Route path="users" element={<UserAccounts />} />
+        <Route path="global-contacts" element={<GlobalContacts />} />
         <Route path="imports" element={<Imports />} />
         <Route path="contacts" element={<Contacts />} />
         <Route path="people" element={<People />} />

@@ -3,7 +3,7 @@ import type { Role } from "@shared/types";
 /**
  * Which parts of the app each kind of account can open. The server enforces the same rules (a forbidden call answers 403); this
  * decides what the menu shows and where a forbidden address sends you.
- *  - SuperAdmin: Email Templates and User Accounts.
+ *  - SuperAdmin: Email Templates, Global Contacts and User Accounts.
  *  - JobSeeker: everything except Campaigns.
  *  - Agency: everything except Jobs.
  */
@@ -20,6 +20,7 @@ const AREAS: Record<string, Role[]> = {
   campaigns: ["Agency"],
   templates: ["SuperAdmin", "JobSeeker", "Agency"],
   users: ["SuperAdmin"],
+  "global-contacts": ["SuperAdmin"],
   account: ["SuperAdmin", "JobSeeker", "Agency"],
 };
 

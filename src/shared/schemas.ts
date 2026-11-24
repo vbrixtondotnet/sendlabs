@@ -239,6 +239,28 @@ export const peopleSearchQuery = pageQuery.extend({
 });
 export type PeopleSearchQuery = z.infer<typeof peopleSearchQuery>;
 
+/* ------------------------------ global contacts (SuperAdmin) ------------------------------ */
+
+const gcText = (max: number) => z.string().trim().max(max).default("");
+export const globalContactSchema = z.strictObject({
+  firstName: gcText(100),
+  lastName: gcText(100),
+  title: gcText(200),
+  company: gcText(200),
+  /** Empty, or a valid address. */
+  email: z.string().trim().max(254).default("").refine((v) => v === "" || isValidEmail(normalizeEmail(v)), "Not a valid email address"),
+  employeeCount: z.number().int().min(0).max(100_000_000).nullable().default(null),
+  industry: gcText(100),
+  website: gcText(200),
+  city: gcText(100),
+  state: gcText(100),
+  country: gcText(100),
+});
+export type GlobalContactInput = z.infer<typeof globalContactSchema>;
+
+export const globalContactListQuery = pageQuery.extend({ q: optionalQuery(z.string().trim().max(100)) });
+export type GlobalContactListQuery = z.infer<typeof globalContactListQuery>;
+
 /* ------------------------------ jobs ------------------------------ */
 
 export const JOB_SORTS = ["newest", "oldest"] as const;

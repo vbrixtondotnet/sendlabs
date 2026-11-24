@@ -15,6 +15,7 @@ const NAV: { to: string; label: string; icon: ReactNode; end?: boolean }[] = [
   { to: "/campaigns", label: "Campaigns", icon: <path d="M3 7l9 6 9-6M3 7v10h18V7H3z" /> },
   { to: "/jobs", label: "Jobs", icon: <path d="M3 8h18v11H3V8zM9 8V5h6v3M3 13h18" /> },
   { to: "/templates", label: "Email Templates", icon: <path d="M6 3h9l4 4v14H6V3zM14 3v5h5M9 12h7M9 16h7" /> },
+  { to: "/global-contacts", label: "Global Contacts", icon: <path d="M12 21a9 9 0 100-18 9 9 0 000 18zM3 12h18M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9c-2.5-2.5-3.5-5.5-3.5-9s1-6.5 3.5-9z" /> },
   { to: "/users", label: "User Accounts", icon: <path d="M16 11a4 4 0 10-8 0 4 4 0 008 0zM4 21c0-4 4-6 8-6s8 2 8 6M19 8v6M16 11h6" /> },
   { to: "/settings", label: "Settings", icon: <path d="M12 15a3 3 0 100-6 3 3 0 000 6zM19 12l2-1-2-4-2 1-2-1-1-2h-4l-1 2-2 1-2-1-2 4 2 1v2l-2 1 2 4 2-1 2 1 1 2h4l1-2 2-1 2 1 2-4-2-1v-2z" /> },
 ];

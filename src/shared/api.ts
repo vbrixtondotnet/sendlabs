@@ -129,6 +129,23 @@ export interface ImportRowDto {
   contactId: string | null;
 }
 
+/** One row of the shared people directory, as a SuperAdmin manages it (the email is shown in full). */
+export interface GlobalContactDto {
+  id: string;
+  firstName: string;
+  lastName: string;
+  title: string;
+  company: string;
+  email: string;
+  employeeCount: number | null;
+  industry: string;
+  website: string;
+  city: string;
+  state: string;
+  country: string;
+  updatedAt: string;
+}
+
 /** One account, as a SuperAdmin sees it in User Accounts. Never carries password data. */
 export interface UserAccountDto {
   id: string;
