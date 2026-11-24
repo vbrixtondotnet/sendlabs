@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import type { CampaignStatus, RecipientStatus } from "@shared/types";
 import { ApiClientError } from "@/services/http";
 
@@ -307,15 +307,30 @@ export function Modal({ open, title, onClose, children, footer, wide = false }: 
   );
 }
 
+/** How long the panel takes to slide out (the CSS `--slide-ms`: 300 ms, or 160 ms when the system asks for less motion). The exit waits this long. */
+const SLIDE_EXIT_MS = 300;
+
 /**
  * A panel that slides in from the right edge over the page, for a task that belongs next to what you were looking at (writing an
- * email about a job). Like a dialog it takes focus, keeps Tab inside, closes on Escape or a click on the dimmed page, and gives
- * focus back to what opened it. `footer` stays at the bottom while the body scrolls.
+ * email about a job). The page behind it dims. Setting `open` to false slides it back out, and only then is it removed and
+ * `onExited` called, so the host can forget what it was about. Like a dialog it takes focus, keeps Tab inside, closes on Escape or a
+ * click on the dimmed page (both call `onClose`; the host decides), and gives focus back to what opened it. `footer` stays at the
+ * bottom while the body scrolls.
  */
-export function SlidePanel({ open, title, subtitle, onClose, children, footer }: { open: boolean; title: string; subtitle?: string; onClose: () => void; children: ReactNode; footer?: ReactNode }) {
+export function SlidePanel({ open, title, subtitle, onClose, onExited, children, footer }: { open: boolean; title: string; subtitle?: string; onClose: () => void; onExited?: () => void; children: ReactNode; footer?: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const onExitedRef = useRef(onExited);
+  onExitedRef.current = onExited;
+  // Stays mounted while it slides out.
+  const [mounted, setMounted] = useState(open);
+  useEffect(() => {
+    if (open) { setMounted(true); return; }
+    const t = window.setTimeout(() => { setMounted(false); onExitedRef.current?.(); }, SLIDE_EXIT_MS);
+    return () => window.clearTimeout(t);
+  }, [open]);
+
   useEffect(() => {
     if (!open) return;
     const opener = document.activeElement as HTMLElement | null;
@@ -334,12 +349,12 @@ export function SlidePanel({ open, title, subtitle, onClose, children, footer }:
     // Focus the first field (a field with autoFocus already has it), else the panel itself.
     if (ref.current && !ref.current.contains(document.activeElement)) (focusable().find((el) => /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) ?? ref.current).focus();
     return () => { window.removeEventListener("keydown", onKey); opener?.focus?.(); };
-  }, [open]);
-  if (!open) return null;
+  }, [open, mounted]);
+  if (!open && !mounted) return null;
   return (
-    <div className="fixed inset-0 z-40">
-      <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} aria-hidden="true" />
-      <aside ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} className="slide-in-right absolute inset-y-0 right-0 flex w-full max-w-xl flex-col bg-white shadow-2xl outline-none dark:bg-slate-900">
+    <div className="fixed inset-0 z-40" {...(open ? {} : { "aria-hidden": true, inert: true })}>
+      <div className={`absolute inset-0 bg-slate-900/40 ${open ? "fade-in" : "fade-out"}`} onClick={onClose} aria-hidden="true" />
+      <aside ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} className={`${open ? "slide-in-right" : "slide-out-right"} absolute inset-y-0 right-0 flex w-full max-w-xl flex-col bg-white shadow-2xl outline-none dark:bg-slate-900`}>
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
           <div className="min-w-0">
             <h2 className="truncate text-lg font-medium">{title}</h2>

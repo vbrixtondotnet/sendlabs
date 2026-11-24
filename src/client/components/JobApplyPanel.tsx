@@ -34,7 +34,7 @@ export function draftApplication(job: Pick<JobDto, "title" | "companyName">, you
  * The panel that slides in from the right when you press Apply Now on a job: write a personal email to the employer, attach your
  * resume (PDF or Word), and send it from your organization's connected Gmail account. One recipient; there is no CC or BCC.
  */
-export function JobApplyPanel({ job, onClose }: { job: JobDto; onClose: () => void }) {
+export function JobApplyPanel({ job, open = true, onClose, onExited }: { job: JobDto; /** False slides it out. */ open?: boolean; onClose: () => void; /** Called once it has finished sliding out. */ onExited?: () => void }) {
   const me = useMe();
   const sender = useSender();
   const { canEdit } = useRole();
@@ -89,7 +89,8 @@ export function JobApplyPanel({ job, onClose }: { job: JobDto; onClose: () => vo
 
   return (
     <SlidePanel
-      open
+      open={open}
+      onExited={() => onExited?.()}
       title="Apply by email"
       subtitle={[job.title, job.companyName].filter(Boolean).join(" · ")}
       onClose={onClose}

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
+import { useState } from "react";
 import { describe, expect, it } from "vitest";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { JobApplyPanel, draftApplication } from "../../src/client/components/JobApplyPanel";
 import type { JobDto } from "../../src/shared/api";
 import { ATTACHMENT_ACCEPT, MAX_TOTAL_ATTACHMENT_BYTES } from "../../src/shared/email-attachments";
@@ -123,6 +124,41 @@ describe("the Apply panel", () => {
     fillTo();
     expect(sendButton().disabled).toBe(true);
     expect(screen.getByRole("link", { name: "Settings" }).getAttribute("href")).toBe("/settings");
+  });
+});
+
+describe("the sliding effect", () => {
+  it("slides in from the right with the page dimming behind it, and slides back out before it is removed", async () => {
+    stubApi(base);
+    let exited = 0;
+    let setOpen!: (v: boolean) => void;
+    function Host() {
+      const [o, set] = useState(true);
+      setOpen = set;
+      return <JobApplyPanel job={job} open={o} onClose={() => set(false)} onExited={() => { exited++; }} />;
+    }
+    renderAt(<Host />);
+    const p = panel();
+    expect(p.className).toContain("slide-in-right");
+    expect(p.className).not.toContain("slide-out-right");
+    expect((p.previousElementSibling as HTMLElement).className).toContain("fade-in");
+
+    // Closing (the X, Escape or a click on the dimmed page): the same panel plays its exit and is hidden from assistive technology, then it goes.
+    act(() => setOpen(false));
+    expect(screen.queryByRole("dialog", { name: "Apply by email" })).toBeNull();
+    const leaving = document.querySelector("aside[role=dialog]") as HTMLElement;
+    expect(leaving.className).toContain("slide-out-right");
+    expect((leaving.previousElementSibling as HTMLElement).className).toContain("fade-out");
+    expect(exited).toBe(0);
+    await waitFor(() => expect(document.querySelector("aside[role=dialog]")).toBeNull(), { timeout: 1500 });
+    expect(exited).toBe(1);
+  });
+
+  it("keeps the slide for people whose system asks for less motion (just quicker), instead of switching it off", async () => {
+    const css = (await import("node:fs")).readFileSync("src/client/index.css", "utf8");
+    expect(css).toMatch(/\.slide-in-right \{ animation: slide-in-right var\(--slide-ms\)/);
+    expect(css).toMatch(/prefers-reduced-motion: reduce\) \{ :root \{ --slide-ms: 160ms/);
+    expect(css).not.toMatch(/prefers-reduced-motion[^}]*\{[^}]*animation: none/);
   });
 });
 

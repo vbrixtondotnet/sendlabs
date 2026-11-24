@@ -103,7 +103,8 @@ export function Jobs() {
   const [draft, setDraft] = useState({ keyword: "", category: "", locations: [] as string[], remoteOnly: false, sort: "newest" as JobSort });
   const [keyword, setKeyword] = useState(""); // the keyword that is actually being searched
   const [page, setPage] = useState(1);
-  const [applying, setApplying] = useState<JobDto | null>(null); // the job whose Apply panel is open
+  const [applying, setApplying] = useState<JobDto | null>(null); // the job whose Apply panel is showing (it stays until it has slid out)
+  const [applyOpen, setApplyOpen] = useState(false);
 
   const typed = useDebounced(draft.keyword.trim(), KEYWORD_DEBOUNCE_MS);
   useEffect(() => { setKeyword(typed); setPage(1); }, [typed]);
@@ -197,7 +198,7 @@ export function Jobs() {
               <div className={`min-h-0 flex-1 overflow-y-auto p-4 transition-opacity ${jobs.isPlaceholderData ? "opacity-60" : ""}`} role="list" aria-label="Jobs">
                 <div className="space-y-3">
                   {data.items.map((j) => (
-                    <div role="listitem" key={j.id}><JobCard job={j} onApply={() => setApplying(j)} /></div>
+                    <div role="listitem" key={j.id}><JobCard job={j} onApply={() => { setApplying(j); setApplyOpen(true); }} /></div>
                   ))}
                 </div>
                 {total === 0 && <Empty>{filtered ? "No jobs match your filters. Try removing one." : "No jobs are available right now."}</Empty>}
@@ -218,7 +219,7 @@ export function Jobs() {
           </Card>
         </aside>
       </div>
-      {applying && <JobApplyPanel key={applying.id} job={applying} onClose={() => setApplying(null)} />}
+      {applying && <JobApplyPanel key={applying.id} job={applying} open={applyOpen} onClose={() => setApplyOpen(false)} onExited={() => setApplying(null)} />}
     </FillPage>
   );
 }
