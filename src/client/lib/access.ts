@@ -12,7 +12,7 @@ const EVERYONE_BUT_SUPERADMIN: Role[] = ["JobSeeker", "Agency"];
 /** The first path segment ("" for the start page) mapped to the roles that may open it. */
 const AREAS: Record<string, Role[]> = {
   "": EVERYONE_BUT_SUPERADMIN,
-  imports: EVERYONE_BUT_SUPERADMIN,
+  imports: ["Agency"],
   contacts: EVERYONE_BUT_SUPERADMIN,
   people: EVERYONE_BUT_SUPERADMIN,
   settings: EVERYONE_BUT_SUPERADMIN,

@@ -22,11 +22,10 @@ function JobSeekerOverview() {
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Contacts" value={contacts.data ? fmt(contacts.data.total) : "…"} hint="In the database" />
       </div>
-      <div className="mt-6 grid gap-4 sm:grid-cols-3">
+      <div className="mt-6 grid gap-4 sm:grid-cols-2">
         {[
           { to: "/jobs", title: "Jobs", text: "Search open positions and apply by email." },
           { to: "/people", title: "Search People", text: "Find people and add them to your contacts." },
-          { to: "/imports", title: "Imports", text: "Upload a CSV of contacts." },
         ].map((x) => (
           <Link key={x.to} to={x.to} className="rounded-xl border border-slate-200 p-4 hover:border-brand-400 dark:border-slate-800">
             <p className="font-medium">{x.title}</p>

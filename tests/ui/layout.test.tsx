@@ -42,7 +42,7 @@ describe("what the menu shows for each kind of account", () => {
 
   it("JobSeeker: everything except Campaigns, with Jobs straight after the people tools", async () => {
     await openAs("JobSeeker");
-    expect(nav()).toEqual(["Overview", "Imports", "Contacts", "Search People", "Jobs", "Email Templates", "Settings"]);
+    expect(nav()).toEqual(["Overview", "Contacts", "Search People", "Jobs", "Email Templates", "Settings"]);
     expect(screen.getByRole("link", { name: "Jobs" }).getAttribute("href")).toBe("/jobs");
     expect(screen.queryByRole("link", { name: "New campaign" })).toBeNull();
   });

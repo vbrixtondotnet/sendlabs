@@ -30,7 +30,7 @@ How accounts stay apart (in layers, because a mistake in one must not leak data)
 | Role | Can use |
 |---|---|
 | **SuperAdmin** | **Email Templates** (create, edit and delete the Available Templates), **Global Contacts** (add, edit, delete and search the shared people directory behind Search People; `/api/global-contacts`) and **User Accounts** (add accounts, change a role, disable or enable, set a temporary password, delete an empty account). Nothing else. A SuperAdmin cannot change its own role, disable or delete itself, and the last SuperAdmin cannot lose the role |
-| **JobSeeker** | Everything except **Campaigns** (so no campaigns, test-send allowlist, suppression list or sending settings): Overview, Imports, Contacts, Search People, Jobs, Email Templates (read Available, own My Templates), Settings (company details, Gmail sender) |
+| **JobSeeker** | Everything except **Campaigns** and **Imports** (so no campaigns, no CSV imports, test-send allowlist, suppression list or sending settings): Overview, Contacts, Search People, Jobs, Email Templates (read Available, own My Templates), Settings (company details, Gmail sender) |
 | **Agency** | Everything except **Jobs**: Overview (campaign activity), Imports, Contacts, Search People, Campaigns, Email Templates, Settings |
 
 A call outside the role answers `403 FORBIDDEN`; the menu simply does not show it, and opening its address sends you to your own start page (a SuperAdmin lands on Email Templates). The role is read from the account's database row on every request, never from the request.

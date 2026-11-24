@@ -113,7 +113,7 @@ export function createApp(options: { google?: GoogleOAuth; fetch?: typeof fetch;
   only("/sender", "JobSeeker", "Agency");
   only("/contacts", "JobSeeker", "Agency");
   only("/people", "JobSeeker", "Agency");
-  only("/imports", "JobSeeker", "Agency");
+  only("/imports", "Agency");
   only("/jobs", "JobSeeker");
   only("/campaigns", "Agency");
   only("/test-recipients", "Agency");
