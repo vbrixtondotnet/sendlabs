@@ -307,6 +307,53 @@ export function Modal({ open, title, onClose, children, footer, wide = false }: 
   );
 }
 
+/**
+ * A panel that slides in from the right edge over the page, for a task that belongs next to what you were looking at (writing an
+ * email about a job). Like a dialog it takes focus, keeps Tab inside, closes on Escape or a click on the dimmed page, and gives
+ * focus back to what opened it. `footer` stays at the bottom while the body scrolls.
+ */
+export function SlidePanel({ open, title, subtitle, onClose, children, footer }: { open: boolean; title: string; subtitle?: string; onClose: () => void; children: ReactNode; footer?: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    if (!open) return;
+    const opener = document.activeElement as HTMLElement | null;
+    const focusable = () => [...(ref.current?.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])') ?? [])];
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { onCloseRef.current(); return; }
+      if (e.key !== "Tab") return;
+      const items = focusable();
+      if (items.length === 0) { e.preventDefault(); return; }
+      const first = items[0]!;
+      const last = items[items.length - 1]!;
+      if (e.shiftKey && (document.activeElement === first || document.activeElement === ref.current)) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
+    window.addEventListener("keydown", onKey);
+    // Focus the first field (a field with autoFocus already has it), else the panel itself.
+    if (ref.current && !ref.current.contains(document.activeElement)) (focusable().find((el) => /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) ?? ref.current).focus();
+    return () => { window.removeEventListener("keydown", onKey); opener?.focus?.(); };
+  }, [open]);
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-40">
+      <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} aria-hidden="true" />
+      <aside ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} className="slide-in-right absolute inset-y-0 right-0 flex w-full max-w-xl flex-col bg-white shadow-2xl outline-none dark:bg-slate-900">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+          <div className="min-w-0">
+            <h2 className="truncate text-lg font-medium">{title}</h2>
+            {subtitle && <p className="truncate text-sm text-slate-500 dark:text-slate-400">{subtitle}</p>}
+          </div>
+          <button type="button" onClick={onClose} className="shrink-0 cursor-pointer rounded-full p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Close panel">✕</button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">{children}</div>
+        {footer && <div className="flex shrink-0 items-center justify-end gap-2 border-t border-slate-200 px-5 py-3.5 dark:border-slate-800">{footer}</div>}
+      </aside>
+    </div>
+  );
+}
+
 export function Notice({ tone = "info", title, children }: { tone?: "info" | "warn" | "error" | "good"; title?: string; children: ReactNode }) {
   const tones = {
     info: "border-brand-200 bg-brand-50 text-brand-900 dark:border-brand-900 dark:bg-brand-950/50 dark:text-brand-200",

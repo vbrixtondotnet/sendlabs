@@ -82,3 +82,8 @@ table tbody tr:hover > td { background-color: color-mix(in srgb, var(--color-bra
   .rte-content .merge-tag { background: color-mix(in srgb, var(--color-amber-400) 22%, transparent); color: var(--color-amber-200); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-amber-400) 45%, transparent); }
   .rte-content .merge-tag-unknown { background: color-mix(in srgb, var(--color-rose-400) 22%, transparent); color: var(--color-rose-200); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-rose-400) 45%, transparent); }
 }
+
+/* The right-hand panel (components/ui.tsx SlidePanel) glides in from the edge; people who ask for less motion get it at once. */
+@keyframes slide-in-right { from { transform: translateX(100%); } to { transform: none; } }
+.slide-in-right { animation: slide-in-right 220ms ease-out; }
+@media (prefers-reduced-motion: reduce) { .slide-in-right { animation: none; } }

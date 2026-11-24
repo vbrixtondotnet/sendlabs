@@ -1,3 +1,4 @@
+import { bytesToB64 } from "../../lib/attachments";
 import { ApiError } from "../../lib/errors";
 import type { MimeInspection } from "../../lib/mime";
 import { EmailSendError, type EmailChannel, type EmailProvider, type OutgoingEmail } from "../email-provider";
@@ -54,6 +55,7 @@ export function postmarkPayload(cfg: PostmarkConfig, m: OutgoingEmail) {
           ],
         }
       : {}),
+    ...(m.attachments?.length ? { Attachments: m.attachments.map((a) => ({ Name: a.filename, Content: bytesToB64(a.content), ContentType: a.contentType })) } : {}),
     MessageStream: cfg.messageStream,
     TrackOpens: false,
     TrackLinks: "None",

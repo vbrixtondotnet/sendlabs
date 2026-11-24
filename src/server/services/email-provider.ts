@@ -1,3 +1,4 @@
+import type { EmailAttachment } from "../lib/attachments";
 import type { MimeInspection } from "../lib/mime";
 
 /**
@@ -25,6 +26,8 @@ export interface OutgoingEmail {
   html?: string;
   /** The RFC 8058 unsubscribe link for the headers. Adapters that cannot set custom headers may ignore it. */
   listUnsubscribe?: { url: string; oneClick: boolean };
+  /** Files to attach. Only personally written mail uses them; campaigns never do. */
+  attachments?: EmailAttachment[];
 }
 
 /**
@@ -34,7 +37,7 @@ export interface OutgoingEmail {
  * email can never pick them up by accident. Campaign mail uses the full `OutgoingEmail`, with the unsubscribe headers
  * that Google requires of it.
  */
-export type IndividualEmail = Pick<OutgoingEmail, "fromName" | "to" | "replyTo" | "subject" | "text" | "html">;
+export type IndividualEmail = Pick<OutgoingEmail, "fromName" | "to" | "replyTo" | "subject" | "text" | "html" | "attachments">;
 
 /** Why a send failed, in terms every provider can map its errors onto. */
 export type SendFailureKind =

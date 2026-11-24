@@ -14,7 +14,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-export interface Call { method: string; path: string; query: URLSearchParams; body: any; form?: { file: File; mapping: Record<string, number> } }
+export interface Call { method: string; path: string; query: URLSearchParams; body: any; form?: { file: File; mapping: Record<string, number> }; /** The whole multipart body, for requests that are not a CSV upload. */ formData?: FormData }
 type Reply = { status?: number; json?: unknown } | undefined;
 export type Handler = (call: Call) => Reply;
 
@@ -30,6 +30,7 @@ export function stubApi(handler: Handler) {
       body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
     };
     if (init?.body instanceof FormData) {
+      call.formData = init.body;
       call.form = { file: init.body.get("file") as File, mapping: JSON.parse(String(init.body.get("mapping"))) };
       // a multipart upload must not carry a JSON content-type: the browser sets the boundary itself
       if (init.headers && "content-type" in (init.headers as Record<string, string>)) throw new Error("multipart request had a JSON content-type");

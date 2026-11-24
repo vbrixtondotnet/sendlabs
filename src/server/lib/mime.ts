@@ -1,4 +1,5 @@
 import { isValidEmail } from "../../shared/email";
+import { bytesToB64, type EmailAttachment } from "./attachments";
 
 /**
  * Builds an email as RFC 5322 text, ready for Gmail's `messages.send` (which takes the whole message,
@@ -26,12 +27,15 @@ export interface OutgoingEmail {
    * `url` must be a plain http(s) address: anything else is refused, so it cannot add headers or other addresses.
    */
   listUnsubscribe?: { url: string; oneClick: boolean };
+  /** Files to attach (already checked by `readAttachments`). The message then becomes multipart/mixed: the words, then each file. */
+  attachments?: EmailAttachment[];
 }
 
 const CRLF = "\r\n";
 const enc = new TextEncoder();
 
-const toB64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
+/** Base64 of bytes: in slices (see `bytesToB64`), because a whole message with attachments is millions of bytes. */
+const toB64 = bytesToB64;
 
 /** Control characters, DEL and the Unicode line separators U+2028/U+2029, built from codes so no literal separator sits in source. */
 // eslint-disable-next-line no-control-regex
@@ -76,6 +80,30 @@ function fromDisplay(name: string | undefined, address: string): string {
   return `${/^[\x20-\x7e]*$/.test(clean) ? `"${clean}"` : encodeHeader(clean)} <${address}>`;
 }
 
+/** `filename="a.pdf"` for a plain name; `filename*=UTF-8''...` (RFC 2231), with a plain fallback, for one with other characters. */
+function filenameParams(name: string): { ascii: string; disposition: string } {
+  const clean = cleanHeaderValue(name).replace(/["\\]/g, "");
+  if (/^[ -~]*$/.test(clean)) return { ascii: clean, disposition: `filename="${clean}"` };
+  const ascii = clean.replace(/[^ -~]/g, "_");
+  const encoded = encodeURIComponent(clean).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+  return { ascii, disposition: `filename="${ascii}"; filename*=UTF-8''${encoded}` };
+}
+
+/** One attachment as a MIME part. The type is one of our own (never the browser's claim), the name is cleaned. */
+function attachmentPart(boundary: string, a: EmailAttachment): string {
+  if (!/^[a-z]+\/[a-z0-9.+-]+$/i.test(a.contentType)) throw new Error("Invalid attachment type");
+  const b64 = (bytesToB64(a.content).match(/.{1,76}/g) ?? [""]).join(CRLF);
+  const names = filenameParams(a.filename);
+  return [
+    `--${boundary}`,
+    `Content-Type: ${a.contentType}; name="${names.ascii}"`,
+    `Content-Disposition: attachment; ${names.disposition}`,
+    "Content-Transfer-Encoding: base64",
+    "",
+    b64,
+  ].join(CRLF);
+}
+
 /** Base64 at 76 characters per line, as MIME requires. */
 function base64Body(text: string): string {
   const b64 = toB64(enc.encode(text.replace(/\r?\n/g, CRLF)));
@@ -108,16 +136,25 @@ export function buildMime(msg: OutgoingEmail): string {
   const part = (type: string, body: string) =>
     [`--${boundary}`, `Content-Type: ${type}; charset="UTF-8"`, "Content-Transfer-Encoding: base64", "", base64Body(body)].join(CRLF);
 
-  if (msg.html === undefined) {
-    return [...headers, 'Content-Type: text/plain; charset="UTF-8"', "Content-Transfer-Encoding: base64", "", base64Body(msg.text)].join(CRLF);
-  }
+  // The words: plain text alone, or plain text and HTML as alternatives.
+  const words =
+    msg.html === undefined
+      ? ['Content-Type: text/plain; charset="UTF-8"', "Content-Transfer-Encoding: base64", "", base64Body(msg.text)]
+      : [`Content-Type: multipart/alternative; boundary="${boundary}"`, "", part("text/plain", msg.text), part("text/html", msg.html), `--${boundary}--`, ""];
+
+  const files = msg.attachments ?? [];
+  if (files.length === 0) return [...headers, ...words].join(CRLF);
+
+  // With files, the whole thing is multipart/mixed: the words first, then each file.
+  const mixed = `=_sendrix_mixed_${crypto.randomUUID().replace(/-/g, "")}`;
   return [
     ...headers,
-    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    `Content-Type: multipart/mixed; boundary="${mixed}"`,
     "",
-    part("text/plain", msg.text),
-    part("text/html", msg.html),
-    `--${boundary}--`,
+    `--${mixed}`,
+    ...words,
+    ...files.map((f) => attachmentPart(mixed, f)),
+    `--${mixed}--`,
     "",
   ].join(CRLF);
 }

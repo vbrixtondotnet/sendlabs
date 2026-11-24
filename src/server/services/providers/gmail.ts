@@ -22,8 +22,8 @@ export class GmailProvider implements EmailProvider {
     if (!cfg) throw new ApiError(503, "GMAIL_NOT_CONFIGURED", "Gmail connection is not set up on this server yet");
     const senders = senderRepo(db, tenantId);
     const sender = await senders.get();
-    if (!sender) throw new ApiError(409, "SENDER_REQUIRED", "Connect a Gmail account in Settings before sending a test");
-    if (sender.status !== "Connected") throw new ApiError(409, "SENDER_RECONNECT", "Reconnect your Gmail account in Settings before sending a test");
+    if (!sender) throw new ApiError(409, "SENDER_REQUIRED", "Connect a Gmail account in Settings before sending email");
+    if (sender.status !== "Connected") throw new ApiError(409, "SENDER_RECONNECT", "Reconnect your Gmail account in Settings before sending email");
 
     // A rejected connection is remembered, so Settings asks for it to be redone.
     const reconnect = async () => {
@@ -55,6 +55,7 @@ export class GmailProvider implements EmailProvider {
       text: m.text,
       ...(m.html === undefined ? {} : { html: m.html }),
       ...(m.listUnsubscribe ? { listUnsubscribe: m.listUnsubscribe } : {}),
+      ...(m.attachments?.length ? { attachments: m.attachments } : {}),
     });
 
     return {

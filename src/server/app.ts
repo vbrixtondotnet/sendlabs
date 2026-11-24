@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { MAX_APPLY_FORM_BYTES } from "../shared/email-attachments";
 import { closeDb, connectionStringFor, createDb, type Database } from "./database/client";
 import { ApiError } from "./lib/errors";
 import { errorResponse, formatIssues } from "./lib/http";
@@ -46,7 +47,12 @@ export function createApp(options: { google?: GoogleOAuth; fetch?: typeof fetch;
   const tooLarge = (c: Parameters<typeof errorResponse>[0]) => errorResponse(c, 413, "PAYLOAD_TOO_LARGE", "Request body is too large");
   const jsonLimit = bodyLimit({ maxSize: MAX_JSON_BYTES, onError: tooLarge });
   const uploadLimit = bodyLimit({ maxSize: MAX_UPLOAD_BYTES, onError: tooLarge });
-  app.use("/api/*", (c, next) => (c.req.method === "POST" && c.req.path === "/api/imports" ? uploadLimit(c, next) : jsonLimit(c, next)));
+  const applyLimit = bodyLimit({ maxSize: MAX_APPLY_FORM_BYTES, onError: tooLarge });
+  app.use("/api/*", (c, next) =>
+    c.req.method === "POST" && c.req.path === "/api/imports" ? uploadLimit(c, next)
+    : c.req.method === "POST" && c.req.path === "/api/jobs/apply-email" ? applyLimit(c, next)
+    : jsonLimit(c, next),
+  );
   // A browser always names the page that made a write. If it names any site other than this app, refuse: that is a
   // cross-site request, however it got here. (Requests with no Origin come from scripts and tools, not from a
   // page on another site, and are allowed.)

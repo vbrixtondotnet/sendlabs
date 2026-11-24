@@ -52,6 +52,8 @@ export interface Caller {
   api: (method: string, path: string, body?: unknown, headers?: Record<string, string>) => Promise<Reply>;
   /** POST multipart form data (the CSV upload). */
   upload: (form: FormData) => Promise<Reply>;
+  /** POST multipart form data to any path (an email with attachments). */
+  postForm: (path: string, form: FormData) => Promise<Reply>;
   /** Fetch a raw text response (e.g. a CSV download). */
   text: (path: string) => Promise<{ status: number; body: string; headers: Headers }>;
 }
@@ -135,6 +137,7 @@ export async function startHarness(options: { google?: GoogleOAuth; fetch?: type
       }
       return reply(await fetchWith(override, new Request(`http://localhost${path}`, init)));
     },
+    postForm: async (path, form) => reply(await fetchWith(override, new Request(`http://localhost${path}`, { method: "POST", body: form }))),
     upload: async (form) => reply(await fetchWith(override, new Request("http://localhost/api/imports", { method: "POST", body: form }))),
     text: async (path) => {
       const res = await fetchWith(override, new Request(`http://localhost${path}`));

@@ -272,6 +272,17 @@ export const jobListQuery = pageQuery.extend({
 });
 export type JobListQuery = z.infer<typeof jobListQuery>;
 
+/**
+ * The words of an application email written from the Jobs page: one address, a subject and a message. There is no CC and no BCC
+ * (`strictObject` refuses any other field). The files travel beside these in the same form (see shared/email-attachments.ts).
+ */
+export const jobApplicationEmailSchema = z.strictObject({
+  to: email,
+  subject: text(200).min(1, "Subject is required"),
+  body: z.string().trim().min(1, "Write a message").max(20_000, "Use at most 20,000 characters"),
+});
+export type JobApplicationEmail = z.infer<typeof jobApplicationEmailSchema>;
+
 /** Adding an address to the test-send allowlist. */
 export const testRecipientCreateSchema = z.strictObject({ email });
 export type TestRecipientCreate = z.infer<typeof testRecipientCreateSchema>;

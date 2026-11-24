@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import type { JobCategoryDto, JobsPageDto } from "@shared/api";
 import type { JobSort } from "@shared/schemas";
 import { api, withQuery } from "./http";
@@ -57,5 +57,27 @@ export function useJobLocations() {
     queryFn: ({ signal }) => api<{ items: string[] }>("GET", "/api/jobs/locations", undefined, signal),
     staleTime: 10 * 60_000,
     retry: false,
+  });
+}
+
+/** The words of an application email, and the files that go with it. */
+export interface ApplicationEmailInput {
+  to: string;
+  subject: string;
+  body: string;
+  attachments: File[];
+}
+
+/** Sends an application email from the Apply panel: one recipient, no CC or BCC, as multipart form data (the files travel as they are). */
+export function useSendApplicationEmail() {
+  return useMutation({
+    mutationFn: (input: ApplicationEmailInput) => {
+      const form = new FormData();
+      form.append("to", input.to);
+      form.append("subject", input.subject);
+      form.append("body", input.body);
+      for (const f of input.attachments) form.append("attachments", f, f.name);
+      return api<{ sent: boolean; attachments: number }>("POST", "/api/jobs/apply-email", form);
+    },
   });
 }

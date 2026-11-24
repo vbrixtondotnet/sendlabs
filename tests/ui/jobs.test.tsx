@@ -6,7 +6,7 @@ import { HIRING_COMPANIES } from "../../src/client/data/hiringCompanies";
 import { postedAgo } from "../../src/client/lib/jobs";
 import { safeApplyUrl } from "../../src/shared/jobs";
 import type { JobDto } from "../../src/shared/api";
-import { page, renderAt, stubApi, type Call, type Handler } from "./harness";
+import { meDto, page, renderAt, senderStatus, stubApi, type Call, type Handler } from "./harness";
 
 const job = (over: Partial<JobDto> = {}): JobDto => ({
   remote: true,
@@ -73,19 +73,25 @@ describe("Jobs page: the live list", () => {
     expect(card.querySelector("img")).toBeNull(); // no logo
   });
 
-  it("Apply Now opens the job at Remotive in a new tab, safely; a missing or foreign link cannot be applied to", async () => {
-    stubApi(({ path }) => side(path) ?? (path === "/api/jobs" ? reply([job(), job({ id: "2", title: "No link", url: "" }), job({ id: "3", title: "Foreign", url: "https://evil.example/remotive.com" })]) : undefined));
+  it("Apply Now opens the email panel instead of the job's link", async () => {
+    stubApi(({ path }) => side(path) ?? (path === "/api/me" ? { json: meDto() } : path === "/api/sender" ? { json: senderStatus() } : path === "/api/jobs" ? reply([job()]) : undefined));
     renderAt(<Jobs />);
-    const apply = await screen.findByRole("link", { name: "Apply now: Senior .NET Developer" });
+    const apply = await screen.findByRole("button", { name: "Apply now: Senior .NET Developer" });
+    expect(apply.tagName).toBe("BUTTON"); // not a link: pressing it does not leave the page
     expect(apply.textContent).toBe("Apply Now");
-    expect(apply.getAttribute("href")).toBe("https://remotive.com/remote-jobs/software-dev/job-1");
-    expect(apply.getAttribute("target")).toBe("_blank");
-    expect(apply.getAttribute("rel")).toContain("noopener");
-    expect((screen.getByRole("button", { name: "Apply now: No link" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole("button", { name: "Apply now: Foreign" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(apply);
+    const panel = await screen.findByRole("dialog", { name: "Apply by email" });
+    expect(within(panel).getByText("Senior .NET Developer · Acme Corp")).toBeTruthy();
+    fireEvent.click(within(panel).getByRole("button", { name: "Close panel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("checks a job's link before it can be drawn: only https on a job source's own site", () => {
     expect(safeApplyUrl("javascript:alert(1)")).toBe("");
     expect(safeApplyUrl("http://remotive.com/x")).toBe("");
     expect(safeApplyUrl("https://jobs.remotive.com/x")).toBe("https://jobs.remotive.com/x");
+    expect(safeApplyUrl("https://evil.example/remotive.com")).toBe("");
   });
 });
 
@@ -94,15 +100,15 @@ describe("Jobs page: both sources in one list", () => {
   const remoteArb = job({ id: "arbeitnow:r", title: "Sales Lead", companyName: "Gamma", companyLogo: "", remote: true, location: "Paris", salary: "", skills: ["Sales"], source: "Arbeitnow", url: "https://www.arbeitnow.com/jobs/companies/gamma/r" });
   const mixed: Handler = ({ path }) => side(path) ?? (path === "/api/jobs" ? reply([job(), berlin, remoteArb]) : undefined);
 
-  it("shows Remotive and Arbeitnow jobs as the same kind of card; Remotive's credits and links Remotive, Arbeitnow's links back through Apply Now", async () => {
+  it("shows Remotive and Arbeitnow jobs as the same kind of card; Remotive's credits and links Remotive, Arbeitnow's has no link on the card", async () => {
     stubApi(mixed);
     renderAt(<Jobs />);
     const rem = await screen.findByRole("article", { name: "Senior .NET Developer, Acme Corp" });
     const arbCard = screen.getByRole("article", { name: "Backend Engineer, Tulip" });
     expect(within(rem).getByRole("link", { name: "Remotive" }).getAttribute("href")).toBe("https://remotive.com/remote-jobs/software-dev/job-1");
-    expect(within(arbCard).queryByText(/via/)).toBeNull(); // Arbeitnow jobs carry no "via" line; Apply Now is the link back
-    expect(within(arbCard).queryByRole("link", { name: "Arbeitnow" })).toBeNull();
-    expect(within(arbCard).getByRole("link", { name: "Apply now: Backend Engineer" }).getAttribute("href")).toBe("https://www.arbeitnow.com/jobs/companies/tulip/berlin");
+    expect(within(arbCard).queryByText(/via/)).toBeNull(); // Arbeitnow jobs carry no "via" line
+    expect(within(arbCard).queryByRole("link")).toBeNull();
+    expect(within(arbCard).getByRole("button", { name: "Apply now: Backend Engineer" })).toBeTruthy();
     expect(screen.getByText("Showing 3 jobs")).toBeTruthy();
   });
 

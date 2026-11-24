@@ -1,9 +1,13 @@
 import { Hono } from "hono";
-import { jobListQuery } from "../../shared/schemas";
+import { jobApplicationEmailSchema, jobListQuery } from "../../shared/schemas";
 import type { AppEnv } from "../app";
 import { ApiError } from "../lib/errors";
 import { JobSourceError } from "../lib/live-fetch";
+import { readAttachments } from "../lib/attachments";
 import { parseQuery } from "../lib/http";
+import { requireAccess } from "../middleware/auth";
+import { emailProviderForRequest } from "../services/email-providers";
+import { sendApplicationEmail } from "../services/job-application-email";
 import { JobSearchService, jobSources } from "../services/job-search";
 
 /**
@@ -38,3 +42,27 @@ jobRoutes.get("/categories", async (c) => {
   return c.json({ items: items.map(({ value, label }) => ({ value, label })) });
 });
 jobRoutes.get("/locations", async (c) => c.json({ items: await viaSources(() => service(c).locations(c.req.raw.signal)) }));
+
+/**
+ * Sends a personally written application email, with PDF / Word attachments, from the Apply panel. One recipient, no CC or BCC.
+ * People who can only look (Viewers) cannot send, and a SuperAdministrator has no organization to send as.
+ */
+jobRoutes.post("/apply-email", requireAccess("Administrator", "Campaign Manager"), async (c) => {
+  let form: FormData;
+  try {
+    form = await c.req.formData();
+  } catch {
+    throw new ApiError(400, "BAD_REQUEST", "Send the email as a form");
+  }
+  // Only these fields exist. There is no CC or BCC: a form that carries one is refused, not quietly sent without it.
+  const unknown = [...new Set([...form.keys()])].filter((k) => !["to", "subject", "body", "attachments"].includes(k));
+  if (unknown.length > 0) throw new ApiError(400, "VALIDATION_ERROR", "Validation failed", unknown.map((k) => ({ path: k, message: "This field is not accepted" })));
+  const text = (name: string) => (typeof form.get(name) === "string" ? (form.get(name) as string) : "");
+  const fields = jobApplicationEmailSchema.parse({ to: text("to"), subject: text("subject"), body: text("body") });
+  const files = form.getAll("attachments").filter((v): v is File => typeof v !== "string" && v.size >= 0 && v.name !== "");
+  const attachments = await readAttachments(files);
+
+  const actor = c.get("actor");
+  await sendApplicationEmail({ email: emailProviderForRequest(c), tenantId: actor.tenantId, userId: actor.userId, fallbackFromName: actor.displayName || actor.email }, fields, attachments);
+  return c.json({ sent: true, attachments: attachments.length });
+});
