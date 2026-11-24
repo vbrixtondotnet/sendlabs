@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { JobDto, JobsPageDto } from "@shared/api";
-import { ARBEITNOW, REMOTIVE, safeApplyUrl } from "@shared/jobs";
+import { REMOTIVE, safeApplyUrl } from "@shared/jobs";
 import { JOB_SORTS, type JobSort } from "@shared/schemas";
 import { Button, Card, Empty, ErrorNotice, Field, FillPage, Notice, PageHeader, Pagination, Select, TextInput } from "@/components/ui";
 import { MultiSelect } from "@/components/MultiSelect";
@@ -172,12 +172,6 @@ export function Jobs() {
                   {JOB_SORTS.map((s) => <option key={s} value={s}>{SORT_LABEL[s]}</option>)}
                 </Select>
               </label>
-              <span>
-                Jobs from{" "}
-                <a href={REMOTIVE.homepage} target="_blank" rel="noopener noreferrer" className="text-brand-700 hover:underline dark:text-brand-300">{REMOTIVE.name}</a>
-                {" and "}
-                <a href={ARBEITNOW.homepage} target="_blank" rel="noopener noreferrer" className="text-brand-700 hover:underline dark:text-brand-300">{ARBEITNOW.name}</a>
-              </span>
             </div>
           </div>
 

@@ -61,9 +61,7 @@ describe("Jobs page: the live list", () => {
     expect(within(card).getByText("c# · .net 8 · sql server · azure")).toBeTruthy();
     expect(within(card).getByText(/Posted 2 hours ago/)).toBeTruthy();
     expect(within(card).getByRole("link", { name: "Remotive" }).getAttribute("href")).toBe("https://remotive.com/remote-jobs/software-dev/job-1");
-    const header = screen.getByText(/^Jobs from/);
-    expect(within(header).getByRole("link", { name: "Remotive" }).getAttribute("href")).toBe("https://remotive.com");
-    expect(within(header).getByRole("link", { name: "Arbeitnow" }).getAttribute("href")).toBe("https://www.arbeitnow.com");
+    expect(screen.queryByText(/Jobs from/)).toBeNull(); // no source line in the header: each card names and links its own source
   });
 
   it("copes with a missing logo, salary, location and link", async () => {
