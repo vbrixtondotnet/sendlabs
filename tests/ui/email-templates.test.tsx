@@ -137,13 +137,13 @@ describe("paging", () => {
 });
 
 describe("Available Templates tab", () => {
-  it("lists the system templates, marked System, with Preview and Add to My Templates", async () => {
+  it("lists the system templates, marked System, with View and Add to My Templates", async () => {
     open();
     await screen.findByText("Construction", { selector: "td" });
     expect(screen.getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Template", "Type", "Actions"]);
     for (const name of ["Automotive Services", "Construction"]) {
       expect(within(row(name)).getByText("System")).toBeTruthy();
-      expect(items(name)).toEqual(["Preview", "Add to My Templates"]);
+      expect(items(name)).toEqual(["View", "Add to My Templates"]);
     }
   });
 
@@ -151,7 +151,7 @@ describe("Available Templates tab", () => {
     open();
     await screen.findByText("Construction", { selector: "td" });
     await waitFor(() => expect(within(row("Digital Marketing")).queryByText("In My Templates")).not.toBeNull());
-    expect(items("Digital Marketing")).toEqual(["Preview"]);
+    expect(items("Digital Marketing")).toEqual(["View"]);
     expect(within(row("Construction")).queryByText("In My Templates")).toBeNull();
   });
 
@@ -163,7 +163,7 @@ describe("Available Templates tab", () => {
     expect(writes(calls)).toHaveLength(1);
     expect(writes(calls)[0]).toMatchObject({ method: "POST", path: "/api/email-templates/available/construction/add" });
     await waitFor(() => expect(within(row("Construction")).queryByText("In My Templates")).not.toBeNull());
-    expect(items("Construction")).toEqual(["Preview"]);
+    expect(items("Construction")).toEqual(["View"]);
     expect(items("Automotive Services")).toContain("Add to My Templates"); // the others are untouched
   });
 
@@ -202,13 +202,13 @@ describe("My Templates tab", () => {
     return calls;
   };
 
-  it("lists the account's templates, saying where each came from, with Preview and Remove", async () => {
+  it("lists the account's templates, saying where each came from, with View and Remove", async () => {
     await openMine();
     await screen.findByText("Our own pitch", { selector: "td" });
     expect(screen.getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Template", "Source", "Added", "Actions"]);
     expect(within(row("Digital Marketing")).getByText("From Available")).toBeTruthy();
     expect(within(row("Our own pitch")).getByText("Created by you")).toBeTruthy();
-    expect(items("Our own pitch")).toEqual(["Preview", "Edit", "Remove"]);
+    expect(items("Our own pitch")).toEqual(["View", "Edit", "Remove"]);
   });
 
   it("removes one after asking, and it leaves the list", async () => {
@@ -275,7 +275,7 @@ describe("Previewing a template", () => {
   it("shows an available template filled in with a sample contact, in a sandboxed frame", async () => {
     open();
     await screen.findByText("Construction", { selector: "td" });
-    choose("Construction", "Preview Construction");
+    choose("Construction", "View Construction");
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("Construction", { selector: "h2" })).toBeTruthy();
     const frame = (await within(dialog).findByTitle("Template preview")) as HTMLIFrameElement;
@@ -292,17 +292,17 @@ describe("Previewing a template", () => {
     await screen.findByRole("tab", { name: "My Templates" });
     tab("My Templates");
     await screen.findByText("Our own pitch", { selector: "td" });
-    choose("Our own pitch", "Preview Our own pitch");
+    choose("Our own pitch", "View Our own pitch");
     expect(((await screen.findByTitle("Template preview")) as HTMLIFrameElement).getAttribute("srcdoc")).toContain("(mine Our own pitch)");
   });
 
   it("closes, and opens another", async () => {
     open();
     await screen.findByText("Construction", { selector: "td" });
-    choose("Construction", "Preview Construction");
+    choose("Construction", "View Construction");
     fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("dialog")).toBeNull();
-    choose("Automotive Services", "Preview Automotive Services");
+    choose("Automotive Services", "View Automotive Services");
     expect(((await screen.findByTitle("Template preview")) as HTMLIFrameElement).getAttribute("srcdoc")).toContain("(system Automotive Services)");
   });
 });

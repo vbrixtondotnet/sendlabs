@@ -43,8 +43,7 @@ export function EmailTemplates() {
   if (role === "SuperAdmin") {
     return (
       <FillPage>
-        <AvailableAdmin onPreview={preview.show} />
-        {previewPanel}
+        <AvailableAdmin />
       </FillPage>
     );
   }
@@ -105,7 +104,7 @@ function AvailableTab({ onPreview }: { onPreview: (t: TemplateTarget) => void })
                     <RowActions
                       label={`Actions for ${t.name}`}
                       actions={[
-                        { label: "Preview", icon: "preview", ariaLabel: `Preview ${t.name}`, onSelect: () => onPreview({ kind: "available", id: t.id, name: t.name }) },
+                        { label: "View", icon: "preview", ariaLabel: `View ${t.name}`, onSelect: () => onPreview({ kind: "available", id: t.id, name: t.name }) },
                         ...(!added.has(t.id)
                           ? [{ label: "Add to My Templates", icon: "add", ariaLabel: `Add ${t.name} to My Templates`, disabled: add.isPending && add.variables === t.id, onSelect: () => void addToMine(t.id, t.name) }]
                           : []),
@@ -124,7 +123,8 @@ function AvailableTab({ onPreview }: { onPreview: (t: TemplateTarget) => void })
 }
 
 /** The SuperAdmin's view: create, edit and delete the Available Templates every account can copy from. */
-function AvailableAdmin({ onPreview }: { onPreview: (t: TemplateTarget) => void }) {
+function AvailableAdmin() {
+  const view = usePanel<TemplateTarget>();
   const { toast } = useToast();
   const available = useAvailableTemplates();
   const create = useCreateAvailableTemplate();
@@ -171,8 +171,7 @@ function AvailableAdmin({ onPreview }: { onPreview: (t: TemplateTarget) => void 
                     <RowActions
                       label={`Actions for ${t.name}`}
                       actions={[
-                        { label: "Preview", icon: "preview", ariaLabel: `Preview ${t.name}`, onSelect: () => onPreview({ kind: "available", id: t.id, name: t.name }) },
-                        { label: "Edit", icon: "edit", ariaLabel: `Edit ${t.name}`, onSelect: () => form.show(t) },
+                        { label: "View", icon: "preview", ariaLabel: `View ${t.name}`, onSelect: () => view.show({ kind: "available", id: t.id, name: t.name }) },
                         { label: "Delete", icon: "delete", ariaLabel: `Delete ${t.name}`, danger: true, onSelect: () => setRemoving(t) },
                       ] as RowAction[]}
                     />
@@ -184,6 +183,20 @@ function AvailableAdmin({ onPreview }: { onPreview: (t: TemplateTarget) => void 
         )}
         {paged.total > PAGE_SIZE && <Pagination page={paged.page} pageCount={paged.pageCount} total={paged.total} pageSize={PAGE_SIZE} onPage={paged.setPage} />}
       </TableCard>
+      {view.item && (
+        <TemplatePreviewPanel
+          key={`${view.item.id}-${view.nonce}`}
+          target={view.item}
+          open={view.open}
+          onClose={view.close}
+          onExited={view.onExited}
+          onEdit={() => {
+            const t = items.find((x) => x.id === view.item?.id);
+            view.close();
+            if (t) form.show(t);
+          }}
+        />
+      )}
       {form.item === "new" && (
         <TemplateEditPanel
           key={`new-available-${form.nonce}`}
@@ -302,7 +315,7 @@ function MyTemplatesTab({ onPreview }: { onPreview: (t: TemplateTarget) => void 
                     <RowActions
                       label={`Actions for ${t.name}`}
                       actions={[
-                        { label: "Preview", icon: "preview", ariaLabel: `Preview ${t.name}`, onSelect: () => onPreview({ kind: "mine", id: t.id, name: t.name }) },
+                        { label: "View", icon: "preview", ariaLabel: `View ${t.name}`, onSelect: () => onPreview({ kind: "mine", id: t.id, name: t.name }) },
                         { label: "Edit", icon: "edit", ariaLabel: `Edit ${t.name}`, onSelect: () => form.show(t) },
                         { label: "Remove", icon: "delete", ariaLabel: `Remove ${t.name} from My Templates`, danger: true, onSelect: () => setRemoving(t) },
                       ] as RowAction[]}

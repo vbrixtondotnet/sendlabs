@@ -7,8 +7,8 @@ import { useMe } from "@/services/me";
 /** What is being previewed: one of My Templates or an Available one, both by id. */
 export type TemplateTarget = { kind: "mine" | "available"; id: string; name: string };
 
-/** The message as a recipient would see it, filled in with a sample contact, in a SlidePanel. Only the body: the signature, footer and postal address are added when a campaign is sent. */
-export function TemplatePreviewPanel({ target, open, onClose, onExited }: { target: TemplateTarget; open: boolean; onClose: () => void; onExited?: () => void }) {
+/** View a template (the message as a recipient would see it, filled in with a sample contact), in a SlidePanel. Only the body: the signature, footer and postal address are added when a campaign is sent. */
+export function TemplatePreviewPanel({ target, open, onClose, onExited, onEdit }: { target: TemplateTarget; open: boolean; onClose: () => void; onExited?: () => void; /** Shows an Edit button in the footer (for someone who may change this template). */ onEdit?: () => void }) {
   const mine = useEmailTemplate(target.kind === "mine" ? target.id : null);
   const available = useAvailableTemplate(target.kind === "available" ? target.id : null);
   const full = target.kind === "available" ? available : mine;
@@ -19,7 +19,7 @@ export function TemplatePreviewPanel({ target, open, onClose, onExited }: { targ
     ? `<!doctype html><html><body style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#222;padding:16px">${composeEmailHtml({ body: full.data.htmlBody, signature: "", companyName: sender, postalAddress: "", unsubscribeFooter: false }, SAMPLE_CONTACT)}</body></html>`
     : "";
   return (
-    <SlidePanel open={open} onExited={() => onExited?.()} title={target.name} subtitle="Preview" size="lg" onClose={onClose} footer={<Button onClick={onClose}>Close</Button>}>
+    <SlidePanel open={open} onExited={() => onExited?.()} title={target.name} subtitle="View" size="lg" onClose={onClose} footer={<>{onEdit && <Button variant="primary" onClick={onEdit}>Edit</Button>}<Button onClick={onClose}>Close</Button></>}>
       {full.isError ? (
         <ErrorNotice error={full.error} onRetry={() => void full.refetch()} />
       ) : full.isPending ? (
