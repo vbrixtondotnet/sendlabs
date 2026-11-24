@@ -14,4 +14,3 @@ export * from "./email-templates";
 export * from "./system-templates";
 export * from "./global-contacts";
 export * from "./credit-transactions";
-export * from "./jobs";

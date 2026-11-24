@@ -1,32 +1,36 @@
 import { Hono } from "hono";
 import { jobListQuery } from "../../shared/schemas";
 import type { AppEnv } from "../app";
-import { jobsRepo } from "../database/repositories/jobs";
 import { ApiError } from "../lib/errors";
 import { parseQuery } from "../lib/http";
-import { requireAccess } from "../middleware/auth";
 import { RemotiveError, RemotiveJobService } from "../services/remotive-jobs";
 
 /**
- * Jobs, from the shared `global_jobs` table (Remotive today). Reading is open to every signed-in role: the jobs belong to the
- * platform, not to a tenant. The browser never talks to Remotive; only `POST /sync`, for the SuperAdministrator, and the scheduled
- * run do, through RemotiveJobService.
+ * Jobs, live from Remotive: nothing is stored. The browser asks us, we ask Remotive (RemotiveJobService: timeout, short in-memory
+ * cache, one shared request for identical searches, an hourly cap), filter / sort / page the answer and send it back. Open to every
+ * signed-in role: the jobs belong to no tenant. The request's own abort signal is passed on, so a search the page has already
+ * replaced stops being waited for.
  */
 export const jobRoutes = new Hono<AppEnv>();
 
-jobRoutes.get("/", async (c) => c.json(await jobsRepo(c.get("db")).search(parseQuery(c, jobListQuery))));
-jobRoutes.get("/categories", async (c) => c.json({ items: await jobsRepo(c.get("db")).categories() }));
-jobRoutes.get("/locations", async (c) => c.json({ items: await jobsRepo(c.get("db")).locations() }));
-jobRoutes.get("/companies", async (c) => c.json({ items: await jobsRepo(c.get("db")).companies() }));
+const service = (c: { get: (k: "fetch") => typeof fetch }) => new RemotiveJobService({ fetch: c.get("fetch") });
 
-/** Pulls the latest jobs now. Remotive asks for about 4 fetches a day, so this is for the platform owner, not for every user. */
-jobRoutes.post("/sync", requireAccess("SuperAdministrator"), async (c) => {
+/** A Remotive failure is a gateway problem, not a bug in ours: say so, in words the page can show. */
+async function viaRemotive<T>(work: () => Promise<T>): Promise<T> {
   try {
-    return c.json(await new RemotiveJobService({ db: c.get("db"), fetch: c.get("fetch") }).sync());
+    return await work();
   } catch (e) {
     if (e instanceof RemotiveError) {
-      throw new ApiError(e.kind === "timeout" ? 504 : 502, "JOB_SOURCE_UNAVAILABLE", e.message);
+      const status = e.kind === "timeout" ? 504 : e.kind === "rate_limit" ? 429 : e.kind === "aborted" ? 408 : 502;
+      throw new ApiError(status, e.kind === "rate_limit" ? "JOB_SOURCE_BUSY" : "JOB_SOURCE_UNAVAILABLE", e.message);
     }
     throw e;
   }
+}
+
+jobRoutes.get("/", async (c) => {
+  const q = parseQuery(c, jobListQuery);
+  return c.json(await viaRemotive(() => service(c).list(q, c.req.raw.signal)));
 });
+jobRoutes.get("/categories", async (c) => c.json({ items: await viaRemotive(() => service(c).categories(c.req.raw.signal)) }));
+jobRoutes.get("/locations", async (c) => c.json({ items: await viaRemotive(() => service(c).locations(c.req.raw.signal)) }));

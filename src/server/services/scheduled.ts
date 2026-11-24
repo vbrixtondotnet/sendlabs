@@ -3,7 +3,6 @@ import { unsubscribeConfig } from "../lib/unsubscribe";
 import { runCampaignTick, type TickDeps, type TickResult } from "./campaign-sender";
 import { emailProviderFor } from "./email-providers";
 import { GoogleOAuth, googleConfig } from "./google-oauth";
-import { RemotiveJobService } from "./remotive-jobs";
 
 /** What the sender needs, built from the Worker's environment the same way a request builds it. */
 export function tickDepsFor(env: Env, parts: { db?: Database; google?: GoogleOAuth; fetch?: typeof fetch } = {}): TickDeps {
@@ -13,18 +12,6 @@ export function tickDepsFor(env: Env, parts: { db?: Database; google?: GoogleOAu
   return { db, email, unsubscribe: unsubscribeConfig(env, cfg) };
 }
 
-/**
- * Keeps the Jobs list fresh: synchronizes with Remotive when the last try is more than 6 hours old (Remotive asks for about 4 a day),
- * and otherwise costs one small query. Never throws: a failing job feed must not disturb the campaign sender.
- */
-async function syncJobsIfDue(db: Database): Promise<void> {
-  try {
-    await new RemotiveJobService({ db, fetch: (...a) => fetch(...a) }).syncIfDue();
-  } catch {
-    // already logged by the service, and the schedule waits before it tries again
-  }
-}
-
 /** The Cron Trigger: runs one pass of the campaign sender. Never throws, so one bad run cannot disable the schedule. */
 export async function runScheduled(env: Env): Promise<TickResult | null> {
   let deps: ReturnType<typeof tickDepsFor> | null = null;
@@ -32,7 +19,6 @@ export async function runScheduled(env: Env): Promise<TickResult | null> {
     deps = tickDepsFor(env);
     const result = await runCampaignTick(deps);
     if (result.campaigns > 0) console.log(JSON.stringify({ level: "info", event: "tick", ...result }));
-    await syncJobsIfDue(deps.db);
     return result;
   } catch (e) {
     console.error(JSON.stringify({ level: "error", event: "tick_failed", kind: e instanceof Error ? e.name : "unknown" }));

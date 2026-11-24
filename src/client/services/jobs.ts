@@ -1,37 +1,61 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import type { JobCompanyDto, JobDto, Page } from "@shared/api";
+import type { JobCategoryDto, JobDto, Page } from "@shared/api";
+import type { JobSort } from "@shared/schemas";
 import { api, withQuery } from "./http";
 
 export interface JobFilters {
   keyword: string;
-  categories: string[];
+  /** Remotive's category value, or "" for all. */
+  category: string;
   locations: string[];
+  remoteOnly: boolean;
+  sort: JobSort;
 }
 
-/** One page of jobs. The server filters and pages: only the requested page is fetched. Lists are sent comma-separated. */
+/**
+ * One page of live jobs. Our server asks Remotive (the browser never does), filters, sorts and pages them. React Query hands the
+ * request an abort signal, so a search that has already been replaced is cancelled instead of finished.
+ */
 export function useJobs(filters: JobFilters, page: number, pageSize: number) {
   return useQuery({
     queryKey: ["jobs", filters, page, pageSize],
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       api<Page<JobDto>>(
         "GET",
-        withQuery("/api/jobs", { page, pageSize, keyword: filters.keyword.trim(), categories: filters.categories.join(","), locations: filters.locations.join(",") }),
+        withQuery("/api/jobs", {
+          page,
+          pageSize,
+          keyword: filters.keyword,
+          category: filters.category,
+          locations: filters.locations.join(","),
+          remoteOnly: filters.remoteOnly ? "true" : undefined,
+          sort: filters.sort,
+        }),
+        undefined,
+        signal,
       ),
     placeholderData: keepPreviousData,
+    staleTime: 60_000,
+    retry: false, // a failure is shown with a Try again button; retrying by itself would only hit Remotive more
   });
 }
 
-/** The choices of the Category filter. */
+/** The choices of the Category filter (Remotive's own list). */
 export function useJobCategories() {
-  return useQuery({ queryKey: ["jobs", "categories"], queryFn: () => api<{ items: string[] }>("GET", "/api/jobs/categories"), staleTime: 5 * 60_000 });
+  return useQuery({
+    queryKey: ["jobs", "categories"],
+    queryFn: ({ signal }) => api<{ items: JobCategoryDto[] }>("GET", "/api/jobs/categories", undefined, signal),
+    staleTime: 60 * 60_000,
+    retry: false,
+  });
 }
 
-/** The choices of the Location filter. */
+/** The choices of the Location filter: the places named by the current jobs. */
 export function useJobLocations() {
-  return useQuery({ queryKey: ["jobs", "locations"], queryFn: () => api<{ items: string[] }>("GET", "/api/jobs/locations"), staleTime: 5 * 60_000 });
-}
-
-/** The companies with jobs listed (the Hiring Companies panel). */
-export function useJobCompanies() {
-  return useQuery({ queryKey: ["jobs", "companies"], queryFn: () => api<{ items: JobCompanyDto[] }>("GET", "/api/jobs/companies"), staleTime: 5 * 60_000 });
+  return useQuery({
+    queryKey: ["jobs", "locations"],
+    queryFn: ({ signal }) => api<{ items: string[] }>("GET", "/api/jobs/locations", undefined, signal),
+    staleTime: 10 * 60_000,
+    retry: false,
+  });
 }

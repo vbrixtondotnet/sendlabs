@@ -36,13 +36,13 @@ export function withQuery(path: string, params?: QueryParams): string {
 }
 
 /** Thin typed wrapper over fetch. Same-origin, JSON in and out. */
-export async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
+export async function api<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   let res: Response;
   try {
     // FormData (the CSV upload) must be sent as-is: the browser sets the multipart boundary itself.
     const init: RequestInit =
       body === undefined ? { method } : body instanceof FormData ? { method, body } : { method, body: JSON.stringify(body), headers: { "content-type": "application/json" } };
-    res = await fetch(path, init);
+    res = await fetch(path, signal ? { ...init, signal } : init);
   } catch {
     throw new ApiClientError(0, "NETWORK", "Could not reach the server. Check that the API is running.");
   }

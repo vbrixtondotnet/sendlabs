@@ -253,10 +253,22 @@ export type PeopleSearchQuery = z.infer<typeof peopleSearchQuery>;
 
 /* ------------------------------ jobs ------------------------------ */
 
+export const JOB_SORTS = ["newest", "oldest"] as const;
+export type JobSort = (typeof JOB_SORTS)[number];
+
+/** `?remoteOnly=true` (or 1 / on) is true; anything else, including absent, is false. */
+const queryFlag = z.preprocess((v) => v === "true" || v === "1" || v === "on", z.boolean());
+
 export const jobListQuery = pageQuery.extend({
+  /** Sent to Remotive as `search`. */
   keyword: optionalQuery(z.string().trim().max(100)),
-  categories: csvList(30),
+  /** Sent to Remotive as `category` (one: its API takes one). */
+  category: optionalQuery(z.string().trim().max(60)),
+  /** Applied here, after Remotive answers: it has no location parameter. */
   locations: csvList(30),
+  /** Only jobs open to candidates anywhere. Applied here. */
+  remoteOnly: queryFlag.default(false),
+  sort: z.enum(JOB_SORTS).default("newest"),
 });
 export type JobListQuery = z.infer<typeof jobListQuery>;
 
