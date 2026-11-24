@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { SENDER_CONNECT_ERRORS, type SenderConnectError } from "@shared/types";
 import { Badge, Button, Card, CardHeader, Empty, ErrorNotice, Field, LoadingRows, Modal, Notice, PageHeader, Pagination, Select, TextArea, TextInput, fmtDate } from "@/components/ui";
+import { useRole } from "@/hooks/useRole";
 import { useToast } from "@/hooks/useToast";
 import { goTo } from "@/lib/navigate";
 import { EMAIL_FOOTER_ENABLED, LIST_UNSUBSCRIBE_HEADERS_ENABLED } from "@/lib/merge";
@@ -106,6 +107,7 @@ function SenderNameForm({ current }: { current: string }) {
 }
 
 function SenderSection() {
+  const { role } = useRole();
   const { toast } = useToast();
   const sender = useSender();
   const connect = useConnectGmail();
@@ -219,7 +221,7 @@ function SenderSection() {
         )}
       </Card>
 
-      <TestAllowlistCard />
+      {role !== "JobSeeker" && <TestAllowlistCard />}
 
       <div className="lg:col-span-2"><Notice tone="info">Sendrix stores a secure, encrypted key that lets it send on your behalf. It never sees your Google password, and you can disconnect at any time here or at myaccount.google.com/permissions.</Notice></div>
 
@@ -381,15 +383,20 @@ function ComplianceCard() {
 
 /** Everything about how email goes out, in one place: the Gmail sender and test sends, unsubscribe rules, limits, suppression, retention. */
 function EmailServiceTab() {
+  const { role } = useRole();
   // Two equal columns, so every section is the same width: Gmail sender | test-send allowlist, then
   // unsubscribe and compliance | sending limits, then suppression list | data retention. One column on a phone.
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <SenderSection />
-      <ComplianceCard />
-      <SendingLimitsCard />
-      <SuppressionCard />
-      <DataRetentionCard />
+      {role !== "JobSeeker" && (
+        <>
+          <ComplianceCard />
+          <SendingLimitsCard />
+          <SuppressionCard />
+          <DataRetentionCard />
+        </>
+      )}
     </div>
   );
 }

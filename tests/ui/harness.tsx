@@ -114,7 +114,7 @@ export const senderDto =(over: Partial<SenderDto> = {}): SenderDto => ({
 
 /** What GET /api/me returns: an account with company details and the default compliance settings (both on). */
 export const meDto = (user: Partial<MeDto["user"]> = {}, company: Partial<MeDto["company"]> = {}): MeDto => ({
-  user: { id: "u1", email: "admin@sabertoothsoftwarelabs.net", firstName: "Ada", lastName: "Lovelace", position: "", displayName: "Ada Lovelace", mustChangePassword: false, credits: 100, ...user },
+  user: { id: "u1", role: "Agency", email: "admin@sabertoothsoftwarelabs.net", firstName: "Ada", lastName: "Lovelace", position: "", displayName: "Ada Lovelace", mustChangePassword: false, credits: 100, ...user },
   company: { name: "Acme", postalAddress: "Acme Inc.\n1 Road, Springfield", website: "", requireUnsubscribeLink: true, oneClickUnsubscribe: true, ...company },
   session: true,
   });

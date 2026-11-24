@@ -3,6 +3,7 @@ import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from "react
 import { CreditsBadge } from "@/components/CreditsBadge";
 import { Logo } from "@/components/Logo";
 import { UserMenu } from "@/components/UserMenu";
+import { canOpen, homeFor } from "@/lib/access";
 import { ApiClientError } from "@/services/http";
 import { useMe } from "@/services/me";
 
@@ -14,6 +15,7 @@ const NAV: { to: string; label: string; icon: ReactNode; end?: boolean }[] = [
   { to: "/campaigns", label: "Campaigns", icon: <path d="M3 7l9 6 9-6M3 7v10h18V7H3z" /> },
   { to: "/jobs", label: "Jobs", icon: <path d="M3 8h18v11H3V8zM9 8V5h6v3M3 13h18" /> },
   { to: "/templates", label: "Email Templates", icon: <path d="M6 3h9l4 4v14H6V3zM14 3v5h5M9 12h7M9 16h7" /> },
+  { to: "/users", label: "User Accounts", icon: <path d="M16 11a4 4 0 10-8 0 4 4 0 008 0zM4 21c0-4 4-6 8-6s8 2 8 6M19 8v6M16 11h6" /> },
   { to: "/settings", label: "Settings", icon: <path d="M12 15a3 3 0 100-6 3 3 0 000 6zM19 12l2-1-2-4-2 1-2-1-1-2h-4l-1 2-2 1-2-1-2 4 2 1v2l-2 1 2 4 2-1 2 1 1 2h4l1-2 2-1 2 1 2-4-2-1v-2z" /> },
 ];
 
@@ -48,8 +50,13 @@ export function Layout() {
     return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
   }
 
-  const items = NAV;
-  const canCreate = !!me.data;
+  // What this kind of account can use (see lib/access.ts): SuperAdmin has Email Templates and User Accounts, JobSeeker everything but
+  // Campaigns, Agency everything but Jobs. An address the account may not open sends it to its own start page.
+  const role = me.data?.user.role ?? null;
+  const items = role ? NAV.filter((n) => canOpen(role, n.to)) : [];
+  const canCreate = role === "Agency";
+  const hasSearch = role === "JobSeeker" || role === "Agency";
+  if (role && !canOpen(role, location.pathname)) return <Navigate to={homeFor(role)} replace />;
   const wide = location.pathname.startsWith("/people"); // the people table wants the whole width
 
   const toggleCollapsed = () => {
@@ -122,7 +129,7 @@ export function Layout() {
         </button>
         <Link to="/" className="mr-2 flex shrink-0 items-center lg:w-44" aria-label="Sendrix home"><Logo className="h-8" /></Link>
 
-        {(
+        {hasSearch && (
           <form onSubmit={submitSearch} role="search" className="hidden max-w-2xl flex-1 sm:block">
             <label className="flex h-12 items-center gap-3 rounded-full bg-slate-200/60 px-4 text-slate-600 transition focus-within:bg-white focus-within:shadow-md dark:bg-slate-800 dark:text-slate-300 dark:focus-within:bg-slate-900">
               <svg viewBox="0 0 24 24" className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
@@ -144,7 +151,7 @@ export function Layout() {
           ) : me.isError ? (
             <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">Not signed in</span>
           ) : null}
-          {me.data && <CreditsBadge credits={me.data.user.credits} />}
+          {me.data && hasSearch && <CreditsBadge credits={me.data.user.credits} />}
           {me.data && <UserMenu user={me.data.user} />}
         </div>
       </header>
@@ -170,7 +177,7 @@ export function Layout() {
 
         <main className="min-w-0 flex-1 overflow-y-auto bg-white px-4 py-5 dark:bg-slate-900 sm:mx-2 sm:mb-2 sm:rounded-2xl sm:px-6 lg:ml-0 lg:mr-4 lg:mb-4">
           <div className={wide ? "w-full" : "mx-auto w-full max-w-7xl"}>
-            <Outlet />
+            {me.data ? <Outlet /> : null}
           </div>
         </main>
       </div>

@@ -1,15 +1,16 @@
 import { useState, type FormEvent } from "react";
-import type { EmailTemplateSummaryDto } from "@shared/api";
+import type { AvailableTemplateDto, EmailTemplateSummaryDto } from "@shared/api";
 import { Badge, Button, Empty, ErrorNotice, Field, FillPage, LoadingRows, Modal, Notice, PageHeader, Pagination, Table, TableCard, TextInput, Td, Th, fmtDate } from "@/components/ui";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { RowActions, type RowAction } from "@/components/RowActions";
 import { useMe } from "@/services/me";
+import { useRole } from "@/hooks/useRole";
 import { useToast } from "@/hooks/useToast";
 import { MERGE_FIELDS, SAMPLE_CONTACT, UNSUBSCRIBE_TAG, composeEmailHtml, isBlankHtml, unknownTags } from "@/lib/merge";
 import { ApiClientError } from "@/services/http";
 import {
-  useAddAvailableTemplate, useAvailableTemplate, useAvailableTemplates, useCreateEmailTemplate, useEmailTemplate, useEmailTemplates,
-  useRemoveEmailTemplate, useUpdateEmailTemplate,
+  useAddAvailableTemplate, useAvailableTemplate, useAvailableTemplates, useCreateAvailableTemplate, useCreateEmailTemplate, useEmailTemplate, useEmailTemplates,
+  useRemoveAvailableTemplate, useRemoveEmailTemplate, useUpdateAvailableTemplate, useUpdateEmailTemplate,
 } from "@/services/emailTemplates";
 
 const PAGE_SIZE = 50;
@@ -34,8 +35,19 @@ type Target = { kind: "mine" | "available"; id: string; name: string };
  * one), edit and remove them.
  */
 export function EmailTemplates() {
+  const { role } = useRole();
   const [tab, setTab] = useState<Tab>("Available Templates");
   const [previewing, setPreviewing] = useState<Target | null>(null);
+
+  // A SuperAdmin manages the Available Templates and has no My Templates.
+  if (role === "SuperAdmin") {
+    return (
+      <FillPage>
+        <AvailableAdmin onPreview={setPreviewing} />
+        <PreviewModal target={previewing} onClose={() => setPreviewing(null)} />
+      </FillPage>
+    );
+  }
 
   return (
     <FillPage>
@@ -108,6 +120,119 @@ function AvailableTab({ onPreview }: { onPreview: (t: Target) => void }) {
         {paged.total > PAGE_SIZE && <Pagination page={paged.page} pageCount={paged.pageCount} total={paged.total} pageSize={PAGE_SIZE} onPage={paged.setPage} />}
       </TableCard>
     </>
+  );
+}
+
+/** The SuperAdmin's view: create, edit and delete the Available Templates every account can copy from. */
+function AvailableAdmin({ onPreview }: { onPreview: (t: Target) => void }) {
+  const { toast } = useToast();
+  const available = useAvailableTemplates();
+  const create = useCreateAvailableTemplate();
+  const remove = useRemoveAvailableTemplate();
+  const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<AvailableTemplateDto | null>(null);
+  const [removing, setRemoving] = useState<AvailableTemplateDto | null>(null);
+  const items = available.data?.items ?? [];
+  const paged = usePaged(items);
+
+  async function confirmRemove() {
+    if (!removing) return;
+    try {
+      await remove.mutateAsync(removing.id);
+      toast(`"${removing.name}" deleted`);
+    } catch (e) {
+      toast(e instanceof ApiClientError ? e.message : "Something went wrong", "error");
+    }
+    setRemoving(null);
+  }
+
+  return (
+    <>
+      <PageHeader
+        title="Email Templates"
+        description="The starter templates every account can copy into its own My Templates. A copy already made is not changed by what you do here."
+        actions={<Button variant="primary" onClick={() => setCreating(true)}>Create template</Button>}
+      />
+      <TableCard>
+        {available.isError ? (
+          <div className="p-4"><ErrorNotice error={available.error} onRetry={() => void available.refetch()} /></div>
+        ) : available.isPending ? (
+          <LoadingRows cols={3} rows={5} />
+        ) : items.length === 0 ? (
+          <Empty>No templates yet.</Empty>
+        ) : (
+          <Table fill>
+            <thead><tr><Th>Template</Th><Th>Updated</Th><Th className="text-right"><span className="sr-only">Actions</span></Th></tr></thead>
+            <tbody>
+              {paged.rows.map((t) => (
+                <tr key={t.id}>
+                  <Td className="font-medium">{t.name}</Td>
+                  <Td><span className="text-slate-500">{fmtDate(t.updatedAt)}</span></Td>
+                  <Td className="whitespace-nowrap text-right">
+                    <RowActions
+                      label={`Actions for ${t.name}`}
+                      actions={[
+                        { label: "Preview", icon: "preview", ariaLabel: `Preview ${t.name}`, onSelect: () => onPreview({ kind: "available", id: t.id, name: t.name }) },
+                        { label: "Edit", icon: "edit", ariaLabel: `Edit ${t.name}`, onSelect: () => setEditing(t) },
+                        { label: "Delete", icon: "delete", ariaLabel: `Delete ${t.name}`, danger: true, onSelect: () => setRemoving(t) },
+                      ] as RowAction[]}
+                    />
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+        {paged.total > PAGE_SIZE && <Pagination page={paged.page} pageCount={paged.pageCount} total={paged.total} pageSize={PAGE_SIZE} onPage={paged.setPage} />}
+      </TableCard>
+      {creating && (
+        <TemplateFormModal
+          title="Create template"
+          submitLabel="Create template"
+          note="A new template is offered to every account, which can copy it into its My Templates."
+          onSubmit={async (input) => { const made = await create.mutateAsync(input); toast(`Template "${made.name}" created`); }}
+          onClose={() => setCreating(false)}
+        />
+      )}
+      {editing && <EditAvailableModal template={editing} onClose={() => setEditing(null)} />}
+      <Modal
+        open={removing !== null}
+        title="Delete template?"
+        onClose={() => setRemoving(null)}
+        footer={
+          <>
+            <Button onClick={() => setRemoving(null)}>Keep it</Button>
+            <Button variant="danger" disabled={remove.isPending} onClick={() => void confirmRemove()}>{remove.isPending ? "Deleting…" : "Delete"}</Button>
+          </>
+        }
+      >
+        <p className="text-sm"><strong>{removing?.name}</strong> will no longer be available to copy. Copies accounts already made stay as they are.</p>
+      </Modal>
+    </>
+  );
+}
+
+/** Opens the form for an Available Template once its message has loaded. */
+function EditAvailableModal({ template, onClose }: { template: AvailableTemplateDto; onClose: () => void }) {
+  const { toast } = useToast();
+  const full = useAvailableTemplate(template.id);
+  const update = useUpdateAvailableTemplate();
+  if (full.isPending || full.isError) {
+    return (
+      <Modal open title={`Edit ${template.name}`} onClose={onClose} wide footer={<Button onClick={onClose}>Close</Button>}>
+        {full.isError ? <ErrorNotice error={full.error} onRetry={() => void full.refetch()} /> : <LoadingRows rows={4} cols={1} />}
+      </Modal>
+    );
+  }
+  return (
+    <TemplateFormModal
+      title={`Edit ${template.name}`}
+      submitLabel="Save changes"
+      initial={{ name: full.data.name, html: full.data.htmlBody }}
+      note="Copies accounts already made are not changed."
+      onSubmit={async (input) => { const saved = await update.mutateAsync({ id: template.id, ...input }); toast(`Template "${saved.name}" saved`); }}
+      onClose={onClose}
+    />
   );
 }
 

@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { authEnabled, devShortcutAllowed } from "../lib/auth-enabled";
 import type { MiddlewareHandler } from "hono";
 import { normalizeEmail } from "../../shared/email";
+import type { Role } from "../../shared/types";
 import type { AppEnv } from "../app";
 import { users } from "../database/schema";
 import { sessionsRepo } from "../database/repositories/sessions";
@@ -13,6 +14,7 @@ import { readSessionCookie, SESSION_RENEW_AFTER_MS, SESSION_TTL_MS, setSessionCo
 /** Who is making the request. They are the account: every repository is scoped by `userId`, and nothing else is ever trusted from the request. */
 export interface Actor {
   userId: string;
+  role: Role;
   email: string;
   firstName: string;
   lastName: string;
@@ -72,6 +74,7 @@ export const requireActor: MiddlewareHandler<AppEnv> = async (c, next) => {
     const [dev] = await db
       .select({
         userId: users.id,
+        role: users.role,
         email: users.email,
         firstName: users.firstName,
         lastName: users.lastName,
@@ -105,6 +108,7 @@ export const requireActor: MiddlewareHandler<AppEnv> = async (c, next) => {
 
   c.set("actor", {
     userId: row.userId,
+    role: row.role,
     email: row.email,
     firstName: row.firstName,
     lastName: row.lastName,
@@ -119,5 +123,14 @@ export const requireActor: MiddlewareHandler<AppEnv> = async (c, next) => {
     viaSession,
     sessionId: session?.id ?? null,
   });
+  await next();
+};
+
+/**
+ * Lets only the given roles through (everyone else gets 403 FORBIDDEN). Used after `requireActor`. The role comes from the account's
+ * database row, never from the request.
+ */
+export const requireRole = (...roles: Role[]): MiddlewareHandler<AppEnv> => async (c, next) => {
+  if (!roles.includes(c.get("actor").role)) throw new ApiError(403, "FORBIDDEN", "Your account type cannot use this feature");
   await next();
 };

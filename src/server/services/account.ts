@@ -1,6 +1,7 @@
 import { and, eq, ne, sql } from "drizzle-orm";
 import type { MeDto } from "../../shared/api";
 import { isValidEmail, normalizeEmail } from "../../shared/email";
+import type { Role } from "../../shared/types";
 import { passwordProblem } from "../../shared/password-rules";
 import { POSTAL_ADDRESS_MAX, type CompanyUpdate, type PasswordChange, type ProfileUpdate } from "../../shared/schemas";
 import type { Database } from "../database/client";
@@ -25,12 +26,14 @@ export interface CreateAccountInput {
   password: string;
   /** True for a temporary password the person must replace at first sign-in. */
   mustChangePassword?: boolean;
+  /** What the account may use. Defaults to JobSeeker. */
+  role?: Role;
   /** The company details its emails go out under. All optional: they can be set later in Settings. */
   company?: { name?: string; postalAddress?: string; website?: string };
 }
 
 /**
- * Creates an account: one user who owns their own data. There is no organization to create and no role to give. Checks the email and
+ * Creates an account: one user who owns their own data. There is no organization to create; the role (SuperAdmin, JobSeeker or Agency) says what it may use. Checks the email and
  * the password, and answers 409 EMAIL_EXISTS when the address is already an account. The sign-up flow, `npm run db:provision` and the
  * seed scripts all call this.
  */
@@ -56,6 +59,7 @@ export async function createAccount(db: Database, input: CreateAccountInput): Pr
       displayName,
       passwordHash,
       mustChangePassword: input.mustChangePassword ?? false,
+      role: input.role ?? "JobSeeker",
       companyName: cleanName(input.company?.name ?? ""),
       postalAddress: cleanAddress(input.company?.postalAddress ?? ""),
       website: cleanName(input.company?.website ?? ""),

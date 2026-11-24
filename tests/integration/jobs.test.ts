@@ -480,29 +480,29 @@ describe("the Jobs API", () => {
   it("answers a signed-in user with the merged page, and refuses a visitor", async () => {
     await withWorld({ remotive: [rem(1), rem(2)], arbeitnow: [arb("a", { location: "Berlin" }), arb("b", { location: "Paris" })] }, async (hh) => {
       expect((await hh.anonymous.api("GET", "/api/jobs")).status).toBe(401);
-      const r = await hh.api("GET", "/api/jobs?pageSize=10");
+      const r = await hh.jobSeeker.api("GET", "/api/jobs?pageSize=10");
       expect(r.status).toBe(200);
       expect(r.json).toMatchObject({ page: 1, pageSize: 10, total: 4, unavailable: [] });
       expect(new Set(r.json.items.map((j: { source: string }) => j.source))).toEqual(new Set(["Remotive", "Arbeitnow"]));
-      const berlin = await hh.api("GET", "/api/jobs?locations=Berlin&remoteOnly=false");
+      const berlin = await hh.jobSeeker.api("GET", "/api/jobs?locations=Berlin&remoteOnly=false");
       expect(berlin.json.items.map((j: { id: string }) => j.id).sort()).toEqual(["arbeitnow:a", "remotive:1", "remotive:2"]);
-      const cats = (await hh.api("GET", "/api/jobs/categories")).json.items;
+      const cats = (await hh.jobSeeker.api("GET", "/api/jobs/categories")).json.items;
       expect(cats[0]).toEqual({ value: "customer-support", label: "Customer Service" });
       expect(Object.keys(cats[0]).sort()).toEqual(["label", "value"]); // the internal 'remotive' marker is not sent
-      expect((await hh.api("GET", "/api/jobs/locations")).json.items).toEqual(expect.arrayContaining(["Berlin", "Paris", "Worldwide"]));
+      expect((await hh.jobSeeker.api("GET", "/api/jobs/locations")).json.items).toEqual(expect.arrayContaining(["Berlin", "Paris", "Worldwide"]));
     });
   });
 
   it("tells the page which source is missing, and is a 502 only when none can be reached", async () => {
     await withWorld({ remotive: [rem(1)], arbeitnow: [arb("a")] }, async (hh, w) => {
       w.state.failArbeitnow = () => new Response("x", { status: 500 });
-      const partial = await hh.api("GET", "/api/jobs?keyword=unique-a");
+      const partial = await hh.jobSeeker.api("GET", "/api/jobs?keyword=unique-a");
       expect(partial.status).toBe(200);
       expect(partial.json.unavailable).toEqual(["Arbeitnow"]);
       w.state.failRemotive = () => new Response("x", { status: 500 });
       sharedRemotiveCache.clear(); // no earlier good copy of either source: nothing to show
       sharedArbeitnowCache.clear();
-      const bad = await hh.api("GET", "/api/jobs");
+      const bad = await hh.jobSeeker.api("GET", "/api/jobs");
       expect(bad.status).toBe(502);
       expect(bad.json.error.code).toBe("JOB_SOURCE_UNAVAILABLE");
     });
@@ -510,8 +510,8 @@ describe("the Jobs API", () => {
 
   it("rejects values it does not understand", async () => {
     await withWorld({}, async (hh) => {
-      expect((await hh.api("GET", "/api/jobs?sort=sideways")).status).toBe(400);
-      expect((await hh.api("GET", "/api/jobs?pageSize=101")).status).toBe(400);
+      expect((await hh.jobSeeker.api("GET", "/api/jobs?sort=sideways")).status).toBe(400);
+      expect((await hh.jobSeeker.api("GET", "/api/jobs?pageSize=101")).status).toBe(400);
     });
   });
 });
@@ -534,33 +534,33 @@ describe("job descriptions (the View Job panel)", () => {
 
   it("returns a job's description as plain text blocks, for a job of either source, and never markup", async () => {
     await withWorld(async (hh) => {
-      await hh.api("GET", "/api/jobs"); // the list is what fills the memory the description is read from
-      const r = await hh.api("GET", "/api/jobs/description?id=remotive:1");
+      await hh.jobSeeker.api("GET", "/api/jobs"); // the list is what fills the memory the description is read from
+      const r = await hh.jobSeeker.api("GET", "/api/jobs/description?id=remotive:1");
       expect(r.status).toBe(200);
       expect(r.json).toEqual({
         id: "remotive:1",
         blocks: [{ type: "paragraph", text: "About us We build tools." }, { type: "list", ordered: false, items: ["React", "Node"] }],
       });
       expect(JSON.stringify(r.json)).not.toMatch(/<|script|alert|--tw/);
-      const a = await hh.api("GET", "/api/jobs/description?id=arbeitnow:munich-dev");
+      const a = await hh.jobSeeker.api("GET", "/api/jobs/description?id=arbeitnow:munich-dev");
       expect(a.json.blocks).toEqual([{ type: "heading", text: "The role" }, { type: "paragraph", text: "Work in Munich." }]);
     });
   });
 
   it("is not part of the list: the list stays light, however long the descriptions are", async () => {
     await withWorld(async (hh) => {
-      const list = await hh.api("GET", "/api/jobs");
+      const list = await hh.jobSeeker.api("GET", "/api/jobs");
       expect(JSON.stringify(list.json)).not.toMatch(/We build tools|Work in Munich|blocks|description/);
     });
   });
 
   it("fetches the list again by itself when its memory has been cleared (a description asked for after the cache expired)", async () => {
     await withWorld(async (hh, w) => {
-      await hh.api("GET", "/api/jobs");
+      await hh.jobSeeker.api("GET", "/api/jobs");
       sharedRemotiveCache.clear();
       sharedArbeitnowCache.clear();
       const before = w.state.calls.length;
-      const r = await hh.api("GET", "/api/jobs/description?id=remotive:1");
+      const r = await hh.jobSeeker.api("GET", "/api/jobs/description?id=remotive:1");
       expect(r.status).toBe(200);
       expect(w.state.calls.length).toBeGreaterThan(before);
     });
@@ -568,11 +568,11 @@ describe("job descriptions (the View Job panel)", () => {
 
   it("answers 404 for a job that is no longer listed or an id that is not ours, and 400 for none", async () => {
     await withWorld(async (hh) => {
-      expect((await hh.api("GET", "/api/jobs/description?id=remotive:999")).status).toBe(404);
-      expect((await hh.api("GET", "/api/jobs/description?id=arbeitnow:nope")).status).toBe(404);
-      expect((await hh.api("GET", "/api/jobs/description?id=other:1")).status).toBe(404);
-      expect((await hh.api("GET", "/api/jobs/description")).status).toBe(400);
-      expect((await hh.api("GET", `/api/jobs/description?id=${"x".repeat(301)}`)).status).toBe(400);
+      expect((await hh.jobSeeker.api("GET", "/api/jobs/description?id=remotive:999")).status).toBe(404);
+      expect((await hh.jobSeeker.api("GET", "/api/jobs/description?id=arbeitnow:nope")).status).toBe(404);
+      expect((await hh.jobSeeker.api("GET", "/api/jobs/description?id=other:1")).status).toBe(404);
+      expect((await hh.jobSeeker.api("GET", "/api/jobs/description")).status).toBe(400);
+      expect((await hh.jobSeeker.api("GET", `/api/jobs/description?id=${"x".repeat(301)}`)).status).toBe(400);
       expect((await hh.anonymous.api("GET", "/api/jobs/description?id=remotive:1")).status).toBe(401);
     });
   });
@@ -580,7 +580,7 @@ describe("job descriptions (the View Job panel)", () => {
   it("is a 502 when the source cannot be reached and nothing is remembered", async () => {
     await withWorld(async (hh, w) => {
       w.state.failRemotive = () => new Response("x", { status: 500 });
-      const r = await hh.api("GET", "/api/jobs/description?id=remotive:1");
+      const r = await hh.jobSeeker.api("GET", "/api/jobs/description?id=remotive:1");
       expect(r.status).toBe(502);
       expect(r.json.error.code).toBe("JOB_SOURCE_UNAVAILABLE");
     });

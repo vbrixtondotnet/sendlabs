@@ -5,7 +5,7 @@ import { isValidEmail, normalizeEmail } from "./email";
 import { isBlankHtml } from "./merge";
 import { PASSWORD_MAX_LENGTH } from "./password-rules";
 import { PEOPLE_COMPANY_SIZES, PEOPLE_MAX_INDUSTRIES, PEOPLE_MAX_TITLES } from "./people";
-import { CAMPAIGN_STATUSES, CONSENT_STATUSES, IMPORT_ROW_OUTCOMES, RECIPIENT_STATUSES } from "./types";
+import { CAMPAIGN_STATUSES, CONSENT_STATUSES, IMPORT_ROW_OUTCOMES, RECIPIENT_STATUSES, ROLES, USER_STATUSES } from "./types";
 
 /* ------------------------------ primitives ------------------------------ */
 
@@ -291,6 +291,28 @@ export const profileUpdateSchema = z.strictObject({
   position: z.string().max(POSITION_MAX, `Use at most ${POSITION_MAX} characters`).optional(),
 });
 export type ProfileUpdate = z.infer<typeof profileUpdateSchema>;
+
+/** A SuperAdmin adding an account: who it is, what it may do, and a temporary password the person must replace at first sign-in. */
+export const userCreateSchema = z.strictObject({
+  email: z.string().trim().min(1, "Enter an email address").max(254),
+  firstName: z.string().trim().max(100).optional(),
+  lastName: z.string().trim().max(100).optional(),
+  role: z.enum(ROLES),
+  password: z.string().min(1, "Enter a password").max(PASSWORD_MAX_LENGTH),
+});
+export type UserCreate = z.infer<typeof userCreateSchema>;
+
+/** A SuperAdmin changing an account: any of these, but at least one. A new password is temporary (the person must change it). */
+export const userUpdateSchema = z
+  .strictObject({
+    firstName: z.string().trim().max(100).optional(),
+    lastName: z.string().trim().max(100).optional(),
+    role: z.enum(ROLES).optional(),
+    status: z.enum(USER_STATUSES).optional(),
+    password: z.string().min(1).max(PASSWORD_MAX_LENGTH).optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, "Nothing to change");
+export type UserUpdate = z.infer<typeof userUpdateSchema>;
 
 /** Longest website accepted, in characters. */
 export const WEBSITE_MAX = 200;

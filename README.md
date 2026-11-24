@@ -1,6 +1,6 @@
 # Sendrix (formerly SendLabs)
 
-> **Status:** Early build. **Single-account** (one account per person; each account owns its own data, with no organizations, teams or roles). The UI is connected to a real local API for **Contacts, Campaigns and CSV imports**. Each account can **connect its own Gmail account** (needs Google credentials, see **Connecting Gmail**). Sign-in works; there is no sign-up page yet (accounts are created by `npm run db:provision` or the seed script). Launch, test send, sending and suppression are not built yet. This README is the implementation plan derived from `email_campaign_platform_project_brief_v2.pdf` (prepared 6 Nov 2026). Section 12 records the decisions made so far (multi-user, Cloudflare Access, service-account Gmail auth, global contacts, one-time import with a 500/day drip send) and the items that are still open.
+> **Status:** Early build. **Single-account** (one account per person; each account owns its own data, with no organizations or teams; three roles: SuperAdmin, JobSeeker, Agency). The UI is connected to a real local API for **Contacts, Campaigns and CSV imports**. Each account can **connect its own Gmail account** (needs Google credentials, see **Connecting Gmail**). Sign-in works; there is no sign-up page yet (accounts are created by `npm run db:provision` or the seed script). Launch, test send, sending and suppression are not built yet. This README is the implementation plan derived from `email_campaign_platform_project_brief_v2.pdf` (prepared 6 Nov 2026). Section 12 records the decisions made so far (multi-user, Cloudflare Access, service-account Gmail auth, global contacts, one-time import with a 500/day drip send) and the items that are still open.
 
 Sendrix is a web application that imports client contacts from CSV files, lets users build email campaigns, and sends **one individually addressed email per recipient** through a Google Workspace Gmail account. Sending is asynchronous, using Cloudflare Queues and Workers.
 
@@ -12,11 +12,11 @@ Cloudflare Worker + Hono + PostgreSQL (via Drizzle), under `src/server`. Built s
 
 #### Accounts (one account per person)
 
-Sendrix has **no multi-tenancy**: no organizations, teams, roles, invitations or "users of a company". One **account** is one person, and it owns everything it creates. There is no administrator above it and nothing is shared between accounts except the read-only starter templates and the global people directory.
+Sendrix has **no multi-tenancy**: no organizations, teams, invitations or "users of a company". One **account** is one person, and it owns everything it creates. There is no administrator above it and nothing is shared between accounts except the read-only starter templates and the global people directory.
 
 | Table | What it holds |
 |---|---|
-| `users` | The accounts. The **email is the username** and is unique ignoring letter case. Holds `password_hash`, `must_change_password`, `status` (`Active` or `Disabled`), `credits`, and the account's **company details** (`company_name`, `postal_address`, `website`, `require_unsubscribe_link`, `one_click_unsubscribe`) that its emails go out under |
+| `users` | The accounts. The **email is the username** and is unique ignoring letter case. Holds `role`, `password_hash`, `must_change_password`, `status` (`Active` or `Disabled`), `credits`, and the account's **company details** (`company_name`, `postal_address`, `website`, `require_unsubscribe_link`, `one_click_unsubscribe`) that its emails go out under |
 | `sessions` | Sign-in sessions (only a hash of the cookie token is stored) |
 
 How accounts stay apart (in layers, because a mistake in one must not leak data):
@@ -25,16 +25,27 @@ How accounts stay apart (in layers, because a mistake in one must not leak data)
 2. **Every repository takes the account id and filters on it.** It comes from the signed-in session, never from the request (a `userId` in a body is rejected). Another account's record does not exist as far as a caller can tell: the API answers **404, not 403**.
 3. **The database refuses to cross accounts.** The foreign keys are composite (`user_id`, `id`), so a recipient cannot point at another account's campaign or contact, not even by writing SQL directly (`tests/integration/account-isolation.test.ts`). An account that still owns data cannot be deleted.
 
-**Default account (local development only)**
+**Roles.** Every account has exactly one of three roles (`users.role`, enforced on the server by `requireRole` and mirrored in the menu by `src/client/lib/access.ts`):
 
-| | |
+| Role | Can use |
 |---|---|
-| Username | `admin@sabertoothsoftwarelabs.net` |
-| Password | `Password@123` (set `SEED_ADMIN_PASSWORD` to use another) |
+| **SuperAdmin** | **Email Templates** (create, edit and delete the Available Templates) and **User Accounts** (add accounts, change a role, disable or enable, set a temporary password, delete an empty account). Nothing else. A SuperAdmin cannot change its own role, disable or delete itself, and the last SuperAdmin cannot lose the role |
+| **JobSeeker** | Everything except **Campaigns** (so no campaigns, test-send allowlist, suppression list or sending settings): Overview, Imports, Contacts, Search People, Jobs, Email Templates (read Available, own My Templates), Settings (company details, Gmail sender) |
+| **Agency** | Everything except **Jobs**: Overview (campaign activity), Imports, Contacts, Search People, Campaigns, Email Templates, Settings |
 
-> **This password is a development credential and is committed on purpose.** The account is flagged `must_change_password`, and the seed script refuses a non-local database. **Never seed this account into staging or production.** The repository is public, so assume anyone can read this password.
+A call outside the role answers `403 FORBIDDEN`; the menu simply does not show it, and opening its address sends you to your own start page (a SuperAdmin lands on Email Templates). The role is read from the account's database row on every request, never from the request.
 
-Create it with `npm run db:seed:account:local`. For a real deployment use `npm run db:provision -- --url "postgresql://..." --email you@example.com [--company "Name"]`, which creates an account with a password you choose. Accounts are created by `createAccount` (`src/server/services/account.ts`); a sign-up page will call it too.
+**Development accounts (local only).** `npm run db:seed:account:local` creates one of each, all with the password `Password@123` (`SEED_PASSWORD` to change it):
+
+| Role | Username |
+|---|---|
+| SuperAdmin | `superadmin@sendrix.app` |
+| JobSeeker | `jobseeker@sendrix.app` |
+| Agency | `agency@jobseeker.app` |
+
+> **This password is a development credential and is committed on purpose.** The seed script refuses a non-local database. **Never seed these accounts into staging or production.** The repository is public, so assume anyone can read this password.
+
+Create a real account with `npm run db:provision -- --url "postgresql://..." --email you@example.com --role SuperAdmin|JobSeeker|Agency [--company "Name"]`, which prints a temporary password once. After that a SuperAdmin adds accounts in **User Accounts**. Accounts are created by `createAccount` (`src/server/services/account.ts`); a sign-up page will call it too.
 
 Passwords are hashed with **PBKDF2-HMAC-SHA256, a random salt per password, 100,000 iterations**, in the form `pbkdf2-sha256$iterations$salt$hash` (`src/server/lib/password.ts`). The password is never stored, logged or returned.
 
@@ -192,10 +203,10 @@ Every email's unsubscribe link, and every `List-Unsubscribe` header, carries a *
 
 - **Available Templates:** the templates made by the system, the same for every account, read-only. There are nine, one for each file in the **`Email Templates/`** folder (the file name is the template name, the content is the message body, using `{{firstName}}`, `{{companyName}}` and so on; run `npm run build:templates` after editing one). Only a future **SuperAdministrator** (a global user, not tied to any account, not built yet) will add or manage these. Until then they live in `src/shared/builtin-templates.ts` and nobody can change them in the app. Each row has **Preview** and, for an Administrator, **Add to My Templates**, which copies it into the account's own list (a row already added shows an **In My Templates** badge).
 - **My Templates:** the account's own list, and the only templates the campaign editor offers (**Message > Edit > Start from a template**). It starts empty. An **Administrator** can **Create template** (a name and a message in the same rich-text editor as a campaign body, with the merge-field buttons) and **Remove** one (after a confirmation; a removed copy can be added again from Available, a template you wrote cannot be brought back). Names must be unique within the organization, ignoring letter case, and a message with a `{{field}}` that does not exist is refused. At most 100 templates.
-- **Access:** Available Templates are read-only for everyone (they change only with a release). The account manages its own My Templates: add (from Available, or a new one), edit and remove.
+- **Access:** Available Templates are read-only except for a SuperAdmin, who creates, edits and deletes them. JobSeeker and Agency accounts manage their own My Templates: add (from Available, or a new one), edit and remove.
 - **Preview:** shows the message filled in with a sample contact (Alex, Example Co), as a recipient would see it. It is only the message: the signature, the standard unsubscribe footer and the postal address are added when a campaign is sent.
 - **Data:** My Templates are rows in `email_templates` (per account). A copy of an available template keeps its key in `builtin_key`, so it cannot be added twice. Migration `0018` deletes the templates that had not been picked under the old scheme and drops the `selected` flag.
-- **API:** all of it needs a session. `GET /api/email-templates/available` and `GET /api/email-templates/available/:key` (with the body); `POST /api/email-templates/available/:key/add` (copies it, answers the existing copy if already added); `GET /api/email-templates` (My Templates, no bodies), `GET /api/email-templates/:id` (with the body), `POST /api/email-templates` (`{ name, htmlBody }`), `PUT /api/email-templates/:id`, `DELETE /api/email-templates/:id`. Account-scoped: another account's template is a 404. There is no route to create, edit or delete an Available Template.
+- **API:** all of it needs a session. `GET /api/email-templates/available` and `GET /api/email-templates/available/:key` (with the body); `POST /api/email-templates/available/:key/add` (copies it, answers the existing copy if already added); `GET /api/email-templates` (My Templates, no bodies), `GET /api/email-templates/:id` (with the body), `POST /api/email-templates` (`{ name, htmlBody }`), `PUT /api/email-templates/:id`, `DELETE /api/email-templates/:id`. Account-scoped: another account's template is a 404. `POST/PUT/DELETE /api/email-templates/available[/:id]` are SuperAdmin only; My Templates and `/add` are JobSeeker and Agency only.
 
 #### Rich-text editors for the body and the signature (built)
 
@@ -255,7 +266,7 @@ The look comes from the logo, `src/client/assets/logo.png` (kept as supplied). I
 
 #### Tests
 
-`npm test` runs 1063 tests: state machines, validation schemas, IDs, password hashing, the CSV parser, the API including account isolation, CSV imports up to 8,000 rows and the whole Gmail connection and invitation flow against a stand-in for Google (all on a real PostgreSQL), the migrations, and the UI pages (rendered in a simulated browser with the network stubbed, checking they call the API correctly and handle errors, empty states and read-only roles). The integration tests run the real Hono app and repositories against a real PostgreSQL database built from the committed migrations: each test file gets a private copy and drops it afterwards, so they never touch your development data (needs `TEST_DATABASE_URL`). `npm run typecheck` covers the front end, the server, the server-side tests and the UI tests (the last two use separate configs, because browser and Cloudflare Worker types define clashing globals).
+`npm test` runs 1100 tests: state machines, validation schemas, IDs, password hashing, the CSV parser, the API including account isolation, CSV imports up to 8,000 rows and the whole Gmail connection and invitation flow against a stand-in for Google (all on a real PostgreSQL), the migrations, and the UI pages (rendered in a simulated browser with the network stubbed, checking they call the API correctly and handle errors, empty states and read-only roles). The integration tests run the real Hono app and repositories against a real PostgreSQL database built from the committed migrations: each test file gets a private copy and drops it afterwards, so they never touch your development data (needs `TEST_DATABASE_URL`). `npm run typecheck` covers the front end, the server, the server-side tests and the UI tests (the last two use separate configs, because browser and Cloudflare Worker types define clashing globals).
 
 | Table | Purpose |
 |---|---|
@@ -303,7 +314,7 @@ Put `DATABASE_URL=postgresql://sendrix:<password>@localhost:5432/sendrix` and `T
 
 1. Create the database (any managed PostgreSQL) and a Hyperdrive config for it: `npx wrangler hyperdrive create sendrix-production --connection-string "postgresql://..."`. Put its id in `wrangler.jsonc` (`REPLACE_WITH_PRODUCTION_HYPERDRIVE_ID`).
 2. Create the tables: `npm run db:migrate -- --url "postgresql://..."`.
-3. Create the first account: `npm run db:provision -- --url "postgresql://..." --email you@example.com [--company "Name"]`.
+3. Create the first account (a SuperAdmin, who then adds the others in User Accounts): `npm run db:provision -- --url "postgresql://..." --email you@example.com --role SuperAdmin`.
 4. Deploy the Worker. Gmail connections made before must be reconnected (they were tied to the old structure).
 
 **Search People.** The Search People page (`/people`, after Contacts) searches the shared `global_contacts` directory by Country (searchable multi-select; "United States" also finds rows stored as "US"), Industry (searchable multi-select of the industries in the table), Company Size and Job Titles. Paging, filtering and counting happen in the database (50 rows per page), and the email address is not sent with search results. To add Apollo as a source later, load its people into `global_contacts`.
@@ -396,7 +407,7 @@ If the API is not running, pages show "Could not reach the API. Start it with `n
 
 **Assumptions (from the brief)**
 
-- One account per person; there is no multi-tenancy, no organizations and no roles.
+- One account per person; there is no multi-tenancy and no organizations. Three roles: SuperAdmin, JobSeeker, Agency.
 - One Workspace mailbox initially; provider/account abstractions leave room for more.
 - PostgreSQL is the database (this branch; production still runs on D1 until the cutover below). The structure is identical to the D1 one except for three type changes, listed in "PostgreSQL" below.
 - Cloudflare Workers, D1, Queues and R2 are the infrastructure foundation. No VPS or always-on server.
@@ -443,7 +454,7 @@ If the API is not running, pages show "Could not reach the API. Start it with `n
 
 **Screens:** Overview, Imports, Contacts, Campaigns, Campaign editor, Campaign details, Templates (post-MVP), Settings.
 
-**Roles:** none. Every account is its own owner and can do everything with its own data.
+**Roles:** SuperAdmin, JobSeeker and Agency (see Accounts).
 
 ---
 

@@ -14,9 +14,9 @@ const SENDER = "sales@sabertooth.test";
 
 beforeAll(async () => {
   h = await startHarness({ google: new GoogleOAuth(google.fetch) });
-  expect((await h.api("PATCH", "/api/me", { firstName: "Rico", lastName: "Prinsipe" })).status).toBe(200);
-  const start = await h.api("POST", "/api/sender/gmail/connect");
-  expect((await h.text(google.consent(start.json.url, { email: SENDER }))).status).toBe(302);
+  expect((await h.jobSeeker.api("PATCH", "/api/me", { firstName: "Rico", lastName: "Prinsipe" })).status).toBe(200);
+  const start = await h.jobSeeker.api("POST", "/api/sender/gmail/connect");
+  expect((await h.jobSeeker.text(google.consent(start.json.url, { email: SENDER }))).status).toBe(302);
 });
 afterAll(async () => { await h.dispose(); });
 beforeEach(() => {
@@ -41,7 +41,7 @@ function formOf(fields: Record<string, string>, files: File[] = []) {
   return f;
 }
 const GOOD = { to: "hiring@acme.test", subject: "Application for Senior Developer", body: "Hello,\n\nI would like to be considered.\n\nBest regards,\nRico" };
-const send = (fields: Record<string, string> = GOOD, files: File[] = [], who: Caller = h) => who.postForm("/api/jobs/apply-email", formOf(fields, files));
+const send = (fields: Record<string, string> = GOOD, files: File[] = [], who: Caller = h.jobSeeker) => who.postForm("/api/jobs/apply-email", formOf(fields, files));
 
 const header = (raw: string, name: string) => new RegExp(`^${name}: (.*)$`, "im").exec(raw.split("\r\n\r\n")[0]!)?.[1];
 /** The attachment parts of a sent message: their headers and their decoded bytes. */
@@ -159,7 +159,7 @@ describe("attachments: only PDF and Word", () => {
   });
 
   it("refuses a request that is far too large before reading it", async () => {
-    const r = await h.postForm("/api/jobs/apply-email", formOf(GOOD, [new File([new Uint8Array(MAX_APPLY_FORM_BYTES + 1000)], "huge.pdf")]));
+    const r = await h.jobSeeker.postForm("/api/jobs/apply-email", formOf(GOOD, [new File([new Uint8Array(MAX_APPLY_FORM_BYTES + 1000)], "huge.pdf")]));
     expect(r.status).toBe(413);
     expect(r.json.error.code).toBe("PAYLOAD_TOO_LARGE");
     expect(google.mailbox).toHaveLength(0);
@@ -191,7 +191,7 @@ describe("who can send, and what happens when sending fails", () => {
 
   it("says to connect Gmail when the account has not", async () => {
     const other = uniqueEmail("globex");
-    await h.addAccount("Globex Corp", other);
+    await h.addAccount("Globex Corp", other, "JobSeeker");
     const r = await send(GOOD, [], h.as(other));
     expect(r.status).toBe(409);
     expect(r.json.error.code).toBe("SENDER_REQUIRED");
@@ -203,9 +203,9 @@ describe("who can send, and what happens when sending fails", () => {
     expect(reconnect.status).toBe(409);
     expect(reconnect.json.error.code).toBe("SENDER_RECONNECT");
     // the connection is now marked: put it back for the next tests
-    const start = await h.api("POST", "/api/sender/gmail/connect");
+    const start = await h.jobSeeker.api("POST", "/api/sender/gmail/connect");
     google.refreshFails = false;
-    await h.text(google.consent(start.json.url, { email: SENDER }));
+    await h.jobSeeker.text(google.consent(start.json.url, { email: SENDER }));
 
     google.sendFailure = { status: 429, body: { error: { code: 429, message: "Rate Limit Exceeded", errors: [{ reason: "rateLimitExceeded" }] } } };
     const limited = await send();

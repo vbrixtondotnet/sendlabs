@@ -1,3 +1,12 @@
+/**
+ * The three kinds of account. There is nothing below or between them:
+ *  - SuperAdmin: manages the Available Email Templates and the user accounts. Nothing else.
+ *  - JobSeeker: everything except Campaigns.
+ *  - Agency: everything except Jobs.
+ */
+export const ROLES = ["SuperAdmin", "JobSeeker", "Agency"] as const;
+export type Role = (typeof ROLES)[number];
+
 export const USER_STATUSES = ["Active", "Disabled"] as const;
 export type UserStatus = (typeof USER_STATUSES)[number];
 

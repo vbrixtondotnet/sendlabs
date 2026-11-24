@@ -13,6 +13,7 @@ import { EmailTemplates } from "@/pages/EmailTemplates";
 import { Login } from "@/pages/Login";
 import { Unsubscribe } from "@/pages/Unsubscribe";
 import { MySettings } from "@/pages/MySettings";
+import { UserAccounts } from "@/pages/UserAccounts";
 
 export function App() {
   return (
@@ -21,6 +22,7 @@ export function App() {
       <Route path="unsubscribe/:token" element={<Unsubscribe />} />
       <Route element={<Layout />}>
         <Route index element={<Overview />} />
+        <Route path="users" element={<UserAccounts />} />
         <Route path="imports" element={<Imports />} />
         <Route path="contacts" element={<Contacts />} />
         <Route path="people" element={<People />} />

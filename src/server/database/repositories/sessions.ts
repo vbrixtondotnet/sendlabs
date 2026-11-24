@@ -13,6 +13,7 @@ export function sessionsRepo(db: Database) {
           sessionId: sessions.id,
           expiresAt: sessions.expiresAt,
           userId: users.id,
+          role: users.role,
           email: users.email,
           firstName: users.firstName,
           lastName: users.lastName,

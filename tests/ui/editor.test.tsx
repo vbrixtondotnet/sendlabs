@@ -9,7 +9,7 @@ import { campaign, contact, page, renderAt, senderStatus, stubApi, testRecipient
 
 /** Who is signed in. The signature of a new campaign is built from this. */
 const meDto = (user: Partial<MeDto["user"]> = {}, company: Partial<MeDto["company"]> = {}): MeDto => ({
-  user: { id: "u1", email: "rico@sabertooth.test", firstName: "Rico", lastName: "Prinsipe", position: "Marketing Admin", displayName: "Rico Prinsipe", mustChangePassword: false, credits: 100, ...user },
+  user: { id: "u1", role: "Agency", email: "rico@sabertooth.test", firstName: "Rico", lastName: "Prinsipe", position: "Marketing Admin", displayName: "Rico Prinsipe", mustChangePassword: false, credits: 100, ...user },
   company: { name: "Sabertooth Software Labs", postalAddress: ADDRESS, website: "sabertoothsoftwarelabs.net", requireUnsubscribeLink: true, oneClickUnsubscribe: true, ...company },
   session: true,
 });

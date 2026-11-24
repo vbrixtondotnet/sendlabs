@@ -2,8 +2,8 @@
  * Deletes ALL account data from the LOCAL database: every account, session, contact, campaign, import, template copy and the
  * rest. Kept: the tables, the migration history, the starter (system) templates and the shared global contacts.
  *
- *   npm run db:clear:local        (afterwards: npm run db:seed:account:local recreates the default account)
- *   npm run db:reset:local        (clear, then seed the default account)
+ *   npm run db:clear:local        (afterwards: npm run db:seed:account:local recreates the three development accounts)
+ *   npm run db:reset:local        (clear, then seed the development accounts)
  *
  * Refuses any database that is not on this machine.
  */

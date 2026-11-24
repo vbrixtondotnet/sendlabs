@@ -143,7 +143,7 @@ describe("Company Details tab", () => {
 
   /** A server that remembers what was saved, like the real one. */
   function companyServer(opts: { company?: Partial<MeDto["company"]>; reply?: ReturnType<typeof fail> } = {}): Handler {
-    let me: MeDto = { user: { id: "u1", email: "a@acme.test", firstName: "A", lastName: "B", position: "", displayName: "A B", mustChangePassword: false, credits: 100 }, company: company(opts.company), session: true };
+    let me: MeDto = { user: { id: "u1", role: "Agency", email: "a@acme.test", firstName: "A", lastName: "B", position: "", displayName: "A B", mustChangePassword: false, credits: 100 }, company: company(opts.company), session: true };
     return ({ method, path, body }) => {
       if (method === "GET" && path === "/api/me") return { json: me };
       if (method === "GET" && path === "/api/sender") return { json: senderStatus(null) };

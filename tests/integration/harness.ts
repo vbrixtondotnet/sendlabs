@@ -5,6 +5,7 @@ import { withDatabase } from "../../scripts/lib/migrations";
 import { createApp } from "../../src/server/app";
 import { closeDb, createDb, type Database } from "../../src/server/database/client";
 import { GoogleOAuth } from "../../src/server/services/google-oauth";
+import type { Role } from "../../src/shared/types";
 import { createAccount } from "../../src/server/services/account";
 
 /**
@@ -65,6 +66,9 @@ export interface Harness extends Caller {
   /** The default account ("Sabertooth Software Labs"), which is the default caller. */
   userId: string;
   adminEmail: string;
+  /** Callers for the other two kinds of account, created with the harness. The default caller is an Agency. */
+  jobSeeker: Caller;
+  superAdmin: Caller;
   /** A caller with no session and no shortcut user: what a stranger's browser looks like. */
   anonymous: Caller;
   /** Act as another user: pass their email (the placeholder auth resolves the account from the user row). */
@@ -72,7 +76,7 @@ export interface Harness extends Caller {
   /** Same as `api` but with env overrides, e.g. { ENVIRONMENT: "production" }. */
   withEnv: (override: EnvOverride) => Caller;
   /** Creates another account, with data of its own. */
-  addAccount: (name: string, email: string) => Promise<{ userId: string }>;
+  addAccount: (name: string, email: string, role?: Role) => Promise<{ userId: string }>;
   /** Run a statement. Write `?` for each bound value, as in SQLite; it is turned into PostgreSQL's `$1`, `$2`... */
   sql: (statement: string, ...params: unknown[]) => Promise<void>;
   /** Run a SELECT and get the rows back. */
@@ -150,8 +154,11 @@ export async function startHarness(options: { google?: GoogleOAuth; fetch?: type
     email: adminEmail,
     displayName: "Administrator",
     password: "Password@123",
+    role: "Agency",
     company: { name: "Sabertooth Software Labs" },
   });
+  await createAccount(db, { email: "jobseeker@sendrix.app", displayName: "Job Seeker", password: "Password@123", role: "JobSeeker", company: { name: "Job Seeker Co" } });
+  await createAccount(db, { email: "superadmin@sendrix.app", displayName: "Super Admin", password: "Password@123", role: "SuperAdmin" });
 
   // The shortcut user is opt-in (DEV_ACTOR_EMAIL in .dev.vars), so tests that want it ask for it explicitly.
   const base = caller({ DEV_ACTOR_EMAIL: adminEmail });
@@ -161,10 +168,12 @@ export async function startHarness(options: { google?: GoogleOAuth; fetch?: type
     ...base,
     userId: seeded.userId,
     adminEmail,
+    jobSeeker: caller({ DEV_ACTOR_EMAIL: "jobseeker@sendrix.app" }),
+    superAdmin: caller({ DEV_ACTOR_EMAIL: "superadmin@sendrix.app" }),
     anonymous: caller({}),
     as: (email) => caller({ DEV_ACTOR_EMAIL: email }),
     withEnv: (override) => caller(override),
-    addAccount: (name, email) => createAccount(db, { email, displayName: name, password: "Password@123", company: { name } }),
+    addAccount: (name, email, role = "Agency") => createAccount(db, { email, displayName: name, password: "Password@123", role, company: { name } }),
     sql: async (statement, ...params) => {
       await raw.unsafe(toPg(statement), params as never[]);
     },

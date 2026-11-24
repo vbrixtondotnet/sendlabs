@@ -43,6 +43,13 @@
       "when": 1795454583889,
       "tag": "0005_single_account",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795519282358,
+      "tag": "0006_user_roles",
+      "breakpoints": true
     }
   ]
 }

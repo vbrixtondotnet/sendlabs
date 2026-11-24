@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { bigint, boolean, check, integer, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core";
 import { STARTING_CREDITS } from "../../../shared/credits";
-import { USER_STATUSES } from "../../../shared/types";
+import { ROLES, USER_STATUSES } from "../../../shared/types";
 import { createdAt, idColumn, inList, normalizedEmailRule, updatedAt } from "./helpers";
 
 /**
@@ -30,6 +30,8 @@ export const users = pgTable(
     /** True for accounts created with a temporary password: the user must choose a new one at first sign-in. */
     mustChangePassword: boolean("must_change_password").notNull().default(false),
 
+    /** SuperAdmin, JobSeeker or Agency: decides which features the account can use. Set by a SuperAdmin. */
+    role: text("role", { enum: ROLES }).notNull().default("JobSeeker"),
     /** Disabled accounts cannot sign in but stay in the table, so what they created keeps its owner. */
     status: text("status", { enum: USER_STATUSES }).notNull().default("Active"),
     lastLoginAt: bigint("last_login_at", { mode: "number" }),
@@ -53,6 +55,7 @@ export const users = pgTable(
   },
   (t) => [
     uniqueIndex("users_normalized_email_uq").on(t.normalizedEmail),
+    check("users_role_chk", inList("role", ROLES)),
     check("users_status_chk", inList("status", USER_STATUSES)),
     check("users_normalized_email_chk", normalizedEmailRule("normalized_email")),
     check("users_password_hash_chk", sql.raw(`"password_hash" <> ''`)),

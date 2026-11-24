@@ -4,7 +4,9 @@ import { MAX_APPLY_FORM_BYTES } from "../shared/email-attachments";
 import { closeDb, connectionStringFor, createDb, type Database } from "./database/client";
 import { ApiError } from "./lib/errors";
 import { errorResponse, formatIssues } from "./lib/http";
-import { requireActor, type Actor } from "./middleware/auth";
+import { requireActor, requireRole, type Actor } from "./middleware/auth";
+import type { Role } from "../shared/types";
+import { userRoutes } from "./routes/users";
 import { requestContext } from "./middleware/request-context";
 import { campaignRoutes } from "./routes/campaigns";
 import { contactRoutes } from "./routes/contacts";
@@ -101,11 +103,27 @@ export function createApp(options: { google?: GoogleOAuth; fetch?: typeof fetch;
 
   const api = new Hono<AppEnv>();
   api.use("*", requireActor);
+  // Who may use what. SuperAdmin manages Email Templates and User Accounts only; JobSeeker has everything but Campaigns; Agency
+  // has everything but Jobs. (Email Templates sets its own rules per route, since all three roles use it differently.)
+  const only = (path: string, ...roles: Role[]) => {
+    api.use(path, requireRole(...roles));
+    api.use(`${path}/*`, requireRole(...roles));
+  };
+  only("/sender", "JobSeeker", "Agency");
+  only("/contacts", "JobSeeker", "Agency");
+  only("/people", "JobSeeker", "Agency");
+  only("/imports", "JobSeeker", "Agency");
+  only("/jobs", "JobSeeker");
+  only("/campaigns", "Agency");
+  only("/test-recipients", "Agency");
+  only("/suppressions", "Agency");
+  only("/users", "SuperAdmin");
   api.route("/me", meRoutes);
   api.route("/sender", senderRoutes);
   api.route("/test-recipients", testRecipientRoutes);
   api.route("/suppressions", suppressionRoutes);
   api.route("/email-templates", emailTemplateRoutes);
+  api.route("/users", userRoutes);
   api.route("/contacts", contactRoutes);
   api.route("/people", peopleRoutes);
   api.route("/jobs", jobRoutes);

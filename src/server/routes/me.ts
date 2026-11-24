@@ -16,7 +16,7 @@ meRoutes.get("/", async (c) => {
   // Read fresh on every call (not from the session lookup), so the balance in the top bar is never stale.
   const [balance] = await c.get("db").select({ credits: users.credits }).from(users).where(eq(users.id, a.userId)).limit(1);
   const me: MeDto = {
-    user: { id: a.userId, email: a.email, firstName: a.firstName, lastName: a.lastName, position: a.position, displayName: a.displayName, mustChangePassword: a.mustChangePassword, credits: balance?.credits ?? 0 },
+    user: { id: a.userId, role: a.role, email: a.email, firstName: a.firstName, lastName: a.lastName, position: a.position, displayName: a.displayName, mustChangePassword: a.mustChangePassword, credits: balance?.credits ?? 0 },
     company: { name: a.companyName, postalAddress: a.postalAddress, website: a.website, requireUnsubscribeLink: a.requireUnsubscribeLink, oneClickUnsubscribe: a.oneClickUnsubscribe },
     session: a.viaSession,
   };

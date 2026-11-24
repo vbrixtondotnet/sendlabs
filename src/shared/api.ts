@@ -6,6 +6,7 @@ import type {
   ImportRowOutcome,
   ImportStatus,
   RecipientStatus,
+  Role,
   SenderProvider,
   SenderStatus,
   SkipReason,
@@ -128,9 +129,23 @@ export interface ImportRowDto {
   contactId: string | null;
 }
 
+/** One account, as a SuperAdmin sees it in User Accounts. Never carries password data. */
+export interface UserAccountDto {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  displayName: string;
+  role: Role;
+  status: "Active" | "Disabled";
+  mustChangePassword: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+}
+
 /** The signed-in account: who they are, and the company details they send email as. */
 export interface MeDto {
-  user: { id: string; email: string; firstName: string; lastName: string; position: string; displayName: string; mustChangePassword: boolean; /** Credits left. Adding a person from Search People spends them. */ credits: number };
+  user: { id: string; role: Role; email: string; firstName: string; lastName: string; position: string; displayName: string; mustChangePassword: boolean; /** Credits left. Adding a person from Search People spends them. */ credits: number };
   /** True when signed in through a real session, false for the local development placeholder user. */
   session: boolean;
   /** The account's own company details: the name and address printed in its emails, and its unsubscribe settings. */

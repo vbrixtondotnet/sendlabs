@@ -12,7 +12,7 @@ import { goTo } from "../../src/client/lib/navigate";
 beforeEach(() => vi.mocked(goTo).mockClear());
 
 const me = (over: Partial<MeDto["user"]> = {}, tenantName = "Sabertooth Software Labs"): MeDto => ({
-  user: { id: "u1", email: "admin@sabertoothsoftwarelabs.net", firstName: "", lastName: "", position: "", displayName: "Administrator", mustChangePassword: false, credits: 100, ...over },
+  user: { id: "u1", role: "Agency", email: "admin@sabertoothsoftwarelabs.net", firstName: "", lastName: "", position: "", displayName: "Administrator", mustChangePassword: false, credits: 100, ...over },
   company: { name: tenantName, postalAddress: "", website: "", requireUnsubscribeLink: true, oneClickUnsubscribe: true },
   session: false,
 });
@@ -32,14 +32,33 @@ describe("the Settings menu", () => {
 
 });
 
-describe("the Jobs menu item", () => {
-  it("is in the left navigation straight after Campaigns, and goes to /jobs", async () => {
-    stubApi(({ path }) => (path === "/api/me" ? { json: me() } : undefined));
+describe("what the menu shows for each kind of account", () => {
+  const nav = () => within(screen.getByRole("navigation", { name: "Main" })).getAllByRole("link").map((l) => l.textContent);
+  const openAs = async (role: "SuperAdmin" | "JobSeeker" | "Agency") => {
+    stubApi(({ path }) => (path === "/api/me" ? { json: me({ role }) } : undefined));
     open();
     await screen.findByText("Sabertooth Software Labs");
-    const nav = within(screen.getByRole("navigation", { name: "Main" })).getAllByRole("link").map((l) => l.textContent);
-    expect(nav.indexOf("Jobs")).toBe(nav.indexOf("Campaigns") + 1);
+  };
+
+  it("JobSeeker: everything except Campaigns, with Jobs straight after the people tools", async () => {
+    await openAs("JobSeeker");
+    expect(nav()).toEqual(["Overview", "Imports", "Contacts", "Search People", "Jobs", "Email Templates", "Settings"]);
     expect(screen.getByRole("link", { name: "Jobs" }).getAttribute("href")).toBe("/jobs");
+    expect(screen.queryByRole("link", { name: "New campaign" })).toBeNull();
+  });
+
+  it("Agency: everything except Jobs", async () => {
+    await openAs("Agency");
+    expect(nav()).toEqual(["Overview", "Imports", "Contacts", "Search People", "Campaigns", "Email Templates", "Settings"]);
+    expect(screen.getByRole("link", { name: "New campaign" }).getAttribute("href")).toBe("/campaigns/new");
+  });
+
+  it("SuperAdmin: only Email Templates and User Accounts, with no search box or credits", async () => {
+    await openAs("SuperAdmin");
+    expect(nav()).toEqual(["Email Templates", "User Accounts"]);
+    expect(screen.getByRole("link", { name: "User Accounts" }).getAttribute("href")).toBe("/users");
+    expect(screen.queryByRole("searchbox")).toBeNull();
+    expect(screen.queryByText("100 Credits")).toBeNull();
   });
 });
 
@@ -173,19 +192,4 @@ describe("initials", () => {
     expect(initialsOf("", "root@x.test")).toBe("RO");
     expect(initialsOf("  ", "")).toBe("?");
   });
-});
-
-describe("the Email Templates menu item", () => {
-  const links = () => screen.getAllByRole("link").map((l) => l.textContent);
-
-  it("is in the left navigation, after Campaigns and Jobs", async () => {
-    stubApi(({ path }) => (path === "/api/me" ? { json: me() } : undefined));
-    open();
-    await screen.findByText("Sabertooth Software Labs");
-    const order = links();
-    expect(order).toContain("Email Templates");
-    expect(order.indexOf("Email Templates")).toBe(order.indexOf("Jobs") + 1);
-    expect(screen.getByRole("link", { name: "Email Templates" }).getAttribute("href")).toBe("/templates");
-  });
-
 });

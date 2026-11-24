@@ -17,7 +17,7 @@ export function useEmailTemplate(id: string | null) {
   return useQuery({ queryKey: [...KEY, id], queryFn: () => fetchEmailTemplate(id!), enabled: id !== null });
 }
 
-/** Available Templates: the ones made by the system, the same for everyone. Read-only. */
+/** Available Templates: the ones made by the system, the same for everyone. Only a SuperAdmin changes them. */
 export function useAvailableTemplates() {
   return useQuery({ queryKey: AVAILABLE, queryFn: () => api<{ items: AvailableTemplateDto[] }>("GET", "/api/email-templates/available"), staleTime: 60_000 });
 }
@@ -36,6 +36,34 @@ export function useCreateEmailTemplate() {
   return useMutation({
     mutationFn: (input: { name: string; htmlBody: string }) => api<EmailTemplateDto>("POST", "/api/email-templates", input),
     onSettled: () => qc.invalidateQueries({ queryKey: KEY }),
+  });
+}
+
+/** SuperAdmin only: add an Available Template. */
+export function useCreateAvailableTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name: string; htmlBody: string }) => api<AvailableTemplateFullDto>("POST", "/api/email-templates/available", input),
+    onSettled: () => qc.invalidateQueries({ queryKey: AVAILABLE }),
+  });
+}
+
+/** SuperAdmin only: change an Available Template. Copies accounts already made are not changed. */
+export function useUpdateAvailableTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { id: string; name: string; htmlBody: string }) =>
+      api<AvailableTemplateFullDto>("PUT", `/api/email-templates/available/${encodeURIComponent(input.id)}`, { name: input.name, htmlBody: input.htmlBody }),
+    onSettled: () => qc.invalidateQueries({ queryKey: AVAILABLE }),
+  });
+}
+
+/** SuperAdmin only: delete an Available Template. Copies accounts already made stay. */
+export function useRemoveAvailableTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<void>("DELETE", `/api/email-templates/available/${encodeURIComponent(id)}`),
+    onSettled: () => qc.invalidateQueries({ queryKey: AVAILABLE }),
   });
 }
 

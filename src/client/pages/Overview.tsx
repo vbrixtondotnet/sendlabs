@@ -3,11 +3,42 @@ import type { CampaignSummaryDto } from "@shared/api";
 import { RECIPIENT_STATUSES, type RecipientStatus } from "@shared/types";
 import { Button, Card, CardHeader, CampaignStatusBadge, ErrorNotice, LoadingRows, Notice, PageHeader, ProgressBar, StackedBar, StatCard, fmt, fmtDate } from "@/components/ui";
 import { useCampaigns } from "@/services/campaigns";
+import { useRole } from "@/hooks/useRole";
 import { useContacts } from "@/services/contacts";
 
 const count = (c: CampaignSummaryDto) => RECIPIENT_STATUSES.reduce((n, s) => n + c.totals[s], 0);
 
+/** The start page. An Agency sees its campaigns; a JobSeeker has no campaigns, so it gets a short page pointing at its own tools. */
 export function Overview() {
+  const { role } = useRole();
+  return role === "JobSeeker" ? <JobSeekerOverview /> : <CampaignOverview />;
+}
+
+function JobSeekerOverview() {
+  const contacts = useContacts({ page: 1, pageSize: 1 });
+  return (
+    <>
+      <PageHeader title="Overview" description="Find jobs, find people, and keep your contacts." actions={<Link to="/jobs"><Button variant="primary">Browse jobs</Button></Link>} />
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard label="Contacts" value={contacts.data ? fmt(contacts.data.total) : "…"} hint="In the database" />
+      </div>
+      <div className="mt-6 grid gap-4 sm:grid-cols-3">
+        {[
+          { to: "/jobs", title: "Jobs", text: "Search open positions and apply by email." },
+          { to: "/people", title: "Search People", text: "Find people and add them to your contacts." },
+          { to: "/imports", title: "Imports", text: "Upload a CSV of contacts." },
+        ].map((x) => (
+          <Link key={x.to} to={x.to} className="rounded-xl border border-slate-200 p-4 hover:border-brand-400 dark:border-slate-800">
+            <p className="font-medium">{x.title}</p>
+            <p className="mt-1 text-sm text-slate-500">{x.text}</p>
+          </Link>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function CampaignOverview() {
   // The API has no dashboard endpoint yet, so the figures are derived from the 100 newest active campaigns.
   const list = useCampaigns({ page: 1, pageSize: 100, archived: "exclude" }, { refetchMs: 15_000 });
   const contacts = useContacts({ page: 1, pageSize: 1 });
