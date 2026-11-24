@@ -1,6 +1,7 @@
 import type { JobDescriptionBlock, JobDto } from "@shared/api";
 import { REMOTIVE, safeApplyUrl } from "@shared/jobs";
-import { Button, ErrorNotice, SlidePanel } from "@/components/ui";
+import { Button, ErrorNotice } from "@/components/ui";
+import { SlidePanel } from "@/components/SlidePanel";
 import { postedAgo } from "@/lib/jobs";
 import { useJobDescription } from "@/services/jobs";
 

@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { describe, expect, it } from "vitest";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { JobApplyPanel, draftApplication } from "../../src/client/components/JobApplyPanel";
+import { JobApplyPanel, draftApplication } from "../../src/client/components/panels/JobApplyPanel";
 import type { JobDto } from "../../src/shared/api";
 import { ATTACHMENT_ACCEPT, MAX_TOTAL_ATTACHMENT_BYTES } from "../../src/shared/email-attachments";
 import { meDto, renderAt, senderDto, senderStatus, stubApi, type Call, type Handler } from "./harness";

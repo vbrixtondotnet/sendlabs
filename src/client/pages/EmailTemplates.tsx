@@ -1,12 +1,12 @@
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 import type { AvailableTemplateDto, EmailTemplateSummaryDto } from "@shared/api";
-import { Badge, Button, Empty, ErrorNotice, Field, FillPage, LoadingRows, Modal, Notice, PageHeader, Pagination, Table, TableCard, TextInput, Td, Th, fmtDate } from "@/components/ui";
-import { RichTextEditor } from "@/components/RichTextEditor";
+import { Badge, Button, Empty, ErrorNotice, FillPage, LoadingRows, Modal, PageHeader, Pagination, Table, TableCard, Td, Th, fmtDate } from "@/components/ui";
+import { TemplateEditPanel } from "@/components/panels/TemplateEditPanel";
+import { TemplatePreviewPanel, type TemplateTarget } from "@/components/panels/TemplatePreviewPanel";
 import { RowActions, type RowAction } from "@/components/RowActions";
-import { useMe } from "@/services/me";
 import { useRole } from "@/hooks/useRole";
+import { usePanel } from "@/hooks/usePanel";
 import { useToast } from "@/hooks/useToast";
-import { MERGE_FIELDS, SAMPLE_CONTACT, UNSUBSCRIBE_TAG, composeEmailHtml, isBlankHtml, unknownTags } from "@/lib/merge";
 import { ApiClientError } from "@/services/http";
 import {
   useAddAvailableTemplate, useAvailableTemplate, useAvailableTemplates, useCreateAvailableTemplate, useCreateEmailTemplate, useEmailTemplate, useEmailTemplates,
@@ -26,9 +26,6 @@ function usePaged<T>(items: T[]) {
 const TABS = ["Available Templates", "My Templates"] as const;
 type Tab = (typeof TABS)[number];
 
-/** What is being previewed: one of My Templates or an Available one, both by id. */
-type Target = { kind: "mine" | "available"; id: string; name: string };
-
 /**
  * Two lists. Available Templates are starter templates made by the system: read-only, the same for every account (they change
  * only with a release). My Templates are the account's own, the ones its campaign editor offers: add (from Available, or a new
@@ -37,14 +34,17 @@ type Target = { kind: "mine" | "available"; id: string; name: string };
 export function EmailTemplates() {
   const { role } = useRole();
   const [tab, setTab] = useState<Tab>("Available Templates");
-  const [previewing, setPreviewing] = useState<Target | null>(null);
+  const preview = usePanel<TemplateTarget>();
+  const previewPanel = preview.item && (
+    <TemplatePreviewPanel key={`${preview.item.kind}-${preview.item.id}-${preview.nonce}`} target={preview.item} open={preview.open} onClose={preview.close} onExited={preview.onExited} />
+  );
 
   // A SuperAdmin manages the Available Templates and has no My Templates.
   if (role === "SuperAdmin") {
     return (
       <FillPage>
-        <AvailableAdmin onPreview={setPreviewing} />
-        <PreviewModal target={previewing} onClose={() => setPreviewing(null)} />
+        <AvailableAdmin onPreview={preview.show} />
+        {previewPanel}
       </FillPage>
     );
   }
@@ -57,13 +57,13 @@ export function EmailTemplates() {
           <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={`whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium ${tab === t ? "border-brand-600 text-brand-600 dark:text-brand-400" : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"}`}>{t}</button>
         ))}
       </div>
-      {tab === "Available Templates" ? <AvailableTab onPreview={setPreviewing} /> : <MyTemplatesTab onPreview={setPreviewing} />}
-      <PreviewModal target={previewing} onClose={() => setPreviewing(null)} />
+      {tab === "Available Templates" ? <AvailableTab onPreview={preview.show} /> : <MyTemplatesTab onPreview={preview.show} />}
+      {previewPanel}
     </FillPage>
   );
 }
 
-function AvailableTab({ onPreview }: { onPreview: (t: Target) => void }) {
+function AvailableTab({ onPreview }: { onPreview: (t: TemplateTarget) => void }) {
   const { toast } = useToast();
   const available = useAvailableTemplates();
   const mine = useEmailTemplates();
@@ -124,13 +124,12 @@ function AvailableTab({ onPreview }: { onPreview: (t: Target) => void }) {
 }
 
 /** The SuperAdmin's view: create, edit and delete the Available Templates every account can copy from. */
-function AvailableAdmin({ onPreview }: { onPreview: (t: Target) => void }) {
+function AvailableAdmin({ onPreview }: { onPreview: (t: TemplateTarget) => void }) {
   const { toast } = useToast();
   const available = useAvailableTemplates();
   const create = useCreateAvailableTemplate();
   const remove = useRemoveAvailableTemplate();
-  const [creating, setCreating] = useState(false);
-  const [editing, setEditing] = useState<AvailableTemplateDto | null>(null);
+  const form = usePanel<AvailableTemplateDto | "new">();
   const [removing, setRemoving] = useState<AvailableTemplateDto | null>(null);
   const items = available.data?.items ?? [];
   const paged = usePaged(items);
@@ -151,7 +150,7 @@ function AvailableAdmin({ onPreview }: { onPreview: (t: Target) => void }) {
       <PageHeader
         title="Email Templates"
         description="The starter templates every account can copy into its own My Templates. A copy already made is not changed by what you do here."
-        actions={<Button variant="primary" onClick={() => setCreating(true)}>Create template</Button>}
+        actions={<Button variant="primary" onClick={() => form.show("new")}>Create template</Button>}
       />
       <TableCard>
         {available.isError ? (
@@ -173,7 +172,7 @@ function AvailableAdmin({ onPreview }: { onPreview: (t: Target) => void }) {
                       label={`Actions for ${t.name}`}
                       actions={[
                         { label: "Preview", icon: "preview", ariaLabel: `Preview ${t.name}`, onSelect: () => onPreview({ kind: "available", id: t.id, name: t.name }) },
-                        { label: "Edit", icon: "edit", ariaLabel: `Edit ${t.name}`, onSelect: () => setEditing(t) },
+                        { label: "Edit", icon: "edit", ariaLabel: `Edit ${t.name}`, onSelect: () => form.show(t) },
                         { label: "Delete", icon: "delete", ariaLabel: `Delete ${t.name}`, danger: true, onSelect: () => setRemoving(t) },
                       ] as RowAction[]}
                     />
@@ -185,16 +184,19 @@ function AvailableAdmin({ onPreview }: { onPreview: (t: Target) => void }) {
         )}
         {paged.total > PAGE_SIZE && <Pagination page={paged.page} pageCount={paged.pageCount} total={paged.total} pageSize={PAGE_SIZE} onPage={paged.setPage} />}
       </TableCard>
-      {creating && (
-        <TemplateFormModal
+      {form.item === "new" && (
+        <TemplateEditPanel
+          key={`new-available-${form.nonce}`}
+          open={form.open}
+          onExited={form.onExited}
           title="Create template"
           submitLabel="Create template"
           note="A new template is offered to every account, which can copy it into its My Templates."
           onSubmit={async (input) => { const made = await create.mutateAsync(input); toast(`Template "${made.name}" created`); }}
-          onClose={() => setCreating(false)}
+          onClose={form.close}
         />
       )}
-      {editing && <EditAvailableModal template={editing} onClose={() => setEditing(null)} />}
+      {form.item && form.item !== "new" && <EditAvailablePanel key={`${form.item.id}-${form.nonce}`} template={form.item} open={form.open} onClose={form.close} onExited={form.onExited} />}
       <Modal
         open={removing !== null}
         title="Delete template?"
@@ -212,23 +214,19 @@ function AvailableAdmin({ onPreview }: { onPreview: (t: Target) => void }) {
   );
 }
 
-/** Opens the form for an Available Template once its message has loaded. */
-function EditAvailableModal({ template, onClose }: { template: AvailableTemplateDto; onClose: () => void }) {
+/** Edit an Available Template (SuperAdmin) in a SlidePanel. It opens at once and fills in when the message has loaded. */
+function EditAvailablePanel({ template, open, onClose, onExited }: { template: AvailableTemplateDto; open: boolean; onClose: () => void; onExited: () => void }) {
   const { toast } = useToast();
   const full = useAvailableTemplate(template.id);
   const update = useUpdateAvailableTemplate();
-  if (full.isPending || full.isError) {
-    return (
-      <Modal open title={`Edit ${template.name}`} onClose={onClose} wide footer={<Button onClick={onClose}>Close</Button>}>
-        {full.isError ? <ErrorNotice error={full.error} onRetry={() => void full.refetch()} /> : <LoadingRows rows={4} cols={1} />}
-      </Modal>
-    );
-  }
   return (
-    <TemplateFormModal
+    <TemplateEditPanel
+      open={open}
+      onExited={onExited}
       title={`Edit ${template.name}`}
       submitLabel="Save changes"
-      initial={{ name: full.data.name, html: full.data.htmlBody }}
+      initial={full.data ? { name: full.data.name, html: full.data.htmlBody } : "loading"}
+      loadError={full.isError ? <ErrorNotice error={full.error} onRetry={() => void full.refetch()} /> : undefined}
       note="Copies accounts already made are not changed."
       onSubmit={async (input) => { const saved = await update.mutateAsync({ id: template.id, ...input }); toast(`Template "${saved.name}" saved`); }}
       onClose={onClose}
@@ -236,22 +234,19 @@ function EditAvailableModal({ template, onClose }: { template: AvailableTemplate
   );
 }
 
-function EditMineModal({ template, onClose }: { template: EmailTemplateSummaryDto; onClose: () => void }) {
+/** Edit one of My Templates in a SlidePanel. It opens at once and fills in when the message has loaded. */
+function EditMinePanel({ template, open, onClose, onExited }: { template: EmailTemplateSummaryDto; open: boolean; onClose: () => void; onExited: () => void }) {
   const { toast } = useToast();
   const full = useEmailTemplate(template.id);
   const update = useUpdateEmailTemplate();
-  if (full.isPending || full.isError) {
-    return (
-      <Modal open title={`Edit ${template.name}`} onClose={onClose} wide footer={<Button onClick={onClose}>Close</Button>}>
-        {full.isError ? <ErrorNotice error={full.error} onRetry={() => void full.refetch()} /> : <LoadingRows rows={4} cols={1} />}
-      </Modal>
-    );
-  }
   return (
-    <TemplateFormModal
+    <TemplateEditPanel
+      open={open}
+      onExited={onExited}
       title={`Edit ${template.name}`}
       submitLabel="Save changes"
-      initial={{ name: full.data.name, html: full.data.htmlBody }}
+      initial={full.data ? { name: full.data.name, html: full.data.htmlBody } : "loading"}
+      loadError={full.isError ? <ErrorNotice error={full.error} onRetry={() => void full.refetch()} /> : undefined}
       note={template.systemKey ? "This changes only your copy. The version in Available Templates stays as it is." : "This changes the template campaigns offer. Campaigns already written keep their message."}
       onSubmit={async (input) => { const saved = await update.mutateAsync({ id: template.id, ...input }); toast(`Template "${saved.name}" saved`); }}
       onClose={onClose}
@@ -259,13 +254,12 @@ function EditMineModal({ template, onClose }: { template: EmailTemplateSummaryDt
   );
 }
 
-function MyTemplatesTab({ onPreview }: { onPreview: (t: Target) => void }) {
+function MyTemplatesTab({ onPreview }: { onPreview: (t: TemplateTarget) => void }) {
   const { toast } = useToast();
   const list = useEmailTemplates();
   const remove = useRemoveEmailTemplate();
   const create = useCreateEmailTemplate();
-  const [adding, setAdding] = useState(false);
-  const [editing, setEditing] = useState<EmailTemplateSummaryDto | null>(null);
+  const form = usePanel<EmailTemplateSummaryDto | "new">();
   const [removing, setRemoving] = useState<EmailTemplateSummaryDto | null>(null);
   const items = list.data?.items ?? [];
   const paged = usePaged(items);
@@ -286,7 +280,7 @@ function MyTemplatesTab({ onPreview }: { onPreview: (t: Target) => void }) {
     <>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-slate-600 dark:text-slate-300">These are the templates offered when writing a campaign.</p>
-        <Button variant="primary" onClick={() => setAdding(true)}>Create template</Button>
+        <Button variant="primary" onClick={() => form.show("new")}>Create template</Button>
       </div>
       <TableCard>
         {list.isError ? (
@@ -309,7 +303,7 @@ function MyTemplatesTab({ onPreview }: { onPreview: (t: Target) => void }) {
                       label={`Actions for ${t.name}`}
                       actions={[
                         { label: "Preview", icon: "preview", ariaLabel: `Preview ${t.name}`, onSelect: () => onPreview({ kind: "mine", id: t.id, name: t.name }) },
-                        { label: "Edit", icon: "edit", ariaLabel: `Edit ${t.name}`, onSelect: () => setEditing(t) },
+                        { label: "Edit", icon: "edit", ariaLabel: `Edit ${t.name}`, onSelect: () => form.show(t) },
                         { label: "Remove", icon: "delete", ariaLabel: `Remove ${t.name} from My Templates`, danger: true, onSelect: () => setRemoving(t) },
                       ] as RowAction[]}
                     />
@@ -321,16 +315,19 @@ function MyTemplatesTab({ onPreview }: { onPreview: (t: Target) => void }) {
         )}
         {paged.total > PAGE_SIZE && <Pagination page={paged.page} pageCount={paged.pageCount} total={paged.total} pageSize={PAGE_SIZE} onPage={paged.setPage} />}
       </TableCard>
-      {adding && (
-        <TemplateFormModal
+      {form.item === "new" && (
+        <TemplateEditPanel
+          key={`new-mine-${form.nonce}`}
+          open={form.open}
+          onExited={form.onExited}
           title="Create template"
           submitLabel="Create template"
           note="A new template goes straight into My Templates, so campaigns offer it."
           onSubmit={async (input) => { const made = await create.mutateAsync(input); toast(`Template "${made.name}" created`); }}
-          onClose={() => setAdding(false)}
+          onClose={form.close}
         />
       )}
-      {editing && <EditMineModal template={editing} onClose={() => setEditing(null)} />}
+      {form.item && form.item !== "new" && <EditMinePanel key={`${form.item.id}-${form.nonce}`} template={form.item} open={form.open} onClose={form.close} onExited={form.onExited} />}
       <Modal
         open={removing !== null}
         title="Remove template?"
@@ -348,106 +345,5 @@ function MyTemplatesTab({ onPreview }: { onPreview: (t: Target) => void }) {
         </p>
       </Modal>
     </>
-  );
-}
-
-/** The message as a recipient would see it, filled in with a sample contact. Only the body: the signature, the unsubscribe footer and the postal address are added when a campaign is sent. */
-function PreviewModal({ target, onClose }: { target: Target | null; onClose: () => void }) {
-  const mine = useEmailTemplate(target?.kind === "mine" ? target.id : null);
-  const available = useAvailableTemplate(target?.kind === "available" ? target.id : null);
-  const full = target?.kind === "available" ? available : mine;
-  // {{senderCompany}} shows the account's own company name.
-  const me = useMe();
-  const sender = me.data?.company.name ?? "";
-  const doc = full.data
-    ? `<!doctype html><html><body style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#222;padding:16px">${composeEmailHtml({ body: full.data.htmlBody, signature: "", companyName: sender, postalAddress: "", unsubscribeFooter: false }, SAMPLE_CONTACT)}</body></html>`
-    : "";
-  return (
-    <Modal open={target !== null} title={target?.name ?? "Template"} onClose={onClose} wide footer={<Button onClick={onClose}>Close</Button>}>
-      {full.isError ? (
-        <ErrorNotice error={full.error} onRetry={() => void full.refetch()} />
-      ) : full.isPending ? (
-        <LoadingRows rows={4} cols={1} />
-      ) : (
-        <>
-          <iframe title="Template preview" sandbox="" srcDoc={doc} className="h-96 w-full rounded-lg border border-slate-200 bg-white dark:border-slate-800" />
-          <p className="mt-2 text-xs text-slate-500">Filled in with a sample contact (Alex, Example Co). The signature, the unsubscribe footer and your postal address are added when a campaign is sent.</p>
-        </>
-      )}
-    </Modal>
-  );
-}
-
-/**
- * A name and a message in a dialog. Used to create (empty) and to edit (`initial`). It is mounted only while open, so it
- * always starts from `initial`. `onSubmit` does the saving and throws if the server refuses; the reason is shown here.
- */
-function TemplateFormModal({ title, submitLabel, initial, note, onSubmit, onClose }: {
-  title: string;
-  submitLabel: string;
-  initial?: { name: string; html: string };
-  note: string;
-  onSubmit: (input: { name: string; htmlBody: string }) => Promise<void>;
-  onClose: () => void;
-}) {
-  const [name, setName] = useState(initial?.name ?? "");
-  const [html, setHtml] = useState(initial?.html ?? "");
-  const [error, setError] = useState<unknown>(null);
-  const [pending, setPending] = useState(false);
-  const fieldError = (path: string) => (error instanceof ApiClientError ? error.fieldErrors.find((f) => f.path === path)?.message : undefined);
-  const general = error === null ? null
-    : error instanceof ApiClientError ? (error.fieldErrors.length > 0 && error.fieldErrors.every((f) => ["name", "htmlBody"].includes(f.path)) ? null : error.message)
-    : "Something went wrong. Please try again.";
-  const unknown = unknownTags(html);
-  const complete = name.trim() !== "" && !isBlankHtml(html);
-
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    if (!complete || pending) return;
-    setPending(true);
-    try {
-      await onSubmit({ name: name.trim(), htmlBody: html });
-      onClose();
-    } catch (err) {
-      setError(err);
-    } finally {
-      setPending(false);
-    }
-  }
-
-  return (
-    <Modal
-      open
-      title={title}
-      onClose={onClose}
-      wide
-      footer={
-        <>
-          <Button onClick={onClose}>Cancel</Button>
-          <Button variant="primary" type="submit" form="template-form" disabled={!complete || pending}>{pending ? "Saving…" : submitLabel}</Button>
-        </>
-      }
-    >
-      <form id="template-form" onSubmit={submit} noValidate className="space-y-4">
-        <Field label="Template name" htmlFor="tpl-name" hint="Shown in the list and in the campaign dropdown, e.g. the industry it is written for.">
-          <TextInput id="tpl-name" autoFocus autoComplete="off" maxLength={100} value={name} onChange={(e) => { setName(e.target.value); setError(null); }} aria-invalid={!!fieldError("name")} />
-          {fieldError("name") && <p className="mt-1 text-xs text-rose-600">{fieldError("name")}</p>}
-        </Field>
-        <div>
-          <RichTextEditor
-            label="Message"
-            value={html}
-            onChange={(v) => { setHtml(v); setError(null); }}
-            tags={[...MERGE_FIELDS.map((m) => m.tag), UNSUBSCRIBE_TAG]}
-            heightClass="min-h-[14rem]"
-            hint="Just the message. A campaign adds your signature, the standard unsubscribe footer and your postal address after it."
-          />
-          {fieldError("htmlBody") && <p className="mt-1 text-xs text-rose-600">{fieldError("htmlBody")}</p>}
-          {!fieldError("htmlBody") && unknown.length > 0 && <p className="mt-1 text-xs text-rose-600">Unknown merge field{unknown.length > 1 ? "s" : ""}: {unknown.join(", ")}</p>}
-        </div>
-        {general && <Notice tone="error">{general}</Notice>}
-        <p className="text-xs text-slate-500">{note}</p>
-      </form>
-    </Modal>
   );
 }

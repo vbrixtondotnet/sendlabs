@@ -208,6 +208,10 @@ Every email's unsubscribe link, and every `List-Unsubscribe` header, carries a *
 - **Data:** My Templates are rows in `email_templates` (per account). A copy of an available template keeps its key in `builtin_key`, so it cannot be added twice. Migration `0018` deletes the templates that had not been picked under the old scheme and drops the `selected` flag.
 - **API:** all of it needs a session. `GET /api/email-templates/available` and `GET /api/email-templates/available/:key` (with the body); `POST /api/email-templates/available/:key/add` (copies it, answers the existing copy if already added); `GET /api/email-templates` (My Templates, no bodies), `GET /api/email-templates/:id` (with the body), `POST /api/email-templates` (`{ name, htmlBody }`), `PUT /api/email-templates/:id`, `DELETE /api/email-templates/:id`. Account-scoped: another account's template is a 404. `POST/PUT/DELETE /api/email-templates/available[/:id]` are SuperAdmin only; My Templates and `/add` are JobSeeker and Agency only.
 
+#### The standard side panel (built)
+
+Anything that is a task next to the page you were on opens in **one component, `SlidePanel`** (`src/client/components/SlidePanel.tsx`): it slides in from the right, dims the page, traps focus, closes on Escape or a click outside, and slides back out before it is removed. Its content is a sub-component in `src/client/components/panels/`: `JobApplyPanel` (the email composer), `JobDetailsPanel` (View Job), `TemplatePreviewPanel` (preview) and `TemplateEditPanel` (create or edit a template). Dialogs (`Modal`) are for short confirmations only. A new panel is a new file in `panels/` built on `SlidePanel`; a page keeps its state with the `usePanel` hook (`show(item)`, `close()`, `onExited`). `size="lg"` makes it wider for editors and previews.
+
 #### Rich-text editors for the body and the signature (built)
 
 Under **Message > Edit**, the email body and the email signature are written in rich-text editors (TipTap, on ProseMirror: `src/client/components/RichTextEditor.tsx`) instead of plain boxes. The Edit and Preview tabs are unchanged, and Preview shows the formatting as it will be sent.
