@@ -1,11 +1,16 @@
 // @vitest-environment jsdom
 import { useState } from "react";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { JobApplyPanel, draftApplication, greetContact } from "../../src/client/components/panels/JobApplyPanel";
 import type { JobDto } from "../../src/shared/api";
 import { ATTACHMENT_ACCEPT, MAX_TOTAL_ATTACHMENT_BYTES } from "../../src/shared/email-attachments";
+import * as localhost from "../../src/client/lib/localhost";
 import { meDto, renderAt, senderDto, senderStatus, stubApi, type Call, type Handler } from "./harness";
+
+// The tests below describe a deployed site, where the To field is only filled by Get Email Address. jsdom is on "localhost", so say it is not.
+vi.mock("../../src/client/lib/localhost", () => ({ isLocalhost: vi.fn(() => false) }));
+beforeEach(() => vi.mocked(localhost.isLocalhost).mockReturnValue(false));
 
 const job: JobDto = {
   id: "remotive:1", title: "Senior .NET Developer", companyName: "Acme Corp", companyLogo: "", category: "Software Development", employmentType: "Full-time", remote: true,
@@ -173,6 +178,27 @@ describe("Get Email Address", () => {
     fireEvent.click(getButton()!);
     expect(await screen.findByText(/not set up on this server yet/)).toBeTruthy();
     expect(getButton()!.disabled).toBe(true);
+  });
+});
+
+describe("on localhost", () => {
+  it("lets you type a test address in To, shows no Get Email Address button, and sends to it", async () => {
+    vi.mocked(localhost.isLocalhost).mockReturnValue(true);
+    const calls = open();
+    await screen.findByText(/sales@acme.test/);
+    const to = screen.getByLabelText("To") as HTMLInputElement;
+    expect(to.disabled).toBe(false);
+    expect(getButton()).toBeNull();
+    expect(screen.getByText(/Running on localhost/)).toBeTruthy();
+    expect(sendButton().disabled).toBe(true); // nothing typed yet
+    fireEvent.change(to, { target: { value: "not-an-email" } });
+    expect(sendButton().disabled).toBe(true);
+    fireEvent.change(to, { target: { value: " test@example.com " } });
+    expect(sendButton().disabled).toBe(false);
+    fireEvent.click(sendButton());
+    await waitFor(() => expect(sendCall(calls)).toBeTruthy());
+    expect(sendCall(calls)!.formData!.get("to")).toBe("test@example.com");
+    expect(calls.some((c) => c.path === "/api/jobs/contact-email")).toBe(false);
   });
 });
 

@@ -7,6 +7,7 @@ import { isValidEmail } from "@shared/email";
 import { Button, Field, Notice, TextArea, TextInput } from "@/components/ui";
 import { SlidePanel } from "@/components/SlidePanel";
 import { useToast } from "@/hooks/useToast";
+import { isLocalhost } from "@/lib/localhost";
 import { ApiClientError } from "@/services/http";
 import { useFindContactEmail, useSendApplicationEmail } from "@/services/jobs";
 import { useMe } from "@/services/me";
@@ -48,7 +49,7 @@ export function draftApplication(job: Pick<JobDto, "title" | "companyName">, you
  * The panel that slides in from the right when you press Apply Now on a job: write a personal email to the employer, attach your
  * resume (PDF or Word), and send it from your connected Gmail account. One recipient; there is no CC or BCC. The recipient is not typed:
  * "Get Email Address" (under the To field) asks Hunter.io for the company's contact email, costs CONTACT_LOOKUP_COST credits when one is found,
- * and fills To, which is always disabled.
+ * and fills To, which is always disabled. (On localhost To is typeable and the button is not shown: see lib/localhost.ts.)
  */
 export function JobApplyPanel({ job, open = true, onClose, onExited }: { job: JobDto; /** False slides it out. */ open?: boolean; onClose: () => void; /** Called once it has finished sliding out. */ onExited?: () => void }) {
   const me = useMe();
@@ -62,7 +63,10 @@ export function JobApplyPanel({ job, open = true, onClose, onExited }: { job: Jo
   const [found, setFound] = useState<ContactEmailDto | null>(null);
   const [lookupNote, setLookupNote] = useState<{ tone: "info" | "warn" | "error"; text: string } | null>(null);
   const [unavailable, setUnavailable] = useState(false); // the server has no Hunter key
-  const to = found?.email ?? "";
+  // On localhost the To field is an ordinary field (type a test address) and Get Email Address is not enforced; anywhere else it is only filled by the lookup.
+  const local = isLocalhost();
+  const [typed, setTyped] = useState("");
+  const to = local ? typed : (found?.email ?? "");
   const [subject, setSubject] = useState(draft.subject);
   const [body, setBody] = useState(draft.body);
   // Your name only arrives with /api/me. Until you have changed the message yourself, the sign-off follows it.
@@ -152,10 +156,14 @@ export function JobApplyPanel({ job, open = true, onClose, onExited }: { job: Jo
         {connected && <p className="text-sm text-slate-500 dark:text-slate-400">From: <span className="font-medium text-slate-700 dark:text-slate-200">{sender.data!.sender!.email}</span></p>}
 
         <div>
-          <Field label="To" htmlFor="apply-to" hint={found ? [found.name, found.position].filter(Boolean).join(" · ") || "Found with Hunter.io" : "Filled in by Get Email Address. It cannot be typed."}>
-            <TextInput id="apply-to" type="email" autoComplete="off" placeholder="Click Get Email Address" value={to} readOnly disabled />
+          <Field label="To" htmlFor="apply-to" hint={local ? "Running on localhost: type a test email address." : found ? [found.name, found.position].filter(Boolean).join(" · ") || "Found with Hunter.io" : "Filled in by Get Email Address. It cannot be typed."}>
+            {local ? (
+              <TextInput id="apply-to" type="email" autoComplete="off" placeholder="test@example.com" value={typed} onChange={(e) => setTyped(e.target.value)} disabled={send.isPending} />
+            ) : (
+              <TextInput id="apply-to" type="email" autoComplete="off" placeholder="Click Get Email Address" value={to} readOnly disabled />
+            )}
           </Field>
-          {!found && (
+          {!found && !local && (
             <div className="mt-2 flex flex-wrap items-center gap-3">
               <Button type="button" variant="secondary" onClick={() => void getEmail()} disabled={!canLookup}>
                 {lookup.isPending ? "Searching…" : `Get Email Address (${CONTACT_LOOKUP_COST} credits)`}
