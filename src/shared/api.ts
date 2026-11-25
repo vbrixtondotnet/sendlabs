@@ -276,6 +276,25 @@ export interface JobsPageDto extends Page<JobDto> {
   unavailable: string[];
 }
 
+/** One company in the Hiring Companies panel: made from the jobs the current search found, so its count matches the list. */
+export interface HiringCompanyDto {
+  name: string;
+  logo: string;
+  /** The category most of its jobs are in. */
+  industry: string;
+  /** How many of the current search's jobs are this company's. */
+  openPositions: number;
+  /** A couple of its job titles. */
+  sampleTitles: string[];
+}
+
+export interface HiringCompaniesDto {
+  items: HiringCompanyDto[];
+  /** How many companies the search found (the list is cut to the busiest). */
+  total: number;
+  unavailable: string[];
+}
+
 /** One choice of the Job Category filter: Remotive's category, by the value its API takes and the name people read. */
 export interface JobCategoryDto {
   value: string;

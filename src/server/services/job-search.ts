@@ -1,4 +1,4 @@
-import type { JobCategoryDto, JobDescriptionBlock, JobDto, JobsPageDto } from "../../shared/api";
+import type { HiringCompaniesDto, JobCategoryDto, JobDescriptionBlock, JobDto, JobsPageDto } from "../../shared/api";
 import { ARBEITNOW, HIMALAYAS, JOBICY, JOOBLE, REMOTIVE } from "../../shared/jobs";
 import type { JobListQuery } from "../../shared/schemas";
 import { JobSourceError } from "../lib/live-fetch";
@@ -137,6 +137,45 @@ export class JobSearchService {
    * applied here too. `signal` is the caller's: if it aborts the wait ends at once.
    */
   async list(q: JobListQuery, signal?: AbortSignal): Promise<JobsPageDto> {
+    const { matching, unavailable } = await this.search(q, signal);
+    const wantedCompany = normalize(q.company ?? "");
+    const shown = wantedCompany ? matching.filter((j) => normalize(j.companyName) === wantedCompany) : matching;
+    const start = (q.page - 1) * q.pageSize;
+    return { items: shown.slice(start, start + q.pageSize), page: q.page, pageSize: q.pageSize, total: shown.length, unavailable };
+  }
+
+  /**
+   * The companies hiring in the current search's results (the same filters as the list, but not the company filter itself, so the
+   * panel keeps offering the others): each with how many of those jobs are its own, so "12 open positions" is the 12 jobs View
+   * Company then shows. Busiest first, at most 30.
+   */
+  async companies(q: JobListQuery, signal?: AbortSignal): Promise<HiringCompaniesDto> {
+    const { matching, unavailable } = await this.search(q, signal);
+    const groups = new Map<string, JobDto[]>();
+    for (const j of matching) {
+      const key = normalize(j.companyName);
+      if (key === "") continue;
+      const g = groups.get(key);
+      if (g) g.push(j); else groups.set(key, [j]);
+    }
+    const mostCommon = (values: string[]) => {
+      const counts = new Map<string, number>();
+      for (const v of values.filter(Boolean)) counts.set(v, (counts.get(v) ?? 0) + 1);
+      return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] ?? "";
+    };
+    const all = [...groups.values()].map((jobs) => ({
+      name: mostCommon(jobs.map((j) => j.companyName)),
+      logo: jobs.find((j) => j.companyLogo)?.companyLogo ?? "",
+      industry: mostCommon(jobs.map((j) => j.category)),
+      openPositions: jobs.length,
+      sampleTitles: [...new Set(jobs.map((j) => j.title))].slice(0, 2),
+    }));
+    all.sort((a, b) => b.openPositions - a.openPositions || a.name.localeCompare(b.name));
+    return { items: all.slice(0, 30), total: all.length, unavailable };
+  }
+
+  /** Every job that matches the keyword, category, locations and Remote only, newest (or oldest) first. Not paged, and not cut to a company. */
+  private async search(q: JobListQuery, signal?: AbortSignal): Promise<{ matching: JobDto[]; unavailable: string[] }> {
     const categories = await this.categories(signal).catch(() => [] as (JobCategoryDto & { remotive: boolean })[]);
     const chosen = categories.find((c) => c.value === q.category);
     const remotiveCategory = chosen?.remotive ? chosen.value : "";
@@ -166,8 +205,7 @@ export class JobSearchService {
       if (tb === null) return -1;
       return q.sort === "oldest" ? ta - tb : tb - ta;
     });
-    const start = (q.page - 1) * q.pageSize;
-    return { items: matching.slice(start, start + q.pageSize), page: q.page, pageSize: q.pageSize, total: matching.length, unavailable };
+    return { matching, unavailable };
   }
 
   /**

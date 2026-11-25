@@ -1,15 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import type { JobDto, JobsPageDto } from "@shared/api";
+import type { HiringCompanyDto, JobDto, JobsPageDto } from "@shared/api";
 import { CANDIDATE_LOCATION_SOURCES, shortLocation } from "@shared/jobs";
 import { JOB_SORTS, type JobSort } from "@shared/schemas";
 import { Button, Card, Empty, ErrorNotice, Field, FillPage, Notice, PageHeader, Pagination, Select, TextInput } from "@/components/ui";
 import { JobApplyPanel } from "@/components/panels/JobApplyPanel";
 import { JobDetailsPanel } from "@/components/panels/JobDetailsPanel";
 import { MultiSelect } from "@/components/MultiSelect";
-import { HIRING_COMPANIES, type HiringCompany } from "@/data/hiringCompanies";
 import { useDebounced } from "@/hooks/useDebounced";
 import { postedAgo } from "@/lib/jobs";
-import { useJobCategories, useJobLocations, useJobs, type JobFilters } from "@/services/jobs";
+import { useHiringCompanies, useJobCategories, useJobLocations, useJobs, type JobFilters } from "@/services/jobs";
 
 const PAGE_SIZE = 25;
 /** How long the keyword must stay unchanged before it is sent: typing a word costs one request, not one per letter. */
@@ -64,21 +63,41 @@ function JobCardSkeleton() {
   );
 }
 
-/** One company that is hiring: a coloured banner, its name and industry, a line about it, its open jobs, and View Company. */
-function CompanyCard({ company, onView }: { company: HiringCompany; onView: () => void }) {
+const BANNERS = [
+  "linear-gradient(135deg,#0ea5b7,#0b3b5a)", "linear-gradient(135deg,#7c3aed,#312e81)", "linear-gradient(135deg,#2563eb,#0f172a)", "linear-gradient(135deg,#f97316,#7c2d12)",
+  "linear-gradient(135deg,#06b6d4,#164e63)", "linear-gradient(135deg,#22c55e,#14532d)", "linear-gradient(135deg,#ef4444,#7f1d1d)", "linear-gradient(135deg,#64748b,#0f172a)",
+  "linear-gradient(135deg,#ec4899,#701a75)", "linear-gradient(135deg,#eab308,#713f12)",
+];
+/** The same company always gets the same banner colour. */
+const bannerFor = (name: string) => BANNERS[[...name].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7) % BANNERS.length]!;
+
+/**
+ * One company that is hiring in the current search: a coloured banner (or its logo), its name and industry, a couple of its job titles, how
+ * many jobs it has in these results, and View Company, which narrows the job list to that company (so the number here is the number there).
+ */
+function CompanyCard({ company, selected, onView, onClear }: { company: HiringCompanyDto; selected: boolean; onView: () => void; onClear: () => void }) {
+  const n = company.openPositions;
   return (
-    <li className="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-      <div className="relative flex h-24 items-end p-3" style={{ background: company.banner }} aria-hidden="true">
-        <span className="absolute left-3 top-3 rounded-md bg-white/90 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-slate-800">Hiring now</span>
-        <span className="text-2xl font-semibold text-white/90">{company.name.split(" ").map((w) => w[0]).slice(0, 2).join("")}</span>
+    <li className={`overflow-hidden rounded-2xl border bg-white dark:bg-slate-900 ${selected ? "border-brand-500 ring-2 ring-brand-500/30" : "border-slate-200 dark:border-slate-800"}`}>
+      <div className="relative flex h-24 items-end p-3" style={{ background: bannerFor(company.name) }} aria-hidden="true">
+        <span className="absolute left-3 top-3 rounded-md bg-white/90 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-slate-800">{selected ? "Showing" : "Hiring now"}</span>
+        {company.logo ? (
+          <img src={company.logo} alt="" className="h-12 w-12 rounded-lg bg-white object-contain p-1" loading="lazy" referrerPolicy="no-referrer" />
+        ) : (
+          <span className="text-2xl font-semibold text-white/90">{company.name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase()}</span>
+        )}
       </div>
       <div className="space-y-1 p-4">
         <p className="text-base font-medium leading-snug">{company.name}</p>
-        <p className="text-sm text-slate-500 dark:text-slate-400">{company.industry}</p>
-        <p className="pt-1 text-sm text-slate-700 dark:text-slate-200">{company.blurb}</p>
-        <p className="pt-1 text-sm font-medium">{company.openPositions} Open {company.openPositions === 1 ? "Position" : "Positions"}</p>
+        {company.industry && <p className="text-sm text-slate-500 dark:text-slate-400">{company.industry}</p>}
+        {company.sampleTitles.length > 0 && <p className="pt-1 text-sm text-slate-700 dark:text-slate-200">{company.sampleTitles.join(" · ")}</p>}
+        <p className="pt-1 text-sm font-medium">{n} Open {n === 1 ? "Position" : "Positions"}</p>
         <div className="pt-2">
-          <Button variant="secondary" className="w-full cursor-pointer" onClick={onView} aria-label={`View ${company.name}`}>View Company</Button>
+          {selected ? (
+            <Button variant="secondary" className="w-full cursor-pointer" onClick={onClear} aria-label={`Show all jobs, not only ${company.name}`}>Show all jobs</Button>
+          ) : (
+            <Button variant="secondary" className="w-full cursor-pointer" onClick={onView} aria-label={`View ${company.name}`}>View Company</Button>
+          )}
         </div>
       </div>
     </li>
@@ -90,10 +109,11 @@ function CompanyCard({ company, onView }: { company: HiringCompany; onView: () =
  * (Keyword, Category, Location, Remote only) and the companies that are hiring on the right. Keyword is sent after you stop typing;
  * the other filters apply as soon as you change them; Search Jobs sends the keyword at once. While a search runs, or if it fails, the
  * jobs already on screen stay. Both panels scroll on their own and the pager sits under the jobs, like every list in the app.
- * The Hiring Companies panel is a fixed list that does not depend on the results.
+ * The Hiring Companies panel lists the companies in the current search's results, with how many jobs each has there; View Company narrows the
+ * list to that company.
  */
 export function Jobs() {
-  const [draft, setDraft] = useState({ keyword: "", category: "", locations: [] as string[], remoteOnly: false, sort: "newest" as JobSort });
+  const [draft, setDraft] = useState({ keyword: "", category: "", locations: [] as string[], remoteOnly: false, company: "", sort: "newest" as JobSort });
   const [keyword, setKeyword] = useState(""); // the keyword that is actually being searched
   const [page, setPage] = useState(1);
   const [applying, setApplying] = useState<JobDto | null>(null); // the job whose Apply panel is showing (it stays until it has slid out)
@@ -104,8 +124,11 @@ export function Jobs() {
   const typed = useDebounced(draft.keyword.trim(), KEYWORD_DEBOUNCE_MS);
   useEffect(() => { setKeyword(typed); setPage(1); }, [typed]);
 
-  const filters = useMemo<JobFilters>(() => ({ keyword, category: draft.category, locations: draft.locations, remoteOnly: draft.remoteOnly, sort: draft.sort }), [keyword, draft.category, draft.locations, draft.remoteOnly, draft.sort]);
+  const filters = useMemo<JobFilters>(() => ({ keyword, category: draft.category, locations: draft.locations, remoteOnly: draft.remoteOnly, company: draft.company, sort: draft.sort }), [keyword, draft.category, draft.locations, draft.remoteOnly, draft.company, draft.sort]);
   const jobs = useJobs(filters, page, PAGE_SIZE);
+  // The Hiring Companies panel follows the same search (not the company chosen in it), so what it counts is what the list then shows.
+  const companyFilters = useMemo(() => ({ keyword, category: draft.category, locations: draft.locations, remoteOnly: draft.remoteOnly }), [keyword, draft.category, draft.locations, draft.remoteOnly]);
+  const companies = useHiringCompanies(companyFilters);
   const categories = useJobCategories();
   const locations = useJobLocations();
 
@@ -116,7 +139,7 @@ export function Jobs() {
 
   const total = data?.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const filtered = keyword !== "" || draft.category !== "" || draft.locations.length > 0 || draft.remoteOnly;
+  const filtered = keyword !== "" || draft.category !== "" || draft.locations.length > 0 || draft.remoteOnly || draft.company !== "";
   const change = (patch: Partial<typeof draft>) => { setDraft((d) => ({ ...d, ...patch })); setPage(1); };
 
   return (
@@ -146,7 +169,7 @@ export function Jobs() {
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <Button type="submit" variant="primary">Search Jobs</Button>
-              <Button type="button" variant="secondary" onClick={() => { setDraft({ keyword: "", category: "", locations: [], remoteOnly: false, sort: "newest" }); setKeyword(""); setPage(1); }}>Reset</Button>
+              <Button type="button" variant="secondary" onClick={() => { setDraft({ keyword: "", category: "", locations: [], remoteOnly: false, company: "", sort: "newest" }); setKeyword(""); setPage(1); }}>Reset</Button>
               <label className="ml-1 inline-flex cursor-pointer items-center gap-2 text-sm" title="Only jobs that can be done remotely">
                 <input type="checkbox" checked={draft.remoteOnly} onChange={(e) => change({ remoteOnly: e.target.checked })} className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-brand-600" />
                 Remote only
@@ -155,7 +178,16 @@ export function Jobs() {
           </form>
 
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-slate-200 px-4 py-2 text-sm text-slate-600 dark:border-slate-800 dark:text-slate-300">
-            <p>{data ? `Showing ${total.toLocaleString("en-US")} ${total === 1 ? "job" : "jobs"}` : " "}{jobs.isFetching && data ? " · updating…" : ""}</p>
+            <p>
+              {data ? `Showing ${total.toLocaleString("en-US")} ${total === 1 ? "job" : "jobs"}` : " "}
+              {draft.company && (
+                <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-brand-100 py-0.5 pl-2.5 pr-1 text-xs font-medium text-brand-900 dark:bg-brand-900/50 dark:text-brand-100">
+                  {draft.company}
+                  <button type="button" className="cursor-pointer rounded-full px-1.5 hover:bg-brand-200 dark:hover:bg-brand-800" aria-label={`Remove the ${draft.company} filter`} onClick={() => change({ company: "" })}>✕</button>
+                </span>
+              )}
+              {jobs.isFetching && data ? " · updating…" : ""}
+            </p>
             <div className="flex items-center gap-3">
               <label className="inline-flex items-center gap-2">
                 <span className="sr-only">Sort by</span>
@@ -206,11 +238,19 @@ export function Jobs() {
         <aside aria-label="Hiring Companies" className="flex min-h-[16rem] shrink-0 flex-col lg:min-h-0 lg:w-96">
           <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <div className="shrink-0 border-b border-slate-200 px-4 py-3 dark:border-slate-800"><PanelTitle>Hiring Companies</PanelTitle></div>
-            <ul className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-              {HIRING_COMPANIES.map((c) => (
-                <CompanyCard key={c.id} company={c} onView={() => { setDraft((d) => ({ ...d, keyword: c.name })); setKeyword(c.name); setPage(1); }} />
-              ))}
-            </ul>
+            {companies.isError && !companies.data ? (
+              <div className="p-3"><ErrorNotice error={companies.error} onRetry={() => void companies.refetch()} /></div>
+            ) : !companies.data ? (
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3" role="status" aria-label="Loading companies">{[0, 1, 2].map((i) => <JobCardSkeleton key={i} />)}</div>
+            ) : companies.data.items.length === 0 ? (
+              <div className="p-3"><Empty>No companies are hiring for this search.</Empty></div>
+            ) : (
+              <ul className={`min-h-0 flex-1 space-y-3 overflow-y-auto p-3 transition-opacity ${companies.isPlaceholderData ? "opacity-60" : ""}`}>
+                {companies.data.items.map((c) => (
+                  <CompanyCard key={c.name} company={c} selected={draft.company.toLowerCase() === c.name.toLowerCase()} onView={() => change({ company: c.name })} onClear={() => change({ company: "" })} />
+                ))}
+              </ul>
+            )}
           </Card>
         </aside>
       </div>

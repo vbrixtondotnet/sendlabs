@@ -278,6 +278,8 @@ export const jobListQuery = pageQuery.extend({
   locations: csvList(30),
   /** Only jobs open to candidates anywhere. Applied here. */
   remoteOnly: queryFlag.default(false),
+  /** Only this company's jobs (View Company in Hiring Companies). Compared ignoring case and punctuation. Applied here. */
+  company: optionalQuery(z.string().trim().max(200)),
   sort: z.enum(JOB_SORTS).default("newest"),
 });
 export type JobListQuery = z.infer<typeof jobListQuery>;

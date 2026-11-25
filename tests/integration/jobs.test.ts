@@ -381,6 +381,31 @@ describe("Jooble", () => {
   });
 });
 
+describe("Hiring Companies follow the search", () => {
+  it("counts each company's jobs in the current results, and View Company's list has exactly that many", async () => {
+    const { fetchFn } = world({
+      remotive: [rem(1, { company_name: "Acme Corp" }), rem(2, { company_name: "ACME corp." }), rem(3, { company_name: "Beta LLC" })],
+      arbeitnow: [arb("a", { company_name: "Acme Corp" })],
+    });
+    const s = makeSearch(fetchFn);
+    const c = await s.companies(q());
+    expect(c.items.map((x) => [x.name, x.openPositions])).toEqual([["Acme Corp", 3], ["Beta LLC", 1]]);
+    expect(c.total).toBe(2);
+    expect(c.items[0]!.sampleTitles.length).toBeGreaterThan(0);
+    const list = await s.list(q({ company: "Acme Corp" }));
+    expect(list.total).toBe(3);
+    expect(list.items.every((j) => /acme/i.test(j.companyName))).toBe(true);
+  });
+
+  it("uses the same filters as the list, but not the company filter itself", async () => {
+    const { fetchFn } = world({ remotive: [rem(1, { company_name: "Acme Corp", title: "Python dev" }), rem(2, { company_name: "Beta LLC", title: "Cook" })] });
+    const s = makeSearch(fetchFn);
+    expect((await s.companies(q({ keyword: "python" }))).items.map((x) => x.name)).toEqual(["Acme Corp"]);
+    expect((await s.companies(q({ company: "Beta LLC" }))).items.map((x) => x.name).sort()).toEqual(["Acme Corp", "Beta LLC"]);
+    expect((await s.list(q({ keyword: "python", company: "Beta LLC" }))).total).toBe(0);
+  });
+});
+
 describe("the live requests", () => {
   it("asks Remotive for 50 jobs (with search and category when there are any) and Arbeitnow for its first page", async () => {
     const { state, fetchFn } = world({ remotive: [rem(1)], arbeitnow: [arb("a")] });
@@ -729,6 +754,16 @@ describe("the Jobs API", () => {
       expect(cats[0]).toEqual({ value: "customer-support", label: "Customer Service" });
       expect(Object.keys(cats[0]).sort()).toEqual(["label", "value"]); // the internal 'remotive' marker is not sent
       expect((await hh.jobSeeker.api("GET", "/api/jobs/locations")).json.items).toEqual(expect.arrayContaining(["Berlin", "Paris", "Worldwide"]));
+    });
+  });
+
+  it("is served by GET /api/jobs/companies for a JobSeeker only", async () => {
+    await withWorld({ remotive: [rem(1, { company_name: "Acme Corp" })] }, async (hh) => {
+      const r = await hh.jobSeeker.api("GET", "/api/jobs/companies?pageSize=10");
+      expect(r.status).toBe(200);
+      expect(r.json.items[0]).toMatchObject({ name: "Acme Corp", openPositions: 1 });
+      expect((await hh.api("GET", "/api/jobs/companies")).status).toBe(403);
+      expect((await hh.anonymous.api("GET", "/api/jobs/companies")).status).toBe(401);
     });
   });
 

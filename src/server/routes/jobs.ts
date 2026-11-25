@@ -38,6 +38,8 @@ jobRoutes.get("/", async (c) => {
   const q = parseQuery(c, jobListQuery);
   return c.json(await viaSources(() => service(c).list(q, c.req.raw.signal)));
 });
+/** The Hiring Companies panel: the companies in the current search's results, with how many jobs each has there. Same filters as the list. */
+jobRoutes.get("/companies", async (c) => c.json(await viaSources(() => service(c).companies(parseQuery(c, jobListQuery), c.req.raw.signal))));
 jobRoutes.get("/categories", async (c) => {
   const items = await viaSources(() => service(c).categories(c.req.raw.signal));
   return c.json({ items: items.map(({ value, label }) => ({ value, label })) });

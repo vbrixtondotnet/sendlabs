@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { ContactEmailDto, JobCategoryDto, JobDescriptionDto, JobsPageDto, MeDto } from "@shared/api";
+import type { ContactEmailDto, HiringCompaniesDto, JobCategoryDto, JobDescriptionDto, JobsPageDto, MeDto } from "@shared/api";
 import type { JobSort } from "@shared/schemas";
 import { api, withQuery } from "./http";
 
@@ -9,6 +9,8 @@ export interface JobFilters {
   category: string;
   locations: string[];
   remoteOnly: boolean;
+  /** Only this company's jobs ("" for all): View Company in Hiring Companies. */
+  company: string;
   sort: JobSort;
 }
 
@@ -29,6 +31,7 @@ export function useJobs(filters: JobFilters, page: number, pageSize: number) {
           category: filters.category,
           locations: filters.locations.join(","),
           remoteOnly: filters.remoteOnly ? "true" : undefined,
+          company: filters.company,
           sort: filters.sort,
         }),
         undefined,
@@ -37,6 +40,32 @@ export function useJobs(filters: JobFilters, page: number, pageSize: number) {
     placeholderData: keepPreviousData,
     staleTime: 60_000,
     retry: false, // a failure is shown with a Try again button; retrying by itself would only hit Remotive more
+  });
+}
+
+/**
+ * The Hiring Companies panel: the companies in the current search's results, each with how many of those jobs are its own. It follows the
+ * same filters as the job list (keyword, category, locations, Remote only) but not the company chosen with View Company, so the panel keeps
+ * offering the other companies while one is shown.
+ */
+export function useHiringCompanies(filters: Omit<JobFilters, "company" | "sort">) {
+  return useQuery({
+    queryKey: ["jobs", "companies", filters],
+    queryFn: ({ signal }) =>
+      api<HiringCompaniesDto>(
+        "GET",
+        withQuery("/api/jobs/companies", {
+          keyword: filters.keyword,
+          category: filters.category,
+          locations: filters.locations.join(","),
+          remoteOnly: filters.remoteOnly ? "true" : undefined,
+        }),
+        undefined,
+        signal,
+      ),
+    placeholderData: keepPreviousData,
+    staleTime: 60_000,
+    retry: false,
   });
 }
 
