@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { describe, expect, it } from "vitest";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { JobApplyPanel, draftApplication } from "../../src/client/components/panels/JobApplyPanel";
+import { JobApplyPanel, draftApplication, greetContact } from "../../src/client/components/panels/JobApplyPanel";
 import type { JobDto } from "../../src/shared/api";
 import { ATTACHMENT_ACCEPT, MAX_TOTAL_ATTACHMENT_BYTES } from "../../src/shared/email-attachments";
 import { meDto, renderAt, senderDto, senderStatus, stubApi, type Call, type Handler } from "./harness";
@@ -173,6 +173,42 @@ describe("Get Email Address", () => {
     fireEvent.click(getButton()!);
     expect(await screen.findByText(/not set up on this server yet/)).toBeTruthy();
     expect(getButton()!.disabled).toBe(true);
+  });
+});
+
+describe("greeting the contact by name", () => {
+  const body = () => (screen.getByLabelText("Message") as HTMLTextAreaElement).value;
+
+  it("starts the message with the found contact's name once the address is found, and keeps the rest", async () => {
+    open();
+    await screen.findByText(/sales@acme.test/);
+    expect(body().startsWith("Hello Acme Corp team,\n")).toBe(true);
+    const rest = body().split("\n").slice(1).join("\n");
+    await fillTo();
+    expect(body().startsWith("Hello Pat Recruiter,\n")).toBe(true);
+    expect(body().split("\n").slice(1).join("\n")).toBe(rest);
+  });
+
+  it("leaves the greeting alone when no name is known", async () => {
+    open(({ path, method, ...r }) => (path === "/api/jobs/contact-email" ? { json: { email: "hiring@acme.test", name: "", position: "", confidence: 90, charged: true, credits: 90 } } : base({ path, method, ...r } as Call)));
+    await screen.findByText(/sales@acme.test/);
+    await fillTo();
+    expect(body().startsWith("Hello Acme Corp team,")).toBe(true);
+  });
+
+  it("does not replace a greeting the person wrote themselves", async () => {
+    open();
+    await screen.findByText(/sales@acme.test/);
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Dear hiring manager,\n\nMy own words." } });
+    await fillTo();
+    expect(body()).toBe("Dear hiring manager,\n\nMy own words.");
+  });
+
+  it("greetContact replaces only the draft's own first line", () => {
+    expect(greetContact("Hello Acme Corp team,\n\nText", "Acme Corp", "Jullie Willis")).toBe("Hello Jullie Willis,\n\nText");
+    expect(greetContact("Hello,\n\nText", "", "Jullie Willis")).toBe("Hello Jullie Willis,\n\nText");
+    expect(greetContact("Hello Acme Corp team, and more\nText", "Acme Corp", "J W")).toBe("Hello Acme Corp team, and more\nText");
+    expect(greetContact("Hello Acme Corp team,\nText", "Acme Corp", "  ")).toBe("Hello Acme Corp team,\nText");
   });
 });
 

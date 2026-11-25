@@ -12,13 +12,27 @@ import { useFindContactEmail, useSendApplicationEmail } from "@/services/jobs";
 import { useMe } from "@/services/me";
 import { useSender } from "@/services/sender";
 
+/** The greeting line the draft starts with. */
+const greetingFor = (companyName: string) => `Hello${companyName ? ` ${companyName} team` : ""},`;
+
+/**
+ * Once a contact is found, the message greets them by name ("Hello Jullie Willis,") instead of the company team. Only the draft's own
+ * first line is replaced: if the person has already changed the greeting, their words are left alone.
+ */
+export function greetContact(body: string, companyName: string, contactName: string): string {
+  const name = contactName.trim();
+  const first = greetingFor(companyName);
+  if (!name || !body.startsWith(first) || (body.length > first.length && body[first.length] !== "\n")) return body;
+  return `Hello ${name},${body.slice(first.length)}`;
+}
+
 /** The email the panel starts with, filled in from the job and from you. It is only a starting point: every word can be changed. */
 export function draftApplication(job: Pick<JobDto, "title" | "companyName">, yourName: string): { subject: string; body: string } {
   const at = job.companyName ? ` at ${job.companyName}` : "";
   return {
     subject: `Application for ${job.title}${at}`,
     body: [
-      `Hello${job.companyName ? ` ${job.companyName} team` : ""},`,
+      greetingFor(job.companyName),
       "",
       `I am writing to apply for the ${job.title} position${at}. I would welcome the chance to discuss how I can contribute.`,
       "",
@@ -87,6 +101,7 @@ export function JobApplyPanel({ job, open = true, onClose, onExited }: { job: Jo
     try {
       const r = await lookup.mutateAsync(job.companyName);
       setFound(r);
+      if (r.name) { edited.current = true; setBody((b) => greetContact(b, job.companyName, r.name)); } // (edited: the draft no longer follows your name on its own)
       toast(r.charged ? `Email address found (${CONTACT_LOOKUP_COST} credits used)` : "Email address found");
     } catch (err) {
       const code = err instanceof ApiClientError ? err.code : "";
