@@ -19,6 +19,7 @@ const side = (path: string) =>
   path === "/api/jobs/categories" ? { json: { items: [{ value: "software-dev", label: "Software Development" }, { value: "design", label: "Design" }] } }
   : path === "/api/jobs/locations" ? { json: { items: ["USA", "Worldwide"] } }
   : path === "/api/jobs/companies" ? { json: { items: COMPANIES, total: COMPANIES.length, unavailable: [] } }
+  : path === "/api/me" ? { json: meDto() }
   : undefined;
 /** What the server says is hiring in the current results. */
 const COMPANIES = [
@@ -343,12 +344,24 @@ describe("Hiring Companies panel", () => {
     const items = within(panel()).getAllByRole("listitem");
     expect(items).toHaveLength(COMPANIES.length);
     const first = items[0]!;
-    expect(within(first).getByText("Hiring now")).toBeTruthy();
-    expect(within(first).getByText("Software Development")).toBeTruthy();
+    expect(within(first).getByText(/Software Development/)).toBeTruthy();
     expect(within(first).getByText("Senior .NET Developer \u00b7 QA Engineer")).toBeTruthy();
     expect(within(first).getByText("12 Open Positions")).toBeTruthy();
     expect(within(items[1]!).getByText("1 Open Position")).toBeTruthy();
-    expect(within(first).getByRole("button", { name: "View Acme Corp" }).textContent).toBe("View Company");
+    // exactly two buttons per card
+    expect(within(first).getAllByRole("button").map((b) => b.textContent)).toEqual(["Show All Jobs", "Add to Contacts"]);
+    expect(within(first).getByRole("button", { name: "Show all jobs at Acme Corp" })).toBeTruthy();
+  });
+
+  it("keeps each item short: no tall banner, so more companies fit", async () => {
+    stubApi(base);
+    renderAt(<Jobs />);
+    await within(panel()).findByText("Acme Corp");
+    const card = within(panel()).getAllByRole("listitem")[0]!;
+    expect(card.querySelector('[style*="height"]')).toBeNull();
+    expect(card.className).not.toMatch(/\bh-(2[4-9]|[3-9]\d)\b/);
+    expect(card.querySelector(".h-24")).toBeNull();
+    expect(within(card).queryByText("Hiring now")).toBeNull();
   });
 
   it("follows the search: it asks again with the keyword, category, locations and Remote only (not the company)", async () => {
@@ -371,37 +384,75 @@ describe("Hiring Companies panel", () => {
     expect(await within(panel()).findByText("No companies are hiring for this search.")).toBeTruthy();
   });
 
-  it("View Company shows exactly that company's jobs (a company filter, not a keyword), and the card says it is showing", async () => {
+  it("Show All Jobs shows exactly that company's jobs (a company filter, not a keyword), and the card says it is showing", async () => {
     const calls = stubApi(base);
     renderAt(<Jobs />);
     await screen.findByText("Senior .NET Developer");
-    fireEvent.click(await within(panel()).findByRole("button", { name: "View Acme Corp" }));
+    fireEvent.click(await within(panel()).findByRole("button", { name: "Show all jobs at Acme Corp" }));
     await waitFor(() => expect(lastJobs(calls).query.get("company")).toBe("Acme Corp"));
     expect(lastJobs(calls).query.get("keyword")).toBeNull(); // the Keyword box is untouched
     expect((screen.getByLabelText("Keyword") as HTMLInputElement).value).toBe("");
-    expect(await within(panel()).findByText("Showing")).toBeTruthy();
+    expect(await within(panel()).findByRole("button", { name: /Show all jobs, not only Acme Corp/ })).toBeTruthy(); // the card now offers Clear Filter
     expect(screen.getByRole("button", { name: "Remove the Acme Corp filter" })).toBeTruthy();
     // the panel did not ask again with the company, so it keeps offering the others
     expect(companyCalls(calls).every((c) => c.query.get("company") === null)).toBe(true);
     expect(within(panel()).getByText("Beta LLC")).toBeTruthy();
   });
 
-  it("Show all jobs, the chip's remove button and Reset all clear the company again", async () => {
+  it("Clear Filter, the chip's remove button and Reset all clear the company again", async () => {
     const calls = stubApi(base);
     renderAt(<Jobs />);
     await screen.findByText("Senior .NET Developer");
-    fireEvent.click(await within(panel()).findByRole("button", { name: "View Acme Corp" }));
+    fireEvent.click(await within(panel()).findByRole("button", { name: "Show all jobs at Acme Corp" }));
     await waitFor(() => expect(lastJobs(calls).query.get("company")).toBe("Acme Corp"));
-    fireEvent.click(within(panel()).getByRole("button", { name: /Show all jobs/ }));
+    fireEvent.click(within(panel()).getByRole("button", { name: /Show all jobs, not only/ }));
     await waitFor(() => expect(lastJobs(calls).query.get("company")).toBeNull());
-    fireEvent.click(within(panel()).getByRole("button", { name: "View Beta LLC" }));
+    fireEvent.click(within(panel()).getByRole("button", { name: "Show all jobs at Beta LLC" }));
     await waitFor(() => expect(lastJobs(calls).query.get("company")).toBe("Beta LLC"));
     fireEvent.click(screen.getByRole("button", { name: "Remove the Beta LLC filter" }));
     await waitFor(() => expect(lastJobs(calls).query.get("company")).toBeNull());
-    fireEvent.click(within(panel()).getByRole("button", { name: "View Beta LLC" }));
+    fireEvent.click(within(panel()).getByRole("button", { name: "Show all jobs at Beta LLC" }));
     await waitFor(() => expect(lastJobs(calls).query.get("company")).toBe("Beta LLC"));
     fireEvent.click(screen.getByRole("button", { name: "Reset" }));
     await waitFor(() => expect(lastJobs(calls).query.get("company")).toBeNull());
+  });
+
+  const addButton = (name: string) => within(panel()).getByRole("button", { name: `Add the contact of ${name} to your contacts` }) as HTMLButtonElement;
+  const added = { contactId: "c1", email: "pat@acme.test", name: "Jullie Willis", position: "Talent Lead", charged: true, credits: 99 };
+  const addHandler = (reply: { status?: number; json: unknown }): Handler => ({ path, method, ...rest }) =>
+    path === "/api/jobs/companies/add-contact" && method === "POST" ? reply : base({ path, method, ...rest } as Call);
+
+  it("Add to Contacts asks the server once for that company, shows Added, and updates the credits", async () => {
+    const calls = stubApi(addHandler({ json: added }));
+    renderAt(<Jobs />);
+    await within(panel()).findByText("Acme Corp");
+    await waitFor(() => expect(addButton("Acme Corp").disabled).toBe(false)); // credits have loaded
+    fireEvent.click(addButton("Acme Corp"));
+    await waitFor(() => expect(addButton("Acme Corp").textContent).toContain("Added"));
+    const post = calls.filter((c) => c.path === "/api/jobs/companies/add-contact");
+    expect(post).toHaveLength(1);
+    expect(post[0]!.body).toEqual({ companyName: "Acme Corp" });
+    expect(addButton("Acme Corp").disabled).toBe(true); // cannot be added twice
+    expect(addButton("Beta LLC").disabled).toBe(false); // the others are not affected
+  });
+
+  it("says plainly when no contact was found, and that nothing was charged", async () => {
+    stubApi(addHandler({ status: 404, json: { error: { code: "NO_EMAIL", message: "No contact was found for Acme Corp" } } }));
+    renderAt(<Jobs />);
+    await within(panel()).findByText("Acme Corp");
+    await waitFor(() => expect(addButton("Acme Corp").disabled).toBe(false));
+    fireEvent.click(addButton("Acme Corp"));
+    expect(await within(panel()).findByText("No contact found. You were not charged.")).toBeTruthy();
+    expect(addButton("Acme Corp").disabled).toBe(false); // can be tried again later
+  });
+
+  it("disables Add to Contacts when there is no credit left", async () => {
+    const calls = stubApi(({ path, method, ...rest }) => (path === "/api/me" ? { json: meDto({ credits: 0 }) } : base({ path, method, ...rest } as Call)));
+    renderAt(<Jobs />);
+    await within(panel()).findByText("Acme Corp");
+    await waitFor(() => expect(addButton("Acme Corp").disabled).toBe(true));
+    fireEvent.click(addButton("Acme Corp"));
+    expect(calls.some((c) => c.path === "/api/jobs/companies/add-contact")).toBe(false);
   });
 });
 

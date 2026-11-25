@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { ContactEmailDto, HiringCompaniesDto, JobCategoryDto, JobDescriptionDto, JobsPageDto, MeDto } from "@shared/api";
+import type { CompanyContactDto, ContactEmailDto, HiringCompaniesDto, JobCategoryDto, JobDescriptionDto, JobsPageDto, MeDto } from "@shared/api";
 import type { JobSort } from "@shared/schemas";
 import { api, withQuery } from "./http";
 
@@ -120,6 +120,22 @@ export function useFindContactEmail() {
   return useMutation({
     mutationFn: (companyName: string) => api<ContactEmailDto>("POST", "/api/jobs/contact-email", { companyName }),
     onSuccess: (result) => qc.setQueryData<MeDto>(["me"], (me) => (me ? { ...me, user: { ...me.user, credits: result.credits } } : me)),
+    retry: false,
+  });
+}
+
+/**
+ * Add to Contacts on a Hiring Companies card: the server finds the company's contact person (Hunter.io) and adds them to your contacts for 1
+ * credit, only when one is found. The credits in the header and the Contacts list refresh from the result.
+ */
+export function useAddCompanyContact() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (companyName: string) => api<CompanyContactDto>("POST", "/api/jobs/companies/add-contact", { companyName }),
+    onSuccess: (result) => {
+      qc.setQueryData<MeDto>(["me"], (me) => (me ? { ...me, user: { ...me.user, credits: result.credits } } : me));
+      void qc.invalidateQueries({ queryKey: ["contacts"] });
+    },
     retry: false,
   });
 }

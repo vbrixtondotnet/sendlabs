@@ -18,21 +18,13 @@ export const PAID_WINDOW_MS = FOUND_TTL_MS;
 export const cacheKeyOf = (company: string): string => company.toLowerCase().replace(/\s+/g, " ").trim();
 
 /**
- * "Get Email Address": finds the contact email of the company behind a job with Hunter.io, and charges CONTACT_LOOKUP_COST credits
- * when (and only when) one is found.
- *
- *  1. No key -> 503 NOT_CONFIGURED, nothing charged.
- *  2. The answer for this company is taken from the cache when it is fresh, else Hunter is asked (and the answer remembered).
- *  3. Nothing found -> 404 NO_EMAIL, nothing charged.
- *  4. Found -> one transaction: the account's lock for this company (so two clicks at once cannot both charge), a check that this account did
- *     not already pay for this company in the last 30 days, then one conditional UPDATE (`credits >= cost`) so the balance can never go
- *     below zero, and a ledger row. Not enough credits -> 402 and nothing changes.
+ * Hunter's best contact for a company, from the cache when it is fresh, else asked of Hunter (and remembered). `null` when there is none.
+ * 503 without a key, 400 for an empty name. Shared by "Get Email Address" and "Add to Contacts".
  */
-export async function findContactEmail(db: Database, hunter: HunterService | null, who: { userId: string }, companyName: string, now: () => number = nowMs): Promise<ContactEmailDto> {
+export async function lookupCompanyContact(db: Database, hunter: HunterService | null, companyName: string, now: () => number = nowMs): Promise<{ key: string; email: string; name: string; position: string; confidence: number } | null> {
   if (!hunter) throw new ApiError(503, "NOT_CONFIGURED", "Finding email addresses is not set up on this server yet");
   const key = cacheKeyOf(companyName);
   if (key === "") throw new ApiError(400, "VALIDATION_ERROR", "Validation failed", [{ path: "companyName", message: "A company name is required" }]);
-
   let [hit] = await db.select().from(contactLookups).where(and(eq(contactLookups.cacheKey, key), gt(contactLookups.expiresAt, now()))).limit(1);
   if (!hit) {
     const best = pickBest(await hunter.search(companyName.trim()));
@@ -48,9 +40,25 @@ export async function findContactEmail(db: Database, hunter: HunterService | nul
     };
     [hit] = await db.insert(contactLookups).values(row).onConflictDoUpdate({ target: contactLookups.cacheKey, set: row }).returning();
   }
-  if (!hit?.email) throw new ApiError(404, "NO_EMAIL", `No email address was found for ${companyName.trim()}`);
-  const found = hit;
-  const email = hit.email;
+  if (!hit?.email) return null;
+  return { key, email: hit.email, name: hit.name, position: hit.position, confidence: hit.confidence ?? 0 };
+}
+
+/**
+ * "Get Email Address": finds the contact email of the company behind a job with Hunter.io, and charges CONTACT_LOOKUP_COST credits
+ * when (and only when) one is found.
+ *
+ *  1. No key -> 503 NOT_CONFIGURED, nothing charged.
+ *  2. The answer for this company is taken from the cache when it is fresh, else Hunter is asked (and the answer remembered).
+ *  3. Nothing found -> 404 NO_EMAIL, nothing charged.
+ *  4. Found -> one transaction: the account's lock for this company (so two clicks at once cannot both charge), a check that this account did
+ *     not already pay for this company in the last 30 days, then one conditional UPDATE (`credits >= cost`) so the balance can never go
+ *     below zero, and a ledger row. Not enough credits -> 402 and nothing changes.
+ */
+export async function findContactEmail(db: Database, hunter: HunterService | null, who: { userId: string }, companyName: string, now: () => number = nowMs): Promise<ContactEmailDto> {
+  const found = await lookupCompanyContact(db, hunter, companyName, now);
+  if (!found) throw new ApiError(404, "NO_EMAIL", `No email address was found for ${companyName.trim()}`);
+  const { key, email } = found;
 
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`${who.userId}|${REASON}|${key}`}))`);
@@ -59,7 +67,7 @@ export async function findContactEmail(db: Database, hunter: HunterService | nul
       .from(creditTransactions)
       .where(and(eq(creditTransactions.userId, who.userId), eq(creditTransactions.reason, REASON), eq(creditTransactions.note, key), gt(creditTransactions.createdAt, now() - PAID_WINDOW_MS)))
       .limit(1);
-    const result = { email, name: found.name, position: found.position, confidence: found.confidence ?? 0 };
+    const result = { email, name: found.name, position: found.position, confidence: found.confidence };
     if (paid) {
       const [me] = await tx.select({ credits: users.credits }).from(users).where(eq(users.id, who.userId)).limit(1);
       return { ...result, charged: false, credits: me?.credits ?? 0 };

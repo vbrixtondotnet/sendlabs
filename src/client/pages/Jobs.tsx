@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import type { HiringCompanyDto, JobDto, JobsPageDto } from "@shared/api";
 import { CANDIDATE_LOCATION_SOURCES, shortLocation } from "@shared/jobs";
+import { COMPANY_CONTACT_COST } from "@shared/credits";
 import { JOB_SORTS, type JobSort } from "@shared/schemas";
 import { Button, Card, Empty, ErrorNotice, Field, FillPage, Notice, PageHeader, Pagination, Select, TextInput } from "@/components/ui";
 import { JobApplyPanel } from "@/components/panels/JobApplyPanel";
 import { JobDetailsPanel } from "@/components/panels/JobDetailsPanel";
 import { MultiSelect } from "@/components/MultiSelect";
 import { useDebounced } from "@/hooks/useDebounced";
+import { useToast } from "@/hooks/useToast";
 import { postedAgo } from "@/lib/jobs";
-import { useHiringCompanies, useJobCategories, useJobLocations, useJobs, type JobFilters } from "@/services/jobs";
+import { ApiClientError } from "@/services/http";
+import { useMe } from "@/services/me";
+import { useAddCompanyContact, useHiringCompanies, useJobCategories, useJobLocations, useJobs, type JobFilters } from "@/services/jobs";
 
 const PAGE_SIZE = 25;
 /** How long the keyword must stay unchanged before it is sent: typing a word costs one request, not one per letter. */
@@ -71,35 +75,60 @@ const BANNERS = [
 /** The same company always gets the same banner colour. */
 const bannerFor = (name: string) => BANNERS[[...name].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7) % BANNERS.length]!;
 
+/** What the "Add to Contacts" button of one card is doing. */
+type AddState = { status: "idle" | "adding" | "added" | "none" | "error"; message?: string };
+
 /**
- * One company that is hiring in the current search: a coloured banner (or its logo), its name and industry, a couple of its job titles, how
- * many jobs it has in these results, and View Company, which narrows the job list to that company (so the number here is the number there).
+ * One company that is hiring in the current search, kept short so more fit on screen: a small badge (its logo or initials), its name,
+ * its category and job count, a line of job titles, and two buttons. "Show All Jobs" narrows the job list to this company (so the number
+ * on the card is the number shown); "Add to Contacts" finds the company's contact person and adds them to your contacts for 1 credit,
+ * only when one is found.
  */
-function CompanyCard({ company, selected, onView, onClear }: { company: HiringCompanyDto; selected: boolean; onView: () => void; onClear: () => void }) {
+function CompanyCard({ company, selected, add, canAdd, onShow, onClear, onAdd }: {
+  company: HiringCompanyDto;
+  selected: boolean;
+  add: AddState;
+  /** False when the account has no credit left. */
+  canAdd: boolean;
+  onShow: () => void;
+  onClear: () => void;
+  onAdd: () => void;
+}) {
   const n = company.openPositions;
+  const adding = add.status === "adding";
+  const added = add.status === "added";
   return (
-    <li className={`overflow-hidden rounded-2xl border bg-white dark:bg-slate-900 ${selected ? "border-brand-500 ring-2 ring-brand-500/30" : "border-slate-200 dark:border-slate-800"}`}>
-      <div className="relative flex h-24 items-end p-3" style={{ background: bannerFor(company.name) }} aria-hidden="true">
-        <span className="absolute left-3 top-3 rounded-md bg-white/90 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-slate-800">{selected ? "Showing" : "Hiring now"}</span>
-        {company.logo ? (
-          <img src={company.logo} alt="" className="h-12 w-12 rounded-lg bg-white object-contain p-1" loading="lazy" referrerPolicy="no-referrer" />
-        ) : (
-          <span className="text-2xl font-semibold text-white/90">{company.name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase()}</span>
-        )}
-      </div>
-      <div className="space-y-1 p-4">
-        <p className="text-base font-medium leading-snug">{company.name}</p>
-        {company.industry && <p className="text-sm text-slate-500 dark:text-slate-400">{company.industry}</p>}
-        {company.sampleTitles.length > 0 && <p className="pt-1 text-sm text-slate-700 dark:text-slate-200">{company.sampleTitles.join(" · ")}</p>}
-        <p className="pt-1 text-sm font-medium">{n} Open {n === 1 ? "Position" : "Positions"}</p>
-        <div className="pt-2">
-          {selected ? (
-            <Button variant="secondary" className="w-full cursor-pointer" onClick={onClear} aria-label={`Show all jobs, not only ${company.name}`}>Show all jobs</Button>
-          ) : (
-            <Button variant="secondary" className="w-full cursor-pointer" onClick={onView} aria-label={`View ${company.name}`}>View Company</Button>
-          )}
+    <li className={`rounded-xl border bg-white p-3 dark:bg-slate-900 ${selected ? "border-brand-500 ring-2 ring-brand-500/30" : "border-slate-200 dark:border-slate-800"}`}>
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg text-sm font-semibold text-white" style={{ background: bannerFor(company.name) }} aria-hidden="true">
+          {company.logo ? <img src={company.logo} alt="" className="h-full w-full bg-white object-contain p-0.5" loading="lazy" referrerPolicy="no-referrer" /> : company.name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase()}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium leading-snug" title={company.name}>{company.name}</p>
+          <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+            {company.industry ? `${company.industry} \u00b7 ` : ""}<span className="font-medium text-slate-700 dark:text-slate-200">{n} Open {n === 1 ? "Position" : "Positions"}</span>
+          </p>
+          {company.sampleTitles.length > 0 && <p className="truncate text-xs text-slate-500 dark:text-slate-400" title={company.sampleTitles.join(" \u00b7 ")}>{company.sampleTitles.join(" \u00b7 ")}</p>}
         </div>
       </div>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        {selected ? (
+          <Button variant="secondary" className="cursor-pointer !px-2 !py-1 text-xs" onClick={onClear} aria-label={`Show all jobs, not only ${company.name}`}>Clear Filter</Button>
+        ) : (
+          <Button variant="secondary" className="cursor-pointer !px-2 !py-1 text-xs" onClick={onShow} aria-label={`Show all jobs at ${company.name}`}>Show All Jobs</Button>
+        )}
+        <Button
+          variant="primary"
+          className="cursor-pointer !px-2 !py-1 text-xs"
+          onClick={onAdd}
+          disabled={adding || added || !canAdd}
+          aria-label={`Add the contact of ${company.name} to your contacts`}
+          title={!canAdd && !added ? "You need 1 credit" : added ? "Already in your contacts" : "Costs 1 credit, only when a contact is found"}
+        >
+          {adding ? "Adding\u2026" : added ? "Added \u2713" : "Add to Contacts"}
+        </Button>
+      </div>
+      {(add.status === "none" || add.status === "error") && <p className="mt-1.5 text-xs text-amber-700 dark:text-amber-400" role="status">{add.message}</p>}
     </li>
   );
 }
@@ -129,6 +158,30 @@ export function Jobs() {
   // The Hiring Companies panel follows the same search (not the company chosen in it), so what it counts is what the list then shows.
   const companyFilters = useMemo(() => ({ keyword, category: draft.category, locations: draft.locations, remoteOnly: draft.remoteOnly }), [keyword, draft.category, draft.locations, draft.remoteOnly]);
   const companies = useHiringCompanies(companyFilters);
+
+  // Add to Contacts: what happened for each company (by name), and the account's credits (the button needs at least one).
+  const { toast } = useToast();
+  const me = useMe();
+  const addContact = useAddCompanyContact();
+  const [adds, setAdds] = useState<Record<string, AddState>>({});
+  const credits = me.data?.user.credits ?? 0;
+  const addToContacts = async (name: string) => {
+    setAdds((a) => ({ ...a, [name]: { status: "adding" } }));
+    try {
+      const r = await addContact.mutateAsync(name);
+      setAdds((a) => ({ ...a, [name]: { status: "added" } }));
+      toast(r.charged ? `${r.name || r.email} added to your contacts (1 credit used)` : `${r.name || r.email} is already in your contacts`);
+    } catch (e) {
+      const code = e instanceof ApiClientError ? e.code : "";
+      const message =
+        code === "NO_EMAIL" ? "No contact found. You were not charged."
+        : code === "INSUFFICIENT_CREDITS" ? "You need 1 credit."
+        : code === "NOT_CONFIGURED" ? "Finding contacts is not set up on this server yet."
+        : e instanceof ApiClientError ? e.message
+        : "Could not add the contact. You were not charged.";
+      setAdds((a) => ({ ...a, [name]: { status: code === "NO_EMAIL" ? "none" : "error", message } }));
+    }
+  };
   const categories = useJobCategories();
   const locations = useJobLocations();
 
@@ -245,9 +298,18 @@ export function Jobs() {
             ) : companies.data.items.length === 0 ? (
               <div className="p-3"><Empty>No companies are hiring for this search.</Empty></div>
             ) : (
-              <ul className={`min-h-0 flex-1 space-y-3 overflow-y-auto p-3 transition-opacity ${companies.isPlaceholderData ? "opacity-60" : ""}`}>
+              <ul className={`min-h-0 flex-1 space-y-2 overflow-y-auto p-3 transition-opacity ${companies.isPlaceholderData ? "opacity-60" : ""}`}>
                 {companies.data.items.map((c) => (
-                  <CompanyCard key={c.name} company={c} selected={draft.company.toLowerCase() === c.name.toLowerCase()} onView={() => change({ company: c.name })} onClear={() => change({ company: "" })} />
+                  <CompanyCard
+                    key={c.name}
+                    company={c}
+                    selected={draft.company.toLowerCase() === c.name.toLowerCase()}
+                    add={adds[c.name] ?? { status: "idle" }}
+                    canAdd={credits >= COMPANY_CONTACT_COST}
+                    onShow={() => change({ company: c.name })}
+                    onClear={() => change({ company: "" })}
+                    onAdd={() => void addToContacts(c.name)}
+                  />
                 ))}
               </ul>
             )}

@@ -5,6 +5,7 @@ import { ApiError } from "../lib/errors";
 import { JobSourceError } from "../lib/live-fetch";
 import { readAttachments } from "../lib/attachments";
 import { parseJson, parseQuery } from "../lib/http";
+import { addCompanyContact } from "../services/company-contact";
 import { findContactEmail } from "../services/contact-email";
 import { HunterService } from "../services/hunter";
 import { emailProviderForRequest } from "../services/email-providers";
@@ -38,6 +39,18 @@ jobRoutes.get("/", async (c) => {
   const q = parseQuery(c, jobListQuery);
   return c.json(await viaSources(() => service(c).list(q, c.req.raw.signal)));
 });
+/**
+ * Add to Contacts (Hiring Companies card): finds the company's contact person with Hunter.io and adds them to the caller's contacts for
+ * COMPANY_CONTACT_COST credits, only when one is found and added (see services/company-contact.ts). Never returns the API key.
+ */
+jobRoutes.post("/companies/add-contact", async (c) => {
+  const { companyName } = await parseJson(c, contactEmailLookupSchema);
+  const key = c.env.HUNTER_API_KEY?.trim();
+  const hunter = key ? new HunterService({ fetch: c.get("fetch"), apiKey: key }) : null;
+  c.header("Cache-Control", "no-store");
+  return c.json(await viaSources(() => addCompanyContact(c.get("db"), hunter, { userId: c.get("actor").userId }, companyName)));
+});
+
 /** The Hiring Companies panel: the companies in the current search's results, with how many jobs each has there. Same filters as the list. */
 jobRoutes.get("/companies", async (c) => c.json(await viaSources(() => service(c).companies(parseQuery(c, jobListQuery), c.req.raw.signal))));
 jobRoutes.get("/categories", async (c) => {

@@ -224,6 +224,19 @@ export interface ContactEmailDto {
   credits: number;
 }
 
+/** "Add to Contacts" on a Hiring Companies card: the company's contact person, now one of the caller's contacts. */
+export interface CompanyContactDto {
+  /** The contact in the caller's list. */
+  contactId: string;
+  email: string;
+  name: string;
+  position: string;
+  /** True when a credit was spent; false when the address was already one of the caller's contacts. */
+  charged: boolean;
+  /** The caller's credits after this. */
+  credits: number;
+}
+
 export interface AddContactResultDto {
   person: PersonDto;
   /** The contact in the caller's list. */

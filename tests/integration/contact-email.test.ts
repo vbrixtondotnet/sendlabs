@@ -132,3 +132,79 @@ describe("Get Email Address: POST /api/jobs/contact-email", () => {
     expect((await h.anonymous.api("POST", "/api/jobs/contact-email", { companyName: "Acme" })).status).toBe(401);
   });
 });
+
+describe("Add to Contacts: POST /api/jobs/companies/add-contact", () => {
+  let h: Harness;
+  let hunterFetch: typeof fetch = (async () => new Response("{}", { status: 404 })) as typeof fetch;
+  beforeAll(async () => { h = await startHarness({ fetch: ((i: never, init?: never) => hunterFetch(i, init)) as typeof fetch }); });
+  afterAll(async () => { await h.dispose(); });
+
+  const email = "jobseeker@sendrix.app";
+  const credits = async () => (await h.rows<{ credits: number }>("SELECT credits FROM users WHERE normalized_email = ?", email))[0]!.credits;
+  const myContacts = () => h.rows<{ email: string; first_name: string; last_name: string; title: string; company_name: string; consent_source: string }>(
+    "SELECT c.email, c.first_name, c.last_name, c.title, c.company_name, c.consent_source FROM contacts c JOIN users u ON u.id = c.user_id WHERE u.normalized_email = ?", email);
+  const add = (hw: ReturnType<typeof hunterWorld> | null, company: string, key: string | null = KEY) => {
+    if (hw) hunterFetch = hw.fetchFn;
+    return h.withEnv({ DEV_ACTOR_EMAIL: email, ...(key ? { HUNTER_API_KEY: key } : {}) }).api("POST", "/api/jobs/companies/add-contact", { companyName: company });
+  };
+  const pat = () => hunterEmail({ value: "pat@acme.test", department: "hr", position: "Talent Lead", first_name: "Jullie", last_name: "Willis", confidence: 93 });
+
+  it("adds the company's contact person to the user's contacts and takes 1 credit", async () => {
+    const before = await credits();
+    const hw = hunterWorld([pat()]);
+    const r = await add(hw, "Acme Corp");
+    expect(r.status).toBe(200);
+    expect(r.json).toMatchObject({ email: "pat@acme.test", name: "Jullie Willis", position: "Talent Lead", charged: true, credits: before - 1 });
+    expect(await credits()).toBe(before - 1);
+    expect(await myContacts()).toEqual([{ email: "pat@acme.test", first_name: "Jullie", last_name: "Willis", title: "Talent Lead", company_name: "Acme Corp", consent_source: "Hiring companies" }]);
+    const ledger = await h.rows<{ delta: number; reason: string; contact_id: string }>("SELECT t.delta, t.reason, t.contact_id FROM credit_transactions t JOIN users u ON u.id = t.user_id WHERE u.normalized_email = ? AND t.reason = 'company_contact_add'", email);
+    expect(ledger).toEqual([{ delta: -1, reason: "company_contact_add", contact_id: r.json.contactId }]);
+    expect(r.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("does not charge again for a person who is already a contact, and shares Hunter's cache with Get Email Address", async () => {
+    const before = await credits();
+    const hw = hunterWorld();
+    const r = await add(hw, "acme   CORP");
+    expect(r.json).toMatchObject({ email: "pat@acme.test", charged: false, credits: before });
+    expect(hw.calls).toHaveLength(0); // answered from the cache
+    expect(await myContacts()).toHaveLength(1);
+  });
+
+  it("finds nobody: 404, nothing charged and no contact created", async () => {
+    const before = await credits();
+    const r = await add(hunterWorld([]), "Ghost Ltd");
+    expect(r.status).toBe(404);
+    expect(r.json.error.code).toBe("NO_EMAIL");
+    expect(await credits()).toBe(before);
+    expect(await myContacts()).toHaveLength(1);
+  });
+
+  it("refuses with 402 and creates nothing when there is no credit left", async () => {
+    await h.sql("UPDATE users SET credits = 0 WHERE normalized_email = ?", email);
+    const r = await add(hunterWorld([hunterEmail({ value: "jobs@poor.test", first_name: "Poor", last_name: "Co" })]), "Poor Co");
+    expect(r.status).toBe(402);
+    expect(r.json.error.code).toBe("INSUFFICIENT_CREDITS");
+    expect(await credits()).toBe(0);
+    expect((await myContacts()).some((c) => c.email === "jobs@poor.test")).toBe(false);
+    await h.sql("UPDATE users SET credits = 100 WHERE normalized_email = ?", email);
+  });
+
+  it("cannot overspend or add twice when pressed several times at once", async () => {
+    await h.sql("UPDATE users SET credits = 1 WHERE normalized_email = ?", email);
+    const hw = hunterWorld([hunterEmail({ value: "jobs@race.test", first_name: "Race", last_name: "Co" })]);
+    const rs = await Promise.all([1, 2, 3, 4].map(() => add(hw, "Race Co")));
+    expect(rs.every((r) => r.status === 200)).toBe(true);
+    expect(rs.filter((r) => r.json.charged)).toHaveLength(1);
+    expect(await credits()).toBe(0);
+    expect((await myContacts()).filter((c) => c.email === "jobs@race.test")).toHaveLength(1);
+    await h.sql("UPDATE users SET credits = 100 WHERE normalized_email = ?", email);
+  });
+
+  it("is switched off without a key (503), validates the name, and is for JobSeeker only", async () => {
+    expect((await add(null, "Acme Corp", null)).status).toBe(503);
+    expect((await add(hunterWorld(), "  ")).status).toBe(400);
+    for (const who of [h, h.superAdmin]) expect((await who.api("POST", "/api/jobs/companies/add-contact", { companyName: "Acme" })).status).toBe(403);
+    expect((await h.anonymous.api("POST", "/api/jobs/companies/add-contact", { companyName: "Acme" })).status).toBe(401);
+  });
+});
