@@ -47,6 +47,11 @@ interface Env {
    */
   JOOBLE_API_KEY?: string;
   /**
+   * SECRET. Hunter.io API key (https://hunter.io/api-keys). Optional: without it "Get Email Address" in the Apply panel is switched off.
+   * Put it in `.dev.vars`, or `wrangler secret put HUNTER_API_KEY --env <env>`. It is sent only to api.hunter.io.
+   */
+  HUNTER_API_KEY?: string;
+  /**
    * Local development shortcut only: when set (in `.dev.vars`), a request with no session runs as this user, so the API
    * can be tried without signing in. Unset by default, so locally you sign in through the login page. Ignored outside
    * the local environment.

@@ -1,10 +1,12 @@
 import { Hono } from "hono";
-import { jobApplicationEmailSchema, jobListQuery } from "../../shared/schemas";
+import { contactEmailLookupSchema, jobApplicationEmailSchema, jobListQuery } from "../../shared/schemas";
 import type { AppEnv } from "../app";
 import { ApiError } from "../lib/errors";
 import { JobSourceError } from "../lib/live-fetch";
 import { readAttachments } from "../lib/attachments";
-import { parseQuery } from "../lib/http";
+import { parseJson, parseQuery } from "../lib/http";
+import { findContactEmail } from "../services/contact-email";
+import { HunterService } from "../services/hunter";
 import { emailProviderForRequest } from "../services/email-providers";
 import { sendApplicationEmail } from "../services/job-application-email";
 import { JobSearchService, jobSources } from "../services/job-search";
@@ -49,6 +51,18 @@ jobRoutes.get("/description", async (c) => {
   return c.json({ id, blocks });
 });
 jobRoutes.get("/locations", async (c) => c.json({ items: await viaSources(() => service(c).locations(c.req.raw.signal)) }));
+
+/**
+ * Get Email Address (Apply panel): finds the contact email of the job's company with Hunter.io. Only a click calls it. Costs
+ * CONTACT_LOOKUP_COST credits, only when an address is found (see services/contact-email.ts). Never returns the API key.
+ */
+jobRoutes.post("/contact-email", async (c) => {
+  const { companyName } = await parseJson(c, contactEmailLookupSchema);
+  const key = c.env.HUNTER_API_KEY?.trim();
+  const hunter = key ? new HunterService({ fetch: c.get("fetch"), apiKey: key }) : null;
+  c.header("Cache-Control", "no-store");
+  return c.json(await viaSources(() => findContactEmail(c.get("db"), hunter, { userId: c.get("actor").userId }, companyName)));
+});
 
 /**
  * Sends a personally written application email, with PDF / Word attachments, from the Apply panel. One recipient, no CC or BCC.

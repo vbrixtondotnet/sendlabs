@@ -29,6 +29,7 @@ export type EnvOverride = {
   POSTMARK_SERVER_TOKEN?: string;
   POSTMARK_FROM?: string;
   POSTMARK_FROM_NAME?: string;
+  HUNTER_API_KEY?: string;
 };
 
 /** Google credentials for tests. Fake values, and a throwaway 32-byte key, so the Gmail connection is "configured". */

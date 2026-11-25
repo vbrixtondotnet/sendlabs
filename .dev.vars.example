@@ -38,3 +38,6 @@ TOKEN_ENCRYPTION_KEY=generate-with-openssl-rand-base64-32
 
 # Jobs: Jooble is used as an extra job source when this key is set (free key: https://jooble.org/api/about). Optional.
 # JOOBLE_API_KEY=your-jooble-key
+
+# Jobs > Apply > "Get Email Address" finds a job's contact email with Hunter.io (10 credits per address found). Optional: https://hunter.io/api-keys
+# HUNTER_API_KEY=your-hunter-key

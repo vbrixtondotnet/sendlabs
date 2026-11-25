@@ -210,6 +210,20 @@ export interface PersonDto {
 export type PeopleSearchDto = Page<PersonDto>;
 
 /** The result of "Add Contact" on a person: they are now (or already were) one of the caller's contacts, with the email revealed. */
+/** The contact email found for a job's company. */
+export interface ContactEmailDto {
+  email: string;
+  /** The person, when Hunter knows the name. */
+  name: string;
+  position: string;
+  /** Hunter's confidence, 0 to 100. */
+  confidence: number;
+  /** True when credits were spent; false when this account already paid for this company recently. */
+  charged: boolean;
+  /** The caller's credits after this. */
+  credits: number;
+}
+
 export interface AddContactResultDto {
   person: PersonDto;
   /** The contact in the caller's list. */

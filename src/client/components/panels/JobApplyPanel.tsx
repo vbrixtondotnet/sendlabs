@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import type { JobDto } from "@shared/api";
+import type { ContactEmailDto, JobDto } from "@shared/api";
+import { CONTACT_LOOKUP_COST } from "@shared/credits";
 import { ATTACHMENT_ACCEPT, MAX_ATTACHMENTS, MAX_TOTAL_ATTACHMENT_BYTES, attachmentProblem, formatBytes } from "@shared/email-attachments";
 import { isValidEmail } from "@shared/email";
 import { Button, Field, Notice, TextArea, TextInput } from "@/components/ui";
 import { SlidePanel } from "@/components/SlidePanel";
 import { useToast } from "@/hooks/useToast";
 import { ApiClientError } from "@/services/http";
-import { useSendApplicationEmail } from "@/services/jobs";
+import { useFindContactEmail, useSendApplicationEmail } from "@/services/jobs";
 import { useMe } from "@/services/me";
 import { useSender } from "@/services/sender";
 
@@ -31,17 +32,23 @@ export function draftApplication(job: Pick<JobDto, "title" | "companyName">, you
 
 /**
  * The panel that slides in from the right when you press Apply Now on a job: write a personal email to the employer, attach your
- * resume (PDF or Word), and send it from your connected Gmail account. One recipient; there is no CC or BCC.
+ * resume (PDF or Word), and send it from your connected Gmail account. One recipient; there is no CC or BCC. The recipient is not typed:
+ * "Get Email Address" (under the To field) asks Hunter.io for the company's contact email, costs CONTACT_LOOKUP_COST credits when one is found,
+ * and fills To, which is always disabled.
  */
 export function JobApplyPanel({ job, open = true, onClose, onExited }: { job: JobDto; /** False slides it out. */ open?: boolean; onClose: () => void; /** Called once it has finished sliding out. */ onExited?: () => void }) {
   const me = useMe();
   const sender = useSender();
   const { toast } = useToast();
   const send = useSendApplicationEmail();
+  const lookup = useFindContactEmail();
 
   const yourName = me.data?.user.displayName || me.data?.user.email || "";
   const draft = draftApplication(job, yourName);
-  const [to, setTo] = useState("");
+  const [found, setFound] = useState<ContactEmailDto | null>(null);
+  const [lookupNote, setLookupNote] = useState<{ tone: "info" | "warn" | "error"; text: string } | null>(null);
+  const [unavailable, setUnavailable] = useState(false); // the server has no Hunter key
+  const to = found?.email ?? "";
   const [subject, setSubject] = useState(draft.subject);
   const [body, setBody] = useState(draft.body);
   // Your name only arrives with /api/me. Until you have changed the message yourself, the sign-off follows it.
@@ -53,6 +60,9 @@ export function JobApplyPanel({ job, open = true, onClose, onExited }: { job: Jo
   const picker = useRef<HTMLInputElement>(null);
 
   const connected = sender.data?.sender?.status === "Connected";
+  const credits = me.data?.user.credits ?? 0;
+  const enoughCredits = credits >= CONTACT_LOOKUP_COST;
+  const canLookup = !!job.companyName && enoughCredits && !unavailable && !found && !lookup.isPending && !send.isPending;
   const total = files.reduce((n, f) => n + f.size, 0);
   const valid = isValidEmail(to.trim().toLowerCase()) && subject.trim() !== "" && body.trim() !== "";
 
@@ -70,6 +80,22 @@ export function JobApplyPanel({ job, open = true, onClose, onExited }: { job: Jo
     if (picker.current) picker.current.value = ""; // so the same file can be chosen again after removing it
   };
   const removeFile = (i: number) => { setFiles(files.filter((_, k) => k !== i)); setFileProblem(null); };
+
+  const getEmail = async () => {
+    if (!canLookup) return;
+    setLookupNote(null);
+    try {
+      const r = await lookup.mutateAsync(job.companyName);
+      setFound(r);
+      toast(r.charged ? `Email address found (${CONTACT_LOOKUP_COST} credits used)` : "Email address found");
+    } catch (err) {
+      const code = err instanceof ApiClientError ? err.code : "";
+      if (code === "NO_EMAIL") setLookupNote({ tone: "info", text: `No email address was found for ${job.companyName}. You were not charged.` });
+      else if (code === "NOT_CONFIGURED") { setUnavailable(true); setLookupNote({ tone: "warn", text: "Finding email addresses is not set up on this server yet." }); }
+      else if (code === "INSUFFICIENT_CREDITS") setLookupNote({ tone: "warn", text: `You need ${CONTACT_LOOKUP_COST} credits to get an email address.` });
+      else setLookupNote({ tone: "error", text: err instanceof ApiClientError ? err.message : "The search could not be completed. Please try again. You were not charged." });
+    }
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -110,9 +136,20 @@ export function JobApplyPanel({ job, open = true, onClose, onExited }: { job: Jo
       <form id="apply-email-form" onSubmit={(e) => void submit(e)} className="space-y-4" aria-label="Application email">
         {connected && <p className="text-sm text-slate-500 dark:text-slate-400">From: <span className="font-medium text-slate-700 dark:text-slate-200">{sender.data!.sender!.email}</span></p>}
 
-        <Field label="To" htmlFor="apply-to" hint="The email address of the person or team that is hiring.">
-          <TextInput id="apply-to" type="email" autoComplete="off" placeholder="hiring@company.com" value={to} onChange={(e) => setTo(e.target.value)} disabled={send.isPending} />
-        </Field>
+        <div>
+          <Field label="To" htmlFor="apply-to" hint={found ? [found.name, found.position].filter(Boolean).join(" · ") || "Found with Hunter.io" : "Filled in by Get Email Address. It cannot be typed."}>
+            <TextInput id="apply-to" type="email" autoComplete="off" placeholder="Click Get Email Address" value={to} readOnly disabled />
+          </Field>
+          {!found && (
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <Button type="button" variant="secondary" onClick={() => void getEmail()} disabled={!canLookup}>
+                {lookup.isPending ? "Searching…" : `Get Email Address (${CONTACT_LOOKUP_COST} credits)`}
+              </Button>
+              {!enoughCredits && me.data && <span className="text-xs text-amber-700 dark:text-amber-400">Needs {CONTACT_LOOKUP_COST} credits (you have {credits}).</span>}
+            </div>
+          )}
+          {lookupNote && <div className="mt-2"><Notice tone={lookupNote.tone}>{lookupNote.text}</Notice></div>}
+        </div>
         <Field label="Subject" htmlFor="apply-subject">
           <TextInput id="apply-subject" value={subject} maxLength={200} onChange={(e) => setSubject(e.target.value)} disabled={send.isPending} />
         </Field>

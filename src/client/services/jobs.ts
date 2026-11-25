@@ -1,5 +1,5 @@
-import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
-import type { JobCategoryDto, JobDescriptionDto, JobsPageDto } from "@shared/api";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { ContactEmailDto, JobCategoryDto, JobDescriptionDto, JobsPageDto, MeDto } from "@shared/api";
 import type { JobSort } from "@shared/schemas";
 import { api, withQuery } from "./http";
 
@@ -79,6 +79,19 @@ export function useSendApplicationEmail() {
       for (const f of input.attachments) form.append("attachments", f, f.name);
       return api<{ sent: boolean; attachments: number }>("POST", "/api/jobs/apply-email", form);
     },
+  });
+}
+
+/**
+ * Get Email Address (Apply panel): asks the server to find the contact email of a company with Hunter.io. A mutation, so it only runs
+ * when the button is pressed. When an address is found the credits shown in the header drop to the new balance at once.
+ */
+export function useFindContactEmail() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (companyName: string) => api<ContactEmailDto>("POST", "/api/jobs/contact-email", { companyName }),
+    onSuccess: (result) => qc.setQueryData<MeDto>(["me"], (me) => (me ? { ...me, user: { ...me.user, credits: result.credits } } : me)),
+    retry: false,
   });
 }
 

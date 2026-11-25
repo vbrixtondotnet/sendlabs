@@ -23,10 +23,13 @@ export const creditTransactions = pgTable(
     globalContactId: text("global_contact_id"),
     /** The contact it became in the account's list. */
     contactId: text("contact_id"),
+    /** A short free-text detail: for a contact-email lookup, the company that was searched (lower-cased). */
+    note: text("note"),
     createdAt: createdAt(),
   },
   (t) => [
     index("credit_transactions_user_created_idx").on(t.userId, t.createdAt),
+    index("credit_transactions_user_note_idx").on(t.userId, t.reason, t.note),
     check("credit_transactions_delta_chk", sql.raw(`"delta" <> 0`)),
     check("credit_transactions_balance_chk", sql.raw(`"balance_after" >= 0`)),
   ],

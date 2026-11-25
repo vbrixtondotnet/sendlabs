@@ -16,6 +16,7 @@ const base: Handler = ({ path, method }) =>
   path === "/api/me" ? { json: meDto() }
   : path === "/api/sender" ? { json: senderStatus(senderDto({ email: "sales@acme.test" })) }
   : path === "/api/jobs/apply-email" && method === "POST" ? { json: { sent: true, attachments: 0 } }
+  : path === "/api/jobs/contact-email" && method === "POST" ? { json: { email: "hiring@acme.test", name: "Pat Recruiter", position: "Talent Lead", confidence: 92, charged: true, credits: 90 } }
   : undefined;
 
 const open = (handler: Handler = base, onClose = () => undefined) => {
@@ -27,7 +28,12 @@ const panel = () => screen.getByRole("dialog", { name: "Apply by email" });
 const sendCall = (calls: Call[]) => calls.find((c) => c.path === "/api/jobs/apply-email");
 const file = (name: string, size = 10, type = "") => new File([new Uint8Array(size).fill(1)], name, { type });
 const attach = (...files: File[]) => fireEvent.change(screen.getByLabelText("Attach files"), { target: { files } });
-const fillTo = (v = "hiring@acme.test") => fireEvent.change(screen.getByLabelText("To"), { target: { value: v } });
+/** Fills To the only way it can be filled: with the Get Email Address button. */
+const fillTo = async () => {
+  fireEvent.click(screen.getByRole("button", { name: /Get Email Address/ }));
+  await waitFor(() => expect((screen.getByLabelText("To") as HTMLInputElement).value).toBe("hiring@acme.test"));
+};
+const getButton = () => screen.queryByRole("button", { name: /Get Email Address/ }) as HTMLButtonElement | null;
 const sendButton = () => screen.getByRole("button", { name: /Send email|Sending/ }) as HTMLButtonElement;
 
 describe("the Apply panel", () => {
@@ -69,13 +75,11 @@ describe("the Apply panel", () => {
     expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("My own words");
   });
 
-  it("sends only when there is a valid address, a subject and a message", async () => {
+  it("sends only when an address has been found, and there is a subject and a message", async () => {
     open();
     await screen.findByText(/sales@acme.test/);
     expect(sendButton().disabled).toBe(true); // no address yet
-    fillTo("not-an-email");
-    expect(sendButton().disabled).toBe(true);
-    fillTo();
+    await fillTo();
     expect(sendButton().disabled).toBe(false);
     fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "  " } });
     expect(sendButton().disabled).toBe(true);
@@ -85,7 +89,7 @@ describe("the Apply panel", () => {
     let closed = 0;
     const calls = open(base, () => { closed++; });
     await screen.findByText(/sales@acme.test/);
-    fillTo(" hiring@acme.test ");
+    await fillTo();
     attach(file("resume.pdf", 2000, "application/pdf"), file("cover.docx"));
     fireEvent.click(sendButton());
     await waitFor(() => expect(closed).toBe(1));
@@ -103,7 +107,7 @@ describe("the Apply panel", () => {
     let fail = true;
     const calls = open(({ path, method, ...rest }) => (path === "/api/jobs/apply-email" ? (fail ? { status: 409, json: { error: { code: "SENDER_RECONNECT", message: "Google no longer accepts your Gmail connection. Reconnect it in Settings, then try again" } } } : { json: { sent: true, attachments: 0 } }) : base({ path, method, ...rest } as Call)));
     await screen.findByText(/sales@acme.test/);
-    fillTo();
+    await fillTo();
     fireEvent.click(sendButton());
     expect(await screen.findByText("Google no longer accepts your Gmail connection. Reconnect it in Settings, then try again")).toBeTruthy();
     expect((screen.getByLabelText("To") as HTMLInputElement).value).toBe("hiring@acme.test");
@@ -115,9 +119,60 @@ describe("the Apply panel", () => {
   it("asks to connect Gmail first when the account has none", async () => {
     open(({ path, method, ...rest }) => (path === "/api/sender" ? { json: senderStatus(null) } : base({ path, method, ...rest } as Call)));
     expect(await screen.findByText("Connect your Gmail account first")).toBeTruthy();
-    fillTo();
+    await fillTo();
     expect(sendButton().disabled).toBe(true);
     expect(screen.getByRole("link", { name: "Settings" }).getAttribute("href")).toBe("/settings");
+  });
+});
+
+describe("Get Email Address", () => {
+  it("shows To disabled and empty, with the button under it, and calls nothing until it is pressed", async () => {
+    const calls = open();
+    await screen.findByText(/sales@acme.test/);
+    const to = screen.getByLabelText("To") as HTMLInputElement;
+    expect(to.disabled).toBe(true);
+    expect(to.value).toBe("");
+    expect(getButton()!.textContent).toBe("Get Email Address (10 credits)");
+    expect(to.compareDocumentPosition(getButton()!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy(); // under the field
+    expect(calls.some((c) => c.path === "/api/jobs/contact-email")).toBe(false);
+  });
+
+  it("asks once, for the job's company, fills To (still disabled), shows who it is, and takes the button away", async () => {
+    const calls = open();
+    await screen.findByText(/sales@acme.test/);
+    await fillTo();
+    expect(calls.filter((c) => c.path === "/api/jobs/contact-email")).toHaveLength(1);
+    expect(calls.find((c) => c.path === "/api/jobs/contact-email")!.body).toEqual({ companyName: "Acme Corp" });
+    expect((screen.getByLabelText("To") as HTMLInputElement).disabled).toBe(true);
+    expect(screen.getByText("Pat Recruiter · Talent Lead")).toBeTruthy();
+    expect(getButton()).toBeNull();
+  });
+
+  it("disables the button, and says why, with fewer than 10 credits, and never calls the server", async () => {
+    const calls = open(({ path, method, ...rest }) => (path === "/api/me" ? { json: meDto({ credits: 9 }) } : base({ path, method, ...rest } as Call)));
+    await screen.findByText(/sales@acme.test/);
+    await screen.findByText(/Needs 10 credits \(you have 9\)/);
+    expect(getButton()!.disabled).toBe(true);
+    fireEvent.click(getButton()!);
+    expect(calls.some((c) => c.path === "/api/jobs/contact-email")).toBe(false);
+  });
+
+  it("says plainly when no address was found, leaves To empty and the button usable", async () => {
+    open(({ path, method, ...rest }) => (path === "/api/jobs/contact-email" ? { status: 404, json: { error: { code: "NO_EMAIL", message: "No email address was found for Acme Corp" } } } : base({ path, method, ...rest } as Call)));
+    await screen.findByText(/sales@acme.test/);
+    fireEvent.click(getButton()!);
+    expect(await screen.findByText(/No email address was found for Acme Corp\. You were not charged/)).toBeTruthy();
+    expect((screen.getByLabelText("To") as HTMLInputElement).value).toBe("");
+    expect(sendButton().disabled).toBe(true);
+    expect(getButton()!.disabled).toBe(false);
+  });
+
+  it("switches itself off when the server has no Hunter key", async () => {
+    open(({ path, method, ...rest }) => (path === "/api/jobs/contact-email" ? { status: 503, json: { error: { code: "NOT_CONFIGURED", message: "not set up" } } } : base({ path, method, ...rest } as Call)));
+    await screen.findByText(/sales@acme.test/);
+    fireEvent.click(getButton()!);
+    expect(await screen.findByText(/not set up on this server yet/)).toBeTruthy();
+    expect(getButton()!.disabled).toBe(true);
   });
 });
 
@@ -205,7 +260,7 @@ describe("attachments in the Apply panel", () => {
   it("is not sent with an attachment that was removed", async () => {
     const calls = open();
     await screen.findByText(/sales@acme.test/);
-    fillTo();
+    await fillTo();
     attach(file("one.pdf"), file("two.pdf"));
     fireEvent.click(screen.getByRole("button", { name: "Remove one.pdf" }));
     fireEvent.click(sendButton());

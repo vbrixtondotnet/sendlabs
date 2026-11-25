@@ -293,6 +293,10 @@ export const jobApplicationEmailSchema = z.strictObject({
 });
 export type JobApplicationEmail = z.infer<typeof jobApplicationEmailSchema>;
 
+/** Finding the contact email of the company behind a job (Get Email Address in the Apply panel). */
+export const contactEmailLookupSchema = z.strictObject({ companyName: z.string().trim().min(1, "A company name is required").max(200) });
+export type ContactEmailLookup = z.infer<typeof contactEmailLookupSchema>;
+
 /** Adding an address to the test-send allowlist. */
 export const testRecipientCreateSchema = z.strictObject({ email });
 export type TestRecipientCreate = z.infer<typeof testRecipientCreateSchema>;

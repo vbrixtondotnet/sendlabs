@@ -15,6 +15,7 @@ describe("what each kind of account can use", () => {
     ["/api/test-recipients", false, false, true],
     ["/api/suppressions", false, false, true],
     ["/api/jobs/categories", false, true, false],
+    ["/api/jobs/contact-email", false, true, false],
     ["/api/contacts", false, true, true],
     ["/api/imports", false, false, true],
     ["/api/people/filters", false, true, true],
