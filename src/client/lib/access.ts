@@ -4,7 +4,7 @@ import type { Role } from "@shared/types";
  * Which parts of the app each kind of account can open. The server enforces the same rules (a forbidden call answers 403); this
  * decides what the menu shows and where a forbidden address sends you.
  *  - SuperAdmin: Email Templates, Global Contacts and User Accounts.
- *  - JobSeeker: Jobs, Summary, Contacts, Search People and My Settings (which holds its Email Settings). No Campaigns, Imports, Email Templates
+ *  - JobSeeker: Jobs (its landing page), Contacts, Search People, Summary and My Settings (which holds its Email Settings). No Campaigns, Imports, Email Templates
  *    or Settings page.
  *  - Agency: everything except Jobs.
  */
@@ -17,6 +17,7 @@ const AREAS: Record<string, Role[]> = {
   contacts: EVERYONE_BUT_SUPERADMIN,
   people: EVERYONE_BUT_SUPERADMIN,
   settings: ["Agency"],
+  summary: ["JobSeeker"],
   jobs: ["JobSeeker"],
   campaigns: ["Agency"],
   templates: ["SuperAdmin", "Agency"],
@@ -27,6 +28,8 @@ const AREAS: Record<string, Role[]> = {
 
 export const canOpen = (role: Role, path: string): boolean => {
   const area = path.split("?")[0]!.split("/").filter(Boolean)[0] ?? "";
+  // A JobSeeker has no start page at "/": its start page is Jobs (its Summary lives at /summary), so "/" sends it there.
+  if (area === "" && role === "JobSeeker") return false;
   const allowed = AREAS[area];
   return allowed ? allowed.includes(role) : true;
 };
@@ -45,7 +48,7 @@ export function redirectFor(role: Role, pathAndSearch: string): string {
   return homeFor(role);
 }
 
-/** Where an account lands: the start page, except a SuperAdmin, who has no start page and lands on Email Templates. */
-export const homeFor = (role: Role): string => (role === "SuperAdmin" ? "/templates" : "/");
+/** Where an account lands, after signing in and when it opens an address it may not: Email Templates for a SuperAdmin, Jobs for a JobSeeker, the Overview for an Agency. */
+export const homeFor = (role: Role): string => (role === "SuperAdmin" ? "/templates" : role === "JobSeeker" ? "/jobs" : "/");
 
 export const roleLabel: Record<Role, string> = { SuperAdmin: "SuperAdmin", JobSeeker: "JobSeeker", Agency: "Agency" };

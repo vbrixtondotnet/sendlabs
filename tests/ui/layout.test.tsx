@@ -42,7 +42,7 @@ describe("what the menu shows for each kind of account", () => {
 
   it("JobSeeker: everything except Campaigns, with Jobs straight after the people tools", async () => {
     await openAs("JobSeeker");
-    expect(nav()).toEqual(["Jobs", "Summary", "Contacts", "Search People", "Settings"]);
+    expect(nav()).toEqual(["Jobs", "Contacts", "Search People", "Summary", "Settings"]);
     expect(screen.getByRole("link", { name: "Jobs" }).getAttribute("href")).toBe("/jobs");
     expect(screen.queryByRole("link", { name: "New campaign" })).toBeNull();
   });
@@ -201,12 +201,34 @@ describe("what a JobSeeker's menu looks like", () => {
     stubApi(({ path }) => (path === "/api/me" ? { json: me({ role: "JobSeeker" }) } : undefined));
     open();
     await screen.findByText("Sabertooth Software Labs");
-    expect(nav()).toEqual([["Jobs", "/jobs"], ["Summary", "/"], ["Contacts", "/contacts"], ["Search People", "/people"], ["Settings", "/account"]]);
+    expect(nav()).toEqual([["Jobs", "/jobs"], ["Contacts", "/contacts"], ["Search People", "/people"], ["Summary", "/summary"], ["Settings", "/account"]]);
   });
 
   it("sends a JobSeeker who opens /settings (or comes back from Google) to the Email Settings tab of My Settings", async () => {
     stubApi(({ path }) => (path === "/api/me" ? { json: me({ role: "JobSeeker" }) } : undefined));
     renderAt(<Layout />, { path: "/settings?sender=connected", route: "/settings" });
     await waitFor(() => expect(screen.getByTestId("elsewhere").getAttribute("data-location")).toBe("/account?sender=connected&tab=email"));
+  });
+});
+
+describe("where each account lands", () => {
+  it("a JobSeeker who opens / (as after signing in) lands on Jobs, and can still open Summary", async () => {
+    stubApi(({ path }) => (path === "/api/me" ? { json: me({ role: "JobSeeker" }) } : undefined));
+    renderAt(<Layout />, { path: "/", route: "/" });
+    await waitFor(() => expect(screen.getByTestId("elsewhere").getAttribute("data-location")).toBe("/jobs"));
+  });
+
+  it("a JobSeeker can open /summary", async () => {
+    stubApi(({ path }) => (path === "/api/me" ? { json: me({ role: "JobSeeker" }) } : undefined));
+    renderAt(<Layout />, { path: "/summary", route: "/summary" });
+    await screen.findByText("Sabertooth Software Labs");
+    expect(screen.queryByTestId("elsewhere")).toBeNull();
+  });
+
+  it("an Agency still lands on / (its Overview)", async () => {
+    stubApi(({ path }) => (path === "/api/me" ? { json: me({ role: "Agency" }) } : undefined));
+    renderAt(<Layout />, { path: "/", route: "/" });
+    await screen.findByText("Sabertooth Software Labs");
+    expect(screen.queryByTestId("elsewhere")).toBeNull();
   });
 });

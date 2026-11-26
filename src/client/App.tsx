@@ -23,6 +23,7 @@ export function App() {
       <Route path="unsubscribe/:token" element={<Unsubscribe />} />
       <Route element={<Layout />}>
         <Route index element={<Overview />} />
+        <Route path="summary" element={<Overview />} />
         <Route path="users" element={<UserAccounts />} />
         <Route path="global-contacts" element={<GlobalContacts />} />
         <Route path="imports" element={<Imports />} />

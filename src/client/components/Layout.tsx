@@ -22,7 +22,7 @@ const NAV: { to: string; label: string; icon: ReactNode; end?: boolean }[] = [
 ];
 
 /**
- * The menu for an account. A JobSeeker's is its own: Jobs first, the start page called Summary, and Settings opens My Settings (the same page
+ * The menu for an account. A JobSeeker's is its own: Jobs first (and its landing page), Summary after Search People, and Settings opens My Settings (the same page
  * as Settings in the user menu), where its Email Settings are. Everyone else gets the shared menu, filtered by what the account may open.
  */
 function navFor(role: Role): typeof NAV {
@@ -30,9 +30,9 @@ function navFor(role: Role): typeof NAV {
   const by = (to: string) => NAV.find((n) => n.to === to)!;
   return [
     by("/jobs"),
-    { ...by("/"), label: "Summary" },
     by("/contacts"),
     by("/people"),
+    { ...by("/"), to: "/summary", label: "Summary", end: false },
     { ...by("/settings"), to: "/account" },
   ];
 }
