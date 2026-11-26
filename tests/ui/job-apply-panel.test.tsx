@@ -128,7 +128,7 @@ describe("the Apply panel", () => {
     expect(await screen.findByText("Connect your Gmail account first")).toBeTruthy();
     await fillTo();
     expect(sendButton().disabled).toBe(true);
-    expect(screen.getByRole("link", { name: "Settings" }).getAttribute("href")).toBe("/settings");
+    expect(screen.getByRole("link", { name: "Account Settings" }).getAttribute("href")).toBe("/account?tab=email");
   });
 });
 

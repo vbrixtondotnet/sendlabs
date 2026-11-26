@@ -32,6 +32,10 @@ export const users = pgTable(
 
     /** SuperAdmin, JobSeeker or Agency: decides which features the account can use. Set by a SuperAdmin. */
     role: text("role", { enum: ROLES }).notNull().default("JobSeeker"),
+    /** The profile picture: the object-store key of the uploaded image (Cloudflare R2), or null. See routes/me.ts. */
+    avatarKey: text("avatar_key"),
+    /** When the picture was last changed (UTC ms): the version in its address, so a new picture is fetched afresh. */
+    avatarUpdatedAt: bigint("avatar_updated_at", { mode: "number" }),
     /** Disabled accounts cannot sign in but stay in the table, so what they created keeps its owner. */
     status: text("status", { enum: USER_STATUSES }).notNull().default("Active"),
     lastLoginAt: bigint("last_login_at", { mode: "number" }),

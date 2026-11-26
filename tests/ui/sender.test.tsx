@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { useLocation } from "react-router-dom";
 import { CampaignEditor } from "../../src/client/pages/CampaignEditor";
-import { Settings } from "../../src/client/pages/Settings";
+import { MySettings as Settings } from "../../src/client/pages/MySettings";
 import { SENDER_CONNECT_ERRORS } from "../../src/shared/types";
 import type { SenderDto } from "../../src/shared/api";
 import { contact, meDto, page, renderAt, senderDto, senderStatus, stubApi, type Handler } from "./harness";
@@ -32,10 +32,10 @@ function server(initial: SenderDto | null, opts: { configured?: boolean; connect
 }
 
 const Probe = () => <span data-testid="search">{useLocation().search}</span>;
-/** Opens Settings on the Email Service tab, where the Gmail sender lives (the Google callback lands there by itself). */
-const open = (path = "/settings") => {
+/** Opens Account Settings (as an Agency) on the Email Service tab, where the Gmail sender lives (the Google callback lands there by itself). */
+const open = async (path = "/settings") => {
   const view = renderAt(<><Settings /><Probe /></>, { path, route: "/settings" });
-  const tab = screen.getByRole("tab", { name: "Email Service" });
+  const tab = await screen.findByRole("tab", { name: "Email Service" }); // the tabs appear once who is signed in has loaded
   if (tab.getAttribute("aria-selected") !== "true") fireEvent.click(tab);
   return view;
 };
@@ -44,7 +44,7 @@ const connectButton = () => screen.getByRole("button", { name: /Connect Gmail|Re
 describe("Email Service tab when no Gmail account is connected", () => {
   it("shows a Connect Gmail button with a sub-label that says why it is needed", async () => {
     stubApi(server(null));
-    open();
+    await open();
     expect(await screen.findByText("Not connected")).toBeTruthy();
     expect(connectButton().textContent).toBe("Connect Gmail");
     expect(connectButton().disabled).toBe(false);
@@ -57,7 +57,7 @@ describe("Email Service tab when no Gmail account is connected", () => {
 
   it("starts the connection on the server, then sends the browser to Google's consent screen", async () => {
     const calls = stubApi(server(null));
-    open();
+    await open();
     await screen.findByText("Not connected");
     fireEvent.click(connectButton());
     await waitFor(() => expect(goTo).toHaveBeenCalledWith(GOOGLE_URL));
@@ -66,7 +66,7 @@ describe("Email Service tab when no Gmail account is connected", () => {
 
   it("shows 'Redirecting to Google…' and ignores further clicks, so only one attempt starts", async () => {
     const calls = stubApi(server(null));
-    open();
+    await open();
     await screen.findByText("Not connected");
     fireEvent.click(connectButton());
     await waitFor(() => expect(connectButton().textContent).toBe("Redirecting to Google…"));
@@ -79,7 +79,7 @@ describe("Email Service tab when no Gmail account is connected", () => {
 
   it("becomes usable again if the page is restored with Back from Google", async () => {
     stubApi(server(null));
-    open();
+    await open();
     await screen.findByText("Not connected");
     fireEvent.click(connectButton());
     await waitFor(() => expect(connectButton().textContent).toBe("Redirecting to Google…"));
@@ -90,7 +90,7 @@ describe("Email Service tab when no Gmail account is connected", () => {
 
   it("explains it when the server cannot start a connection, and stays usable", async () => {
     stubApi(server(null, { connectReply: { status: 503, json: { error: { code: "GMAIL_NOT_CONFIGURED", message: "x", correlationId: "r" } } } }));
-    open();
+    await open();
     await screen.findByText("Not connected");
     fireEvent.click(connectButton());
     expect(await screen.findByText("Could not start the connection")).toBeTruthy();
@@ -101,7 +101,7 @@ describe("Email Service tab when no Gmail account is connected", () => {
 
   it("shows the server's message for any other failure to start", async () => {
     stubApi(server(null, { connectReply: { status: 500, json: { error: { code: "INTERNAL_ERROR", message: "Something went wrong", correlationId: "r" } } } }));
-    open();
+    await open();
     await screen.findByText("Not connected");
     fireEvent.click(connectButton());
     expect(await screen.findByText("Something went wrong")).toBeTruthy();
@@ -109,7 +109,7 @@ describe("Email Service tab when no Gmail account is connected", () => {
 
   it("when the server has no Google credentials: says so, and the button cannot be used", async () => {
     const calls = stubApi(server(null, { configured: false }));
-    open();
+    await open();
     expect(await screen.findByText("Gmail connection is not set up on this server yet")).toBeTruthy();
     expect(screen.getByText("Not available")).toBeTruthy();
     expect(connectButton().disabled).toBe(true);
@@ -119,7 +119,7 @@ describe("Email Service tab when no Gmail account is connected", () => {
 
   it("tells you when the API is not running", async () => {
     stubApi(() => { throw new Error("offline"); });
-    open();
+    renderAt(<Settings />); // who is signed in cannot be loaded either, so the page itself says so
     expect(await screen.findAllByText(/npm run dev:api/)).toBeTruthy();
   });
 });
@@ -127,7 +127,7 @@ describe("Email Service tab when no Gmail account is connected", () => {
 describe("Email Service tab when Gmail is connected", () => {
   it("shows the connected account and what it may do, and offers Reconnect and Disconnect instead of Connect", async () => {
     stubApi(server(senderDto()));
-    open();
+    await open();
     expect(await screen.findByText("sales@acme.test")).toBeTruthy();
     expect(screen.getByText("Connected")).toBeTruthy();
     for (const label of ["Sending address", "Permission", "Connected on"]) expect(screen.getByText(label)).toBeTruthy();
@@ -140,7 +140,7 @@ describe("Email Service tab when Gmail is connected", () => {
 
   it("Reconnect runs the same flow", async () => {
     const calls = stubApi(server(senderDto()));
-    open();
+    await open();
     fireEvent.click(await screen.findByRole("button", { name: "Reconnect" }));
     await waitFor(() => expect(goTo).toHaveBeenCalledWith(GOOGLE_URL));
     expect(calls.some((c) => c.method === "POST" && c.path === "/api/sender/gmail/connect")).toBe(true);
@@ -148,7 +148,7 @@ describe("Email Service tab when Gmail is connected", () => {
 
   it("asks before disconnecting, and says exactly what will stop working", async () => {
     const calls = stubApi(server(senderDto()));
-    open();
+    await open();
     fireEvent.click(await screen.findByRole("button", { name: "Disconnect" }));
     const dialog = await screen.findByRole("dialog", { name: "Disconnect Gmail?" });
     expect(within(dialog).getByText("sales@acme.test")).toBeTruthy();
@@ -164,7 +164,7 @@ describe("Email Service tab when Gmail is connected", () => {
 
   it("disconnects on confirmation, and the tab goes back to offering Connect Gmail", async () => {
     const calls = stubApi(server(senderDto()));
-    open();
+    await open();
     fireEvent.click(await screen.findByRole("button", { name: "Disconnect" }));
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Disconnect" }));
@@ -176,7 +176,7 @@ describe("Email Service tab when Gmail is connected", () => {
 
   it("keeps the account shown, and says why, if disconnecting fails", async () => {
     stubApi((c) => (c.method === "DELETE" ? { status: 403, json: { error: { code: "FORBIDDEN", message: "Your access level does not allow this", correlationId: "r" } } } : server(senderDto())(c)));
-    open();
+    await open();
     fireEvent.click(await screen.findByRole("button", { name: "Disconnect" }));
     fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Disconnect" }));
     expect(await screen.findByText("Your access level does not allow this")).toBeTruthy();
@@ -186,7 +186,7 @@ describe("Email Service tab when Gmail is connected", () => {
 
   it("says plainly when Google no longer accepts the saved permission", async () => {
     stubApi(server(senderDto({ status: "NeedsReconnect" })));
-    open();
+    await open();
     expect(await screen.findByText("Needs reconnecting")).toBeTruthy();
     expect(screen.getByText("Reconnect to keep sending")).toBeTruthy();
     expect(screen.queryByText("Connected", { selector: "span" })).toBeNull();
@@ -197,7 +197,7 @@ describe("Email Service tab when Gmail is connected", () => {
 describe("coming back from Google", () => {
   it("confirms a successful connection and cleans the address, so a refresh does not repeat it", async () => {
     stubApi(server(senderDto()));
-    open("/settings?sender=connected");
+    await open("/settings?sender=connected");
     expect(await screen.findByText("Gmail connected")).toBeTruthy(); // the confirmation
     await waitFor(() => expect(screen.getByTestId("search").textContent).toBe(""));
     expect(screen.queryByText("Gmail was not connected")).toBeNull();
@@ -208,7 +208,7 @@ describe("coming back from Google", () => {
     const seen = new Set<string>();
     for (const reason of SENDER_CONNECT_ERRORS) {
       stubApi(server(null));
-      const view = open(`/settings?sender=error&reason=${reason}`);
+      const view = await open(`/settings?sender=error&reason=${reason}`);
       expect(await screen.findByText("Gmail was not connected"), reason).toBeTruthy();
       const text = screen.getByText("Gmail was not connected").parentElement!.textContent!;
       expect(text.length, reason).toBeGreaterThan(40);
@@ -223,13 +223,13 @@ describe("coming back from Google", () => {
 
   it("tells people what to do for the cases they can fix themselves", async () => {
     stubApi(server(null));
-    open("/settings?sender=error&reason=missing_permission");
+    await open("/settings?sender=error&reason=missing_permission");
     expect(await screen.findByText(/leave the box for sending email ticked/)).toBeTruthy();
   });
 
   it("treats an unknown code safely, as a generic failure, never printing it", async () => {
     stubApi(server(null));
-    open("/settings?sender=error&reason=%3Cscript%3Ealert(1)%3C%2Fscript%3E");
+    await open("/settings?sender=error&reason=%3Cscript%3Ealert(1)%3C%2Fscript%3E");
     expect(await screen.findByText("Gmail was not connected")).toBeTruthy();
     expect(document.body.innerHTML).not.toContain("<script>alert");
     expect(screen.getByText(/Google did not accept the connection/)).toBeTruthy();
@@ -237,7 +237,7 @@ describe("coming back from Google", () => {
 
   it("lets you dismiss the failure message", async () => {
     stubApi(server(null));
-    open("/settings?sender=error&reason=denied");
+    await open("/settings?sender=error&reason=denied");
     await screen.findByText("Gmail was not connected");
     fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(screen.queryByText("Gmail was not connected")).toBeNull();

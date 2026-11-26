@@ -12,22 +12,23 @@ import { goTo } from "../../src/client/lib/navigate";
 beforeEach(() => vi.mocked(goTo).mockClear());
 
 const me = (over: Partial<MeDto["user"]> = {}, tenantName = "Sabertooth Software Labs"): MeDto => ({
-  user: { id: "u1", role: "Agency", email: "admin@sabertoothsoftwarelabs.net", firstName: "", lastName: "", position: "", displayName: "Administrator", mustChangePassword: false, credits: 100, ...over },
+  user: { id: "u1", role: "Agency", avatarUrl: null, email: "admin@sabertoothsoftwarelabs.net", firstName: "", lastName: "", position: "", displayName: "Administrator", mustChangePassword: false, credits: 100, ...over },
   company: { name: tenantName, postalAddress: "", website: "", requireUnsubscribeLink: true, oneClickUnsubscribe: true },
   session: false,
 });
 
 const open = () => renderAt(<Layout />);
 
-describe("the Settings menu", () => {
+describe("the left menu has no Settings", () => {
   const links = () => screen.getAllByRole("link").map((l) => l.textContent);
 
-  it("shows Settings, with the other items", async () => {
+  it("has the other items but no Settings link (it is Account Settings in the user menu)", async () => {
     stubApi(({ path }) => (path === "/api/me" ? { json: me() } : undefined));
     open();
     await screen.findByTestId("user-icon");
-    expect(links()).toEqual(expect.arrayContaining(["Overview", "Imports", "Contacts", "Search People", "Campaigns", "Settings"]));
-    expect(screen.getByRole("link", { name: "Settings" }).getAttribute("href")).toBe("/settings");
+    expect(links()).toEqual(expect.arrayContaining(["Overview", "Imports", "Contacts", "Search People", "Campaigns"]));
+    expect(links()).not.toContain("Settings");
+    expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
   });
 
 });
@@ -42,14 +43,14 @@ describe("what the menu shows for each kind of account", () => {
 
   it("JobSeeker: everything except Campaigns, with Jobs straight after the people tools", async () => {
     await openAs("JobSeeker");
-    expect(nav()).toEqual(["Jobs", "Contacts", "Search People", "Summary", "Settings"]);
+    expect(nav()).toEqual(["Jobs", "Contacts", "Search People", "Summary"]);
     expect(screen.getByRole("link", { name: "Jobs" }).getAttribute("href")).toBe("/jobs");
     expect(screen.queryByRole("link", { name: "New campaign" })).toBeNull();
   });
 
   it("Agency: everything except Jobs", async () => {
     await openAs("Agency");
-    expect(nav()).toEqual(["Overview", "Imports", "Contacts", "Search People", "Campaigns", "Email Templates", "Settings"]);
+    expect(nav()).toEqual(["Overview", "Imports", "Contacts", "Search People", "Campaigns", "Email Templates"]);
     expect(screen.getByRole("link", { name: "New campaign" }).getAttribute("href")).toBe("/campaigns/new");
   });
 
@@ -137,7 +138,7 @@ describe("the header shows the real company and user", () => {
     expect(screen.queryByTestId("elsewhere")).toBeNull();
   });
 
-  it("the initials circle opens a menu with Settings and Logout, and closes again", async () => {
+  it("the user button opens a menu with Account Settings and Logout, and closes again", async () => {
     stubApi(({ path }) => (path === "/api/me" ? { json: me() } : undefined));
     open();
     const circle = await screen.findByRole("button", { name: "Signed in as admin@sabertoothsoftwarelabs.net" });
@@ -148,7 +149,7 @@ describe("the header shows the real company and user", () => {
     fireEvent.click(circle);
     expect(circle.getAttribute("aria-expanded")).toBe("true");
     const menu = screen.getByRole("menu");
-    expect(within(menu).getAllByRole("menuitem").map((i) => i.textContent)).toEqual(["Settings", "Logout"]);
+    expect(within(menu).getAllByRole("menuitem").map((i) => i.textContent)).toEqual(["Account Settings", "Logout"]);
     for (const item of within(menu).getAllByRole("menuitem")) expect(item.className, item.textContent ?? "").toContain("cursor-pointer");
     expect(within(menu).getByText("admin@sabertoothsoftwarelabs.net")).toBeTruthy();
 
@@ -162,11 +163,11 @@ describe("the header shows the real company and user", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
-  it("Settings in the menu goes to the user's own settings page and closes the menu", async () => {
+  it("Account Settings in the menu goes to the user's own settings page and closes the menu", async () => {
     stubApi(({ path }) => (path === "/api/me" ? { json: me() } : undefined));
     renderAt(<Layout />, { path: "/campaigns", route: "/campaigns" });
     fireEvent.click(await screen.findByRole("button", { name: /Signed in as/ }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Account Settings" }));
     expect((await screen.findByTestId("elsewhere")).getAttribute("data-location")).toBe("/account");
   });
 
@@ -200,14 +201,14 @@ describe("initials", () => {
 describe("what a JobSeeker's menu looks like", () => {
   const nav = () => within(screen.getByRole("navigation", { name: "Main" })).getAllByRole("link").map((l) => [l.textContent, l.getAttribute("href")]);
 
-  it("has Jobs first, the start page called Summary, no Email Templates or Imports, and Settings opening My Settings", async () => {
+  it("has Jobs first, Summary after Search People, and no Email Templates, Imports or Settings", async () => {
     stubApi(({ path }) => (path === "/api/me" ? { json: me({ role: "JobSeeker" }) } : undefined));
     open();
     await screen.findByTestId("user-icon");
-    expect(nav()).toEqual([["Jobs", "/jobs"], ["Contacts", "/contacts"], ["Search People", "/people"], ["Summary", "/summary"], ["Settings", "/account"]]);
+    expect(nav()).toEqual([["Jobs", "/jobs"], ["Contacts", "/contacts"], ["Search People", "/people"], ["Summary", "/summary"]]);
   });
 
-  it("sends a JobSeeker who opens /settings (or comes back from Google) to the Email Settings tab of My Settings", async () => {
+  it("sends anyone who opens /settings (or comes back from Google) to the email tab of Account Settings", async () => {
     stubApi(({ path }) => (path === "/api/me" ? { json: me({ role: "JobSeeker" }) } : undefined));
     renderAt(<Layout />, { path: "/settings?sender=connected", route: "/settings" });
     await waitFor(() => expect(screen.getByTestId("elsewhere").getAttribute("data-location")).toBe("/account?sender=connected&tab=email"));
@@ -252,7 +253,7 @@ describe("the right side of the header", () => {
     expect(screen.queryByRole("menu")).toBeNull();
     fireEvent.click(trigger);
     expect(screen.getByRole("menu", { name: "Account menu" })).toBeTruthy();
-    expect(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Settings" })).toBeTruthy();
+    expect(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Account Settings" })).toBeTruthy();
     expect(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Logout" })).toBeTruthy();
   });
 
@@ -262,5 +263,24 @@ describe("the right side of the header", () => {
     await screen.findByTestId("user-icon");
     expect(screen.queryByText("|")).toBeNull();
     expect(screen.queryByText(/Credits/)).toBeNull();
+  });
+});
+
+describe("the profile picture in the header", () => {
+  it("replaces the initials with the uploaded picture", async () => {
+    stubApi(({ path }) => (path === "/api/me" ? { json: me({ avatarUrl: "/api/me/avatar?v=3" }) } : undefined));
+    open();
+    const icon = await screen.findByTestId("user-icon");
+    const img = icon.querySelector("img")!;
+    expect(img.getAttribute("src")).toBe("/api/me/avatar?v=3");
+    expect(icon.textContent).toBe("");
+  });
+
+  it("shows the initials when there is no picture", async () => {
+    stubApi(({ path }) => (path === "/api/me" ? { json: me() } : undefined));
+    open();
+    const icon = await screen.findByTestId("user-icon");
+    expect(icon.querySelector("img")).toBeNull();
+    expect(icon.textContent).toBe("AD");
   });
 });

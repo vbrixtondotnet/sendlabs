@@ -162,7 +162,7 @@ export interface UserAccountDto {
 
 /** The signed-in account: who they are, and the company details they send email as. */
 export interface MeDto {
-  user: { id: string; role: Role; email: string; firstName: string; lastName: string; position: string; displayName: string; mustChangePassword: boolean; /** Credits left. Adding a person from Search People spends them. */ credits: number };
+  user: { id: string; role: Role; email: string; /** The address of the profile picture (add nothing: it is a path on this app), or null when none was uploaded. */ avatarUrl: string | null; firstName: string; lastName: string; position: string; displayName: string; mustChangePassword: boolean; /** Credits left. Adding a person from Search People spends them. */ credits: number };
   /** True when signed in through a real session, false for the local development placeholder user. */
   session: boolean;
   /** The account's own company details: the name and address printed in its emails, and its unsubscribe settings. */

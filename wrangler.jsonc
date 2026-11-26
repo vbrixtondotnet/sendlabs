@@ -1,6 +1,6 @@
 {
   // Sendrix Worker: the API, the daily sender (Cron) and, once deployed, the built app (static assets). The database is PostgreSQL.
-  // R2 and Queues are not used. Staging and production declare their own bindings, since environments inherit none.
+  // R2 holds profile pictures (binding PROFILE_PICTURES); Queues are not used. Staging and production declare their own bindings, since environments inherit none.
   "name": "sendrix",
   "main": "src/server/index.ts",
   "compatibility_date": "2026-11-01",
@@ -24,6 +24,10 @@
   // needs Node compatibility.
   "compatibility_flags": ["nodejs_compat"],
 
+  // Profile pictures live in a Cloudflare R2 bucket. Locally wrangler simulates it (kept under .wrangler/state), so nothing needs creating.
+  // Deployed: `npx wrangler r2 bucket create sendrix-avatars-staging` / `sendrix-avatars-production` (once per environment).
+  "r2_buckets": [{ "binding": "PROFILE_PICTURES", "bucket_name": "sendrix-avatars" }],
+
   // Bindings are NOT inherited by environments, so each one declares its own. In a deployed environment the database is reached
   // through Cloudflare Hyperdrive (a connection pool in front of PostgreSQL). Create one per environment with
   //   npx wrangler hyperdrive create <name> --connection-string "postgresql://USER:PASSWORD@HOST:5432/DATABASE"
@@ -38,7 +42,8 @@
       // address that is not a file falls back to the app (single-page application), where the router takes over.
       "assets": { "directory": "./dist", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*"] },
       "compatibility_flags": ["nodejs_compat"],
-      "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "REPLACE_WITH_STAGING_HYPERDRIVE_ID" }]
+      "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "REPLACE_WITH_STAGING_HYPERDRIVE_ID" }],
+      "r2_buckets": [{ "binding": "PROFILE_PICTURES", "bucket_name": "sendrix-avatars-staging" }]
     },
     "production": {
       "name": "sendrix-production",
@@ -52,7 +57,8 @@
       // address that is not a file falls back to the app (single-page application), where the router takes over.
       "assets": { "directory": "./dist", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*"] },
       "compatibility_flags": ["nodejs_compat"],
-      "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "REPLACE_WITH_PRODUCTION_HYPERDRIVE_ID" }]
+      "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "REPLACE_WITH_PRODUCTION_HYPERDRIVE_ID" }],
+      "r2_buckets": [{ "binding": "PROFILE_PICTURES", "bucket_name": "sendrix-avatars-production" }]
     }
   }
 }

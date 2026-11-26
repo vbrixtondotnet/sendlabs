@@ -11,7 +11,7 @@ import { goTo } from "../../src/client/lib/navigate";
 
 const signedOut = { status: 401, json: { error: { code: "NO_ACTIVE_USER", message: "Not signed in", correlationId: "x" } } };
 const fail = (status: number, code: string, message = "x") => ({ status, json: { error: { code, message, correlationId: "x" } } });
-const meDto: MeDto = { user: { id: "u1", role: "Agency", email: "a@b.test", firstName: "A", lastName: "B", position: "", displayName: "A B", mustChangePassword: false, credits: 100 }, company: { name: "T", postalAddress: "", website: "", requireUnsubscribeLink: true, oneClickUnsubscribe: true }, session: true };
+const meDto: MeDto = { user: { id: "u1", role: "Agency", avatarUrl: null, email: "a@b.test", firstName: "A", lastName: "B", position: "", displayName: "A B", mustChangePassword: false, credits: 100 }, company: { name: "T", postalAddress: "", website: "", requireUnsubscribeLink: true, oneClickUnsubscribe: true }, session: true };
 
 const open = (handler: Handler, path = "/login") => {
   const calls = stubApi(handler);

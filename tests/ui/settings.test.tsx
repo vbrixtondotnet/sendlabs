@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { EMAIL_FOOTER_ENABLED, LIST_UNSUBSCRIBE_HEADERS_ENABLED } from "../../src/shared/merge";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { Settings } from "../../src/client/pages/Settings";
+import { MySettings as Settings } from "../../src/client/pages/MySettings";
 import type { MeDto, SuppressionDto } from "../../src/shared/api";
 import { meDto, page, renderAt, senderDto, senderStatus, stubApi, testRecipientDto, type Call, type Handler } from "./harness";
 
@@ -13,36 +13,38 @@ const usersApi = (): Handler => ({ method, path }) =>
   : method === "GET" && path === "/api/suppressions" ? { json: page([]) }
   : undefined;
 
-/** Opens Settings and goes to the Email Service tab, where the Gmail sender, test-send list and unsubscribe rules are. */
-const openEmailService = () => {
+/** Opens Account Settings (as an Agency) and goes to the Email Service tab, where the Gmail sender, test-send list and unsubscribe rules are. */
+const openEmailService = async () => {
   renderAt(<Settings />);
-  fireEvent.click(screen.getByRole("tab", { name: "Email Service" }));
+  fireEvent.click(await screen.findByRole("tab", { name: "Email Service" })); // the tabs appear once who is signed in has loaded
 };
 
 describe("Settings tabs", () => {
-  it("has two tabs, in this order: Company Details, Email Service", () => {
+  it("an Agency has Profile, Account Details, Company Details and Email Service, opening on Profile", async () => {
     stubApi(usersApi());
     renderAt(<Settings />);
-    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Company Details", "Email Service"]);
-    expect(screen.getByRole("tab", { name: "Company Details" }).getAttribute("aria-selected")).toBe("true"); // opens on the first
+    await screen.findByRole("tab", { name: "Email Service" });
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Profile", "Account Details", "Company Details", "Email Service"]);
+    expect(screen.getByRole("tab", { name: "Profile" }).getAttribute("aria-selected")).toBe("true"); // opens on the first
   });
 
-  it("no longer has the Compliance, Sender, Sending limits or Data retention tabs", () => {
+  it("no longer has the Compliance, Sender, Sending limits or Data retention tabs", async () => {
     stubApi(usersApi());
     renderAt(<Settings />);
+    await screen.findByRole("tab", { name: "Email Service" });
     for (const name of ["Compliance", "Sender", "Sending limits", "Data retention"]) expect(screen.queryByRole("tab", { name }), name).toBeNull();
   });
 
   it("opens on Email Service when Google sends the browser back from Connect Gmail", async () => {
     stubApi(usersApi());
     renderAt(<Settings />, { path: "/settings?sender=connected", route: "/settings" });
-    expect(screen.getByRole("tab", { name: "Email Service" }).getAttribute("aria-selected")).toBe("true");
+    expect((await screen.findByRole("tab", { name: "Email Service" })).getAttribute("aria-selected")).toBe("true");
     expect(await screen.findByText("Gmail sender")).toBeTruthy();
   });
 
   it("puts everything about sending email on Email Service: sender, test-send list, unsubscribe rules, limits, suppression list and retention", async () => {
     stubApi(usersApi());
-    openEmailService();
+    await openEmailService();
     expect(await screen.findByText("Gmail sender")).toBeTruthy();
     expect(screen.getByText("Test-send allowlist")).toBeTruthy();
     expect(await screen.findByText("Unsubscribe and compliance")).toBeTruthy();
@@ -59,7 +61,7 @@ describe("Settings tabs", () => {
 
     it("lays every section out as an equal cell of one two-column grid, so they all have the same width", async () => {
       stubApi(usersApi());
-      openEmailService();
+      await openEmailService();
       await screen.findByText("Unsubscribe and compliance");
       const cards = TITLES.map(cardOf);
       const grid = cards[0]!.parentElement!;
@@ -72,7 +74,7 @@ describe("Settings tabs", () => {
 
     it("puts Unsubscribe and compliance next to Default sending limits, and Suppression list next to Data retention", async () => {
       stubApi(usersApi());
-      openEmailService();
+      await openEmailService();
       await screen.findByText("Unsubscribe and compliance");
       const cells = [...cardOf("Gmail sender").parentElement!.children].filter((el) => el.classList.contains("rounded-xl"));
       const order = cells.map((c) => c.querySelector("h2")!.textContent);
@@ -87,25 +89,16 @@ describe("Settings tabs", () => {
 
     it("keeps the explanation of the Gmail connection on a full-width row of its own", async () => {
       stubApi(usersApi());
-      openEmailService();
+      await openEmailService();
       await screen.findByText("Unsubscribe and compliance");
       const note = screen.getByText(/stores a secure, encrypted key/).closest("div.lg\\:col-span-2");
       expect(note).toBeTruthy();
-    });
-
-    it("still shows the unsubscribe card at the same size while it is loading", async () => {
-      vi.stubGlobal("fetch", (input: string) => (input === "/api/me" ? new Promise(() => undefined) : Promise.resolve(new Response(JSON.stringify(input === "/api/sender" ? senderStatus(null) : { items: [] }), { status: 200, headers: { "content-type": "application/json" } }))));
-      openEmailService();
-      await screen.findByText("Gmail sender");
-      const placeholder = document.querySelector(".lg\\:grid-cols-2 > .rounded-xl:not(:has(h2))");
-      expect(placeholder).toBeTruthy();
-      expect(placeholder!.className).not.toMatch(/max-w-/);
     });
   });
 
   it("starts the sender, allowlist and suppression list empty, with no mock records", async () => {
     stubApi(usersApi());
-    openEmailService();
+    await openEmailService();
     expect(await screen.findByText("Not connected")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Connect Gmail" })).toBeTruthy();
     expect(await screen.findByText(/No test addresses yet/)).toBeTruthy();
@@ -115,7 +108,7 @@ describe("Settings tabs", () => {
 
   it("has no separate sender postal address any more: the company's postal address is used", async () => {
     stubApi(usersApi());
-    openEmailService();
+    await openEmailService();
     await screen.findByText("Unsubscribe and compliance");
     expect(screen.queryByLabelText("Sender postal address")).toBeNull();
     expect(screen.queryByText("Required before launch")).toBeNull();
@@ -123,17 +116,17 @@ describe("Settings tabs", () => {
 
   it("says plainly that limits and retention are not saved yet, instead of pretending to save", async () => {
     stubApi(usersApi());
-    openEmailService();
-    expect(screen.getByText("Preview only")).toBeTruthy();
+    await openEmailService();
     fireEvent.click(screen.getByRole("button", { name: "Save limits" }));
     expect(screen.getByText("Not connected yet: nothing was saved")).toBeTruthy();
   });
 
-  it("stays on the page", () => {
+  it("stays on the page", async () => {
     stubApi(usersApi());
     renderAt(<Settings />, { path: "/settings", route: "/settings" });
+    await screen.findByRole("tab", { name: "Email Service" });
     expect(screen.queryByTestId("elsewhere")).toBeNull();
-    expect(screen.getAllByRole("tab")).toHaveLength(2);
+    expect(screen.getAllByRole("tab")).toHaveLength(4);
   });
 });
 
@@ -143,7 +136,7 @@ describe("Company Details tab", () => {
 
   /** A server that remembers what was saved, like the real one. */
   function companyServer(opts: { company?: Partial<MeDto["company"]>; reply?: ReturnType<typeof fail> } = {}): Handler {
-    let me: MeDto = { user: { id: "u1", role: "Agency", email: "a@acme.test", firstName: "A", lastName: "B", position: "", displayName: "A B", mustChangePassword: false, credits: 100 }, company: company(opts.company), session: true };
+    let me: MeDto = { user: { id: "u1", role: "Agency", avatarUrl: null, email: "a@acme.test", firstName: "A", lastName: "B", position: "", displayName: "A B", mustChangePassword: false, credits: 100 }, company: company(opts.company), session: true };
     return ({ method, path, body }) => {
       if (method === "GET" && path === "/api/me") return { json: me };
       if (method === "GET" && path === "/api/sender") return { json: senderStatus(null) };
@@ -160,7 +153,7 @@ describe("Company Details tab", () => {
   const openCompany = async (handler: Handler = companyServer()) => {
     const calls = stubApi(handler);
     renderAt(<Settings />);
-    fireEvent.click(screen.getByRole("tab", { name: "Company Details" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Company Details" }));
     await screen.findByLabelText("Postal address");
     return calls;
   };
@@ -320,7 +313,7 @@ describe("Sender name (Email Service tab)", () => {
 
   it("shows the saved name, explains why it should match the mailbox, and has nothing to save until it is changed", async () => {
     stubApi(server("Marketing Admin"));
-    openEmailService();
+    await openEmailService();
     expect((await box()).value).toBe("Marketing Admin");
     expect(screen.getByText(/same name this mailbox uses in Gmail/)).toBeTruthy();
     expect(saveBtn().disabled).toBe(true);
@@ -328,7 +321,7 @@ describe("Sender name (Email Service tab)", () => {
 
   it("saves a new name, sending it trimmed, and then has nothing left to save", async () => {
     const calls = stubApi(server());
-    openEmailService();
+    await openEmailService();
     const input = await box();
     fireEvent.change(input, { target: { value: "  Marketing Admin " } });
     expect(saveBtn().disabled).toBe(false);
@@ -366,7 +359,7 @@ describe("Test-send allowlist", () => {
 
   it("lists the saved addresses from the server", async () => {
     stubApi(allowlistServer([testRecipientDto(), testRecipientDto({ id: "t2", email: "pm@acme.test" })]));
-    openEmailService();
+    await openEmailService();
     expect(await screen.findByText("qa@acme.test")).toBeTruthy();
     expect(screen.getByText("pm@acme.test")).toBeTruthy();
     expect(screen.queryByText(/No test addresses yet/)).toBeNull();
@@ -374,7 +367,7 @@ describe("Test-send allowlist", () => {
 
   it("adds an address for real: it is sent to the server, listed afterwards, and the box is cleared", async () => {
     const calls = stubApi(allowlistServer([]));
-    openEmailService();
+    await openEmailService();
     await screen.findByText(/No test addresses yet/);
     fireEvent.change(address(), { target: { value: "  New@Acme.test " } });
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
@@ -386,7 +379,7 @@ describe("Test-send allowlist", () => {
 
   it("adds on Enter", async () => {
     const calls = stubApi(allowlistServer([]));
-    openEmailService();
+    await openEmailService();
     await screen.findByText(/No test addresses yet/);
     fireEvent.change(address(), { target: { value: "enter@acme.test" } });
     fireEvent.submit(address().closest("form")!);
@@ -395,7 +388,7 @@ describe("Test-send allowlist", () => {
 
   it("does nothing for a blank box", async () => {
     const calls = stubApi(allowlistServer([]));
-    openEmailService();
+    await openEmailService();
     await screen.findByText(/No test addresses yet/);
     expect((screen.getByRole("button", { name: "Add" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(address(), { target: { value: "   " } });
@@ -405,7 +398,7 @@ describe("Test-send allowlist", () => {
 
   it("shows the server's reason (bad address, duplicate) and keeps what was typed", async () => {
     stubApi(allowlistServer([], { status: 409, json: { error: { code: "TEST_RECIPIENT_EXISTS", message: "That address is already on the list", details: [{ path: "email", message: "That address is already on the list" }], correlationId: "x" } } }));
-    openEmailService();
+    await openEmailService();
     await screen.findByText(/No test addresses yet/);
     fireEvent.change(address(), { target: { value: "dup@acme.test" } });
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
@@ -415,7 +408,7 @@ describe("Test-send allowlist", () => {
 
   it("removes an address on the server", async () => {
     const calls = stubApi(allowlistServer([testRecipientDto(), testRecipientDto({ id: "t2", email: "pm@acme.test" })]));
-    openEmailService();
+    await openEmailService();
     await screen.findByText("qa@acme.test");
     fireEvent.click(screen.getByRole("button", { name: "Remove qa@acme.test" }));
     await waitFor(() => expect(screen.queryByText("qa@acme.test")).toBeNull());
@@ -425,11 +418,12 @@ describe("Test-send allowlist", () => {
 
   it("says why it could not load, instead of looking empty", async () => {
     stubApi(({ method, path }) =>
-      method === "GET" && path === "/api/sender" ? { json: senderStatus(null) }
+      path === "/api/me" ? { json: meDto() }
+        : method === "GET" && path === "/api/sender" ? { json: senderStatus(null) }
         : path === "/api/test-recipients" ? { status: 500, json: { error: { code: "INTERNAL_ERROR", message: "Something went wrong", correlationId: "ref-9" } } }
         : undefined,
     );
-    openEmailService();
+    await openEmailService();
     expect(await screen.findByText("Reference: ref-9")).toBeTruthy();
     expect(screen.queryByText(/No test addresses yet/)).toBeNull();
   });
@@ -456,7 +450,7 @@ describe("Unsubscribe and compliance (Email Service tab)", () => {
   }
   const open = async (handler: Handler = complianceServer()) => {
     const calls = stubApi(handler);
-    openEmailService();
+    await openEmailService();
     await screen.findByText("Unsubscribe and compliance");
     await screen.findByLabelText(/Unsubscribe link in every campaign/);
     return calls;
@@ -540,7 +534,7 @@ describe("Unsubscribe and compliance (Email Service tab)", () => {
         : method === "GET" && path === "/api/suppressions" ? { json: page([]) }
         : undefined,
     );
-    openEmailService();
+    renderAt(<Settings />); // who is signed in cannot be loaded, so the page says why instead of showing any tab
     expect(await screen.findByText("boom")).toBeTruthy();
     expect(screen.queryByLabelText(/Unsubscribe link in every campaign/)).toBeNull();
   });
@@ -558,7 +552,7 @@ describe("Suppression list (Email Service tab)", () => {
 
   it("lists the addresses that unsubscribed, from the server, with why and when", async () => {
     stubApi(serve((c) => (c.path === "/api/suppressions" ? { json: page([entry(), entry({ id: "s2", email: "also@example.test" })]) } : undefined)));
-    openEmailService();
+    await openEmailService();
     expect(await within(card()).findByText("gone@example.test")).toBeTruthy();
     expect(within(card()).getByText("also@example.test")).toBeTruthy();
     expect(within(card()).getAllByText(/Unsubscribed, /)).toHaveLength(2);
@@ -567,13 +561,13 @@ describe("Suppression list (Email Service tab)", () => {
 
   it("says plainly when nobody has unsubscribed", async () => {
     stubApi(serve((c) => (c.path === "/api/suppressions" ? { json: page([]) } : undefined)));
-    openEmailService();
+    await openEmailService();
     expect(await within(card()).findByText("No suppressed addresses yet.")).toBeTruthy();
   });
 
   it("is read-only: there is no button to add an address", async () => {
     stubApi(serve((c) => (c.path === "/api/suppressions" ? { json: page([entry()]) } : undefined)));
-    openEmailService();
+    await openEmailService();
     await within(card()).findByText("gone@example.test");
     expect(within(card()).queryByRole("button", { name: "Add address" })).toBeNull();
     expect(within(card()).queryByRole("textbox")).toBeNull();
@@ -581,7 +575,7 @@ describe("Suppression list (Email Service tab)", () => {
 
   it("asks for the first page, and pages through a long list", async () => {
     const calls = stubApi(serve((c) => (c.path === "/api/suppressions" ? { json: page([entry({ id: `p${c.query.get("page")}`, email: `page${c.query.get("page")}@example.test` })], 60, Number(c.query.get("page")), 25) } : undefined)));
-    openEmailService();
+    await openEmailService();
     await within(card()).findByText("page1@example.test");
     const first = calls.find((c) => c.path === "/api/suppressions")!;
     expect(first.query.get("page")).toBe("1");
@@ -592,7 +586,7 @@ describe("Suppression list (Email Service tab)", () => {
 
   it("says why it could not load, instead of looking empty", async () => {
     stubApi(serve((c) => (c.path === "/api/suppressions" ? { status: 500, json: { error: { code: "INTERNAL_ERROR", message: "Could not load the list", correlationId: "ref-77" } } } : undefined)));
-    openEmailService();
+    await openEmailService();
     expect(await within(card()).findByText("Could not load the list")).toBeTruthy();
     expect(within(card()).queryByText("No suppressed addresses yet.")).toBeNull();
   });

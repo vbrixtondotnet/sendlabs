@@ -9,7 +9,7 @@ const itemCls = "block w-full cursor-pointer rounded-md px-3 py-2 text-left text
 
 /**
  * The user part of the header: the round user icon (initials), the person's full name and a down arrow, all one button. Clicking it opens a
- * small menu: Settings (your own profile and password) and Logout. It closes on Escape, on a click anywhere else, and after choosing something.
+ * small menu: Account Settings (your profile, picture and password) and Logout. It closes on Escape, on a click anywhere else, and after choosing something.
  */
 export function UserMenu({ user }: { user: MeDto["user"] }) {
   const [open, setOpen] = useState(false);
@@ -41,7 +41,9 @@ export function UserMenu({ user }: { user: MeDto["user"] }) {
         onClick={() => setOpen((v) => !v)}
         className="flex cursor-pointer items-center gap-2 rounded-full py-1 pl-1 pr-2 hover:bg-slate-200/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 dark:hover:bg-slate-800"
       >
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-600 text-xs font-semibold text-white" data-testid="user-icon">{initialsOf(user.displayName, user.email)}</span>
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand-600 text-xs font-semibold text-white" data-testid="user-icon">
+          {user.avatarUrl ? <img src={user.avatarUrl} alt="" className="h-full w-full object-cover" /> : initialsOf(user.displayName, user.email)}
+        </span>
         <span className="hidden max-w-[11rem] truncate text-sm font-medium text-slate-700 dark:text-slate-200 sm:inline">{name}</span>
         <svg viewBox="0 0 24 24" className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${open ? "rotate-180" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
       </button>
@@ -53,7 +55,7 @@ export function UserMenu({ user }: { user: MeDto["user"] }) {
             <p className="truncate text-xs text-slate-500">{user.email}</p>
           </div>
           <div className="pt-1">
-            <Link role="menuitem" to="/account" onClick={() => setOpen(false)} className={itemCls}>Settings</Link>
+            <Link role="menuitem" to="/account" onClick={() => setOpen(false)} className={itemCls}>Account Settings</Link>
             <button
               role="menuitem"
               type="button"

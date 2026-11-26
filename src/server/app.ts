@@ -3,6 +3,7 @@ import { bodyLimit } from "hono/body-limit";
 import { MAX_APPLY_FORM_BYTES } from "../shared/email-attachments";
 import { closeDb, connectionStringFor, createDb, type Database } from "./database/client";
 import { ApiError } from "./lib/errors";
+import { objectStoreFor, type ObjectStore } from "./lib/object-store";
 import { errorResponse, formatIssues } from "./lib/http";
 import { requireActor, requireRole, type Actor } from "./middleware/auth";
 import type { Role } from "../shared/types";
@@ -23,12 +24,13 @@ import { unsubscribeRoutes } from "./routes/unsubscribe";
 import { senderPublicRoutes, senderRoutes } from "./routes/sender";
 import { GoogleOAuth } from "./services/google-oauth";
 import { testRecipientRoutes } from "./routes/test-recipients";
+import { AVATAR_MAX_BYTES } from "../shared/avatar";
 import { MAX_FILE_BYTES } from "../shared/csv";
 import { ZodError } from "zod";
 
 export type AppEnv = {
   Bindings: Env;
-  Variables: { correlationId: string; actor: Actor; db: Database; google: GoogleOAuth; fetch: typeof fetch };
+  Variables: { correlationId: string; actor: Actor; db: Database; google: GoogleOAuth; fetch: typeof fetch; objects: () => ObjectStore };
 };
 
 const MAX_JSON_BYTES = 1024 * 1024;
@@ -39,7 +41,7 @@ const MAX_UPLOAD_BYTES = MAX_FILE_BYTES + 256 * 1024;
  * Built by a factory so tests can mount it with their own bindings, and with a stand-in for Google
  * (`google`), so the whole Gmail connection can be tested without talking to the real service.
  */
-export function createApp(options: { google?: GoogleOAuth; fetch?: typeof fetch; db?: Database } = {}) {
+export function createApp(options: { google?: GoogleOAuth; fetch?: typeof fetch; db?: Database; objects?: ObjectStore } = {}) {
   const app = new Hono<AppEnv>();
   const google = options.google ?? new GoogleOAuth();
 
@@ -48,9 +50,11 @@ export function createApp(options: { google?: GoogleOAuth; fetch?: typeof fetch;
   const jsonLimit = bodyLimit({ maxSize: MAX_JSON_BYTES, onError: tooLarge });
   const uploadLimit = bodyLimit({ maxSize: MAX_UPLOAD_BYTES, onError: tooLarge });
   const applyLimit = bodyLimit({ maxSize: MAX_APPLY_FORM_BYTES, onError: tooLarge });
+  const avatarLimit = bodyLimit({ maxSize: AVATAR_MAX_BYTES + 64 * 1024, onError: tooLarge });
   app.use("/api/*", (c, next) =>
     c.req.method === "POST" && c.req.path === "/api/imports" ? uploadLimit(c, next)
     : c.req.method === "POST" && c.req.path === "/api/jobs/apply-email" ? applyLimit(c, next)
+    : c.req.method === "PUT" && c.req.path === "/api/me/avatar" ? avatarLimit(c, next)
     : jsonLimit(c, next),
   );
   // A browser always names the page that made a write. If it names any site other than this app, refuse: that is a
@@ -83,6 +87,7 @@ export function createApp(options: { google?: GoogleOAuth; fetch?: typeof fetch;
     c.set("db", db);
     c.set("google", google);
     c.set("fetch", options.fetch ?? ((...a) => fetch(...a)));
+    c.set("objects", () => objectStoreFor(c.env, options.objects));
     try {
       await next();
     } finally {

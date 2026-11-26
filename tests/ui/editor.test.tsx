@@ -9,7 +9,7 @@ import { campaign, contact, page, renderAt, senderStatus, stubApi, testRecipient
 
 /** Who is signed in. The signature of a new campaign is built from this. */
 const meDto = (user: Partial<MeDto["user"]> = {}, company: Partial<MeDto["company"]> = {}): MeDto => ({
-  user: { id: "u1", role: "Agency", email: "rico@sabertooth.test", firstName: "Rico", lastName: "Prinsipe", position: "Marketing Admin", displayName: "Rico Prinsipe", mustChangePassword: false, credits: 100, ...user },
+  user: { id: "u1", role: "Agency", avatarUrl: null, email: "rico@sabertooth.test", firstName: "Rico", lastName: "Prinsipe", position: "Marketing Admin", displayName: "Rico Prinsipe", mustChangePassword: false, credits: 100, ...user },
   company: { name: "Sabertooth Software Labs", postalAddress: ADDRESS, website: "sabertoothsoftwarelabs.net", requireUnsubscribeLink: true, oneClickUnsubscribe: true, ...company },
   session: true,
 });
@@ -228,7 +228,7 @@ describe("Campaign editor (live drafts)", () => {
       fill("Campaign name", "N");
       fill("Subject", "S");
       expect(await screen.findByText(/No test addresses yet/)).toBeTruthy();
-      expect(screen.getByRole("link", { name: "Add one in Settings" }).getAttribute("href")).toBe("/settings");
+      expect(screen.getByRole("link", { name: "Add one in Account Settings" }).getAttribute("href")).toBe("/account?tab=email");
       expect(testButton().disabled).toBe(true);
     });
 
@@ -579,7 +579,7 @@ describe("Compliance in the editor", () => {
     stubApi(withMe(meDto({}, { postalAddress: "" })));
     newCampaign();
     await ready();
-    expect(await screen.findByText("Add your company's postal address in Settings > Company Details before launching")).toBeTruthy();
+    expect(await screen.findByText("Add your company's postal address in Account Settings > Company Details before launching")).toBeTruthy();
     expect(launch().disabled).toBe(true);
   });
 

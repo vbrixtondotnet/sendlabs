@@ -6,7 +6,7 @@ import type { MeDto } from "../../src/shared/api";
 import { renderAt, stubApi, type Call, type Handler } from "./harness";
 
 const meDto = (over: Partial<MeDto["user"]> = {}): MeDto => ({
-  user: { id: "u1", role: "Agency", email: "ada@acme.test", firstName: "Ada", lastName: "Lovelace", position: "", displayName: "Ada Lovelace", mustChangePassword: false, credits: 100, ...over },
+  user: { id: "u1", role: "Agency", avatarUrl: null, email: "ada@acme.test", firstName: "Ada", lastName: "Lovelace", position: "", displayName: "Ada Lovelace", mustChangePassword: false, credits: 100, ...over },
   company: { name: "Acme", postalAddress: "", website: "", requireUnsubscribeLink: true, oneClickUnsubscribe: true },
   session: true,
 });
@@ -36,20 +36,42 @@ const type = (label: string, value: string) => fireEvent.change(screen.getByLabe
 const input = (label: string) => screen.getByLabelText(label) as HTMLInputElement;
 const writes = (calls: Call[]) => calls.filter((c) => c.method === "PATCH");
 
-describe("My settings for a JobSeeker: the Email Settings tab", () => {
-  const seeker = (path = "/account") =>
-    open(({ method, path: p, ...r }) => (p === "/api/me" ? { json: meDto({ role: "JobSeeker" }) } : p === "/api/sender" ? { json: { configured: true, sender: null } } : server()({ method, path: p, ...r } as Call)), path);
+describe("Account Settings: tabs by role", () => {
+  const as = (role: "SuperAdmin" | "JobSeeker" | "Agency", path = "/account") =>
+    open(({ method, path: p, ...r }) => (p === "/api/me" ? { json: meDto({ role }) } : p === "/api/sender" ? { json: { configured: true, sender: null } } : server()({ method, path: p, ...r } as Call)), path);
+  const tabs = () => screen.getAllByRole("tab").map((t) => t.textContent);
 
-  it("has User Details, Account Details and Email Settings (and no Company Details)", async () => {
-    seeker();
+  it("is called Account Settings, and Profile is the first tab", async () => {
+    open(server());
+    expect(await screen.findByRole("heading", { name: "Account Settings" })).toBeTruthy();
     await screen.findByLabelText("First name");
-    await waitFor(() => expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["User Details", "Account Details", "Email Settings"]));
+    expect(tabs()[0]).toBe("Profile");
+    expect(screen.getByRole("tab", { name: "Profile" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.queryByRole("tab", { name: "User Details" })).toBeNull();
+  });
+
+  it("an Agency has Profile, Account Details, Company Details and Email Service", async () => {
+    as("Agency");
+    await screen.findByLabelText("First name");
+    await waitFor(() => expect(tabs()).toEqual(["Profile", "Account Details", "Company Details", "Email Service"]));
+  });
+
+  it("a JobSeeker has Profile, Account Details and Email Settings (no Company Details, no Email Service)", async () => {
+    as("JobSeeker");
+    await screen.findByLabelText("First name");
+    await waitFor(() => expect(tabs()).toEqual(["Profile", "Account Details", "Email Settings"]));
     expect(screen.queryByRole("tab", { name: "Company Details" })).toBeNull();
     expect(screen.queryByRole("tab", { name: "Email Service" })).toBeNull();
   });
 
-  it("shows the Gmail connection on Email Settings, without the campaign-only cards", async () => {
-    seeker();
+  it("a SuperAdmin has only Profile and Account Details", async () => {
+    as("SuperAdmin");
+    await screen.findByLabelText("First name");
+    expect(tabs()).toEqual(["Profile", "Account Details"]);
+  });
+
+  it("shows the Gmail connection on a JobSeeker's Email Settings, without the campaign-only cards", async () => {
+    as("JobSeeker");
     await screen.findByLabelText("First name");
     fireEvent.click(await screen.findByRole("tab", { name: "Email Settings" }));
     expect(await screen.findByText("Gmail sender")).toBeTruthy();
@@ -58,61 +80,91 @@ describe("My settings for a JobSeeker: the Email Settings tab", () => {
     expect(screen.queryByText("Unsubscribe and compliance")).toBeNull();
   });
 
-  it("opens on Email Settings for ?tab=email and when Google sends the browser back (?sender=...)", async () => {
-    seeker("/account?tab=email");
+  it("opens on the email tab for ?tab=email and when Google sends the browser back (?sender=...); ?tab=company and ?tab=account pick theirs", async () => {
+    as("JobSeeker", "/account?tab=email");
     expect((await screen.findByRole("tab", { name: "Email Settings" })).getAttribute("aria-selected")).toBe("true");
     expect(await screen.findByText("Gmail sender")).toBeTruthy();
   });
 
-  it("an Agency still has only the two tabs here (its email settings are under Settings)", async () => {
-    open(server());
-    await screen.findByLabelText("First name");
-    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["User Details", "Account Details"]);
-  });
-});
-
-describe("My settings: tabs", () => {
-  it("has two tabs, User Details first and then Account Details", async () => {
-    open(server());
-    await screen.findByLabelText("First name");
-    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["User Details", "Account Details"]);
-    expect(screen.getByRole("tab", { name: "User Details" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.queryByLabelText("Current password")).toBeNull();
-
-    fireEvent.click(screen.getByRole("tab", { name: "Account Details" }));
-    expect(screen.getByLabelText("Current password")).toBeTruthy();
-    expect(screen.queryByLabelText("First name")).toBeNull();
+  it("an Agency's ?tab=company opens Company Details and ?tab=account Account Details; anything else opens Profile", async () => {
+    open(server(), "/account?tab=company");
+    expect(await screen.findByLabelText("Postal address")).toBeTruthy();
   });
 
-  it("no longer has Company Details: that lives under Settings", async () => {
-    open(server());
-    await screen.findByLabelText("First name");
-    expect(screen.queryByRole("tab", { name: "Company Details" })).toBeNull();
-    expect(screen.queryByLabelText("Postal address")).toBeNull();
-    expect(screen.queryByLabelText("Website")).toBeNull();
-    expect(screen.queryByLabelText("Name")).toBeNull();
-  });
-
-  it("the old tab names are gone", async () => {
-    open(server());
-    await screen.findByLabelText("First name");
-    expect(screen.queryByRole("tab", { name: "Profile" })).toBeNull();
-    expect(screen.queryByRole("tab", { name: "Account" })).toBeNull();
-  });
-
-  it("can open straight on a given tab, and anything else opens User Details", async () => {
+  it("can open straight on Account Details", async () => {
     open(server(), "/account?tab=account");
     expect(await screen.findByLabelText("Current password")).toBeTruthy();
   });
 
-  it("an old link to the Company tab opens User Details instead", async () => {
-    open(server(), "/account?tab=company");
-    expect(await screen.findByLabelText("First name")).toBeTruthy();
+  it("switches between Profile and Account Details", async () => {
+    open(server());
+    await screen.findByLabelText("First name");
+    expect(screen.queryByLabelText("Current password")).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "Account Details" }));
+    expect(screen.getByLabelText("Current password")).toBeTruthy();
+    expect(screen.queryByLabelText("First name")).toBeNull();
+  });
+});
+
+describe("Profile picture", () => {
+  const png = (name = "me.png", type = "image/png", size = 100) => new File([new Uint8Array(size).fill(1)], name, { type });
+  const withAvatar = (url: string | null, extra?: Handler): Handler => {
+    let current = url;
+    return (c) => {
+      if (c.method === "GET" && c.path === "/api/me") return { json: meDto({ avatarUrl: current }) };
+      if (c.method === "PUT" && c.path === "/api/me/avatar") { current = "/api/me/avatar?v=2"; return { json: { avatarUrl: current } }; }
+      if (c.method === "DELETE" && c.path === "/api/me/avatar") { current = null; return { status: 204 }; }
+      return extra?.(c) ?? server()(c);
+    };
+  };
+  const pick = (f: File) => fireEvent.change(screen.getByLabelText("Profile picture file"), { target: { files: [f] } });
+
+  it("shows your initials until you upload a picture, and offers Upload picture", async () => {
+    open(withAvatar(null));
+    await screen.findByLabelText("First name");
+    expect(screen.getByTestId("profile-picture").textContent).toBe("AL");
+    expect(screen.getByRole("button", { name: "Upload picture" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Remove" })).toBeNull();
+    expect((screen.getByLabelText("Profile picture file") as HTMLInputElement).accept).toBe("image/jpeg,image/png,image/webp,image/gif"); // images only
+  });
+
+  it("uploads the chosen image as a form, then shows it with Change picture and Remove", async () => {
+    const calls = open(withAvatar(null));
+    await screen.findByLabelText("First name");
+    pick(png());
+    await waitFor(() => expect(screen.getByRole("img", { name: "Your profile picture" }).getAttribute("src")).toBe("/api/me/avatar?v=2"));
+    const put = calls.find((c) => c.method === "PUT" && c.path === "/api/me/avatar")!;
+    expect([...put.formData!.keys()]).toEqual(["file"]);
+    expect((put.formData!.get("file") as File).name).toBe("me.png");
+    expect(screen.getByRole("button", { name: "Change picture" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Remove" })).toBeTruthy();
+  });
+
+  it("refuses a file that is not an image, or is too big, without sending anything", async () => {
+    const calls = open(withAvatar(null));
+    await screen.findByLabelText("First name");
+    pick(png("notes.txt", "text/plain"));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/Choose an image file/);
+    pick(png("icon.svg", "image/svg+xml"));
+    expect(screen.getByRole("alert").textContent).toMatch(/Choose an image file/);
+    pick(png("huge.png", "image/png", 3 * 1024 * 1024));
+    expect(screen.getByRole("alert").textContent).toMatch(/at most 2 MB/);
+    expect(calls.some((c) => c.method === "PUT")).toBe(false);
+  });
+
+  it("removes the picture and goes back to the initials", async () => {
+    const calls = open(withAvatar("/api/me/avatar?v=1"));
+    await screen.findByLabelText("First name");
+    expect(screen.getByRole("img", { name: "Your profile picture" }).getAttribute("src")).toBe("/api/me/avatar?v=1");
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(screen.queryByRole("img", { name: "Your profile picture" })).toBeNull());
+    expect(calls.some((c) => c.method === "DELETE" && c.path === "/api/me/avatar")).toBe(true);
+    expect(screen.getByTestId("profile-picture").textContent).toBe("AL");
   });
 });
 
 describe("User Details tab", () => {
-  const openUser = (handler: Handler = server()) => open(handler, "/account?tab=user");
+  const openUser = (handler: Handler = server()) => open(handler, "/account");
 
   it("shows the current first and last name, and the email read-only", async () => {
     openUser();

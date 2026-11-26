@@ -57,6 +57,13 @@
       "when": 1795565822674,
       "tag": "0007_contact_lookups",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1795670492481,
+      "tag": "0008_user_avatar",
+      "breakpoints": true
     }
   ]
 }

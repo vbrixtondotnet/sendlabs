@@ -155,7 +155,7 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
   if (isBlankHtml(html)) problems.push("Email body is required");
   // The company's postal address is printed in every email's footer, so it has to exist before launching.
   if (me.data && !me.data.company.postalAddress.trim()) {
-    problems.push("Add your company's postal address in Settings > Company Details before launching");
+    problems.push("Add your company's postal address in Account Settings > Company Details before launching");
   }
   if (unknown.length) problems.push(`Unknown merge field${unknown.length > 1 ? "s" : ""}: ${unknown.join(", ")}`);
   if (!Number.isInteger(daily) || daily < 1 || daily > 2000) problems.push("Daily limit must be a whole number from 1 to 2,000");
@@ -491,7 +491,7 @@ function EditorForm({ initial }: { initial: CampaignDto | null }) {
                 {testRecipients.isPending ? (
                   <p className="mt-1 text-sm text-slate-500">Loading…</p>
                 ) : testAddresses.length === 0 ? (
-                  <p className="mt-1 text-sm text-slate-500">No test addresses yet. <Link to="/settings" className="font-medium text-brand-600 hover:underline">Add one in Settings</Link></p>
+                  <p className="mt-1 text-sm text-slate-500">No test addresses yet. <Link to="/account?tab=email" className="font-medium text-brand-600 hover:underline">Add one in Account Settings</Link></p>
                 ) : (
                   <fieldset className="mt-1">
                     <legend className="sr-only">Send the test to</legend>

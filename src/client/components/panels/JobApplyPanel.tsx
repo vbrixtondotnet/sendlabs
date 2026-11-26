@@ -146,7 +146,7 @@ export function JobApplyPanel({ job, open = true, onClose, onExited }: { job: Jo
       {!sender.isPending && !connected && (
         <div className="mb-4">
           <Notice tone="warn" title="Connect your Gmail account first">
-            Emails are sent from your connected Gmail account, and none is connected. You can connect one in <Link to="/settings" className="font-medium underline">Settings</Link>.
+            Emails are sent from your connected Gmail account, and none is connected. You can connect one in <Link to="/account?tab=email" className="font-medium underline">Account Settings</Link>.
           </Notice>
         </div>
       )}

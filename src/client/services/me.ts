@@ -18,6 +18,31 @@ export function initialsOf(name: string, email: string): string {
   return letters.toUpperCase();
 }
 
+/**
+ * Your profile picture: uploads an image (the server checks it really is one) and the header shows it at once. Only the type and size are
+ * checked here, for early feedback.
+ */
+export function useUploadAvatar() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => {
+      const form = new FormData();
+      form.append("file", file, file.name);
+      return api<{ avatarUrl: string }>("PUT", "/api/me/avatar", form);
+    },
+    onSuccess: ({ avatarUrl }) => qc.setQueryData<MeDto>(["me"], (me) => (me ? { ...me, user: { ...me.user, avatarUrl } } : me)),
+  });
+}
+
+/** Removes your profile picture: the header goes back to your initials. */
+export function useRemoveAvatar() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api<void>("DELETE", "/api/me/avatar"),
+    onSuccess: () => qc.setQueryData<MeDto>(["me"], (me) => (me ? { ...me, user: { ...me.user, avatarUrl: null } } : me)),
+  });
+}
+
 /** Edit your own first name, last name and position. The header and every page showing your name refresh from the result. */
 export function useUpdateProfile() {
   const qc = useQueryClient();

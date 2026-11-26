@@ -51,6 +51,8 @@ interface Env {
    * Put it in `.dev.vars`, or `wrangler secret put HUNTER_API_KEY --env <env>`. It is sent only to api.hunter.io.
    */
   HUNTER_API_KEY?: string;
+  /** Cloudflare R2 bucket for profile pictures (binding `PROFILE_PICTURES` in wrangler.jsonc). Locally wrangler simulates it; deployed, create it with `wrangler r2 bucket create`. */
+  PROFILE_PICTURES?: R2Bucket;
   /** Cloudflare account id (32 hex characters): the account that owns the Email Sending domain. Used to send system email (the "application sent" confirmation). */
   CLOUDFLARE_ACCOUNT_ID?: string;
   /** SECRET. Cloudflare API token with the "Email Sending: Edit" permission. Only ever sent to api.cloudflare.com. */

@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { SENDER_CONNECT_ERRORS, type SenderConnectError } from "@shared/types";
-import { Badge, Button, Card, CardHeader, Empty, ErrorNotice, Field, LoadingRows, Modal, Notice, PageHeader, Pagination, Select, TextArea, TextInput, fmtDate } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, Empty, ErrorNotice, Field, LoadingRows, Modal, Notice, Pagination, Select, TextArea, TextInput, fmtDate } from "@/components/ui";
 import { useRole } from "@/hooks/useRole";
 import { useToast } from "@/hooks/useToast";
 import { goTo } from "@/lib/navigate";
@@ -12,29 +12,7 @@ import { useMe, useUpdateCompany } from "@/services/me";
 import { useSuppressions } from "@/services/suppressions";
 import { useAddTestRecipient, useRemoveTestRecipient, useTestRecipients } from "@/services/testRecipients";
 
-const TABS = ["Company Details", "Email Service"] as const;
-type Tab = (typeof TABS)[number];
 const PAGE_SIZE = 25;
-
-export function Settings() {
-  const [params] = useSearchParams();
-  // Coming back from Google's "Connect Gmail" screen (?sender=...) lands on Email Service, where the result is shown.
-  const [tab, setTab] = useState<Tab>(() => (params.has("sender") ? "Email Service" : "Company Details"));
-
-  return (
-    <>
-      <PageHeader title="Settings" description="Company details and the email service: sender, sending limits, unsubscribe rules and data retention." />
-      <div className="mb-5"><Notice tone="warn" title="Preview only">Company Details, the Gmail sender (with its test-send allowlist), the unsubscribe settings and the suppression list are connected to the server. Sending limits and data retention, on the Email Service tab, are not saved yet; they will be stored per account once they are connected.</Notice></div>
-      <div className="mb-5 flex gap-1 overflow-x-auto border-b border-slate-200 dark:border-slate-800" role="tablist">
-        {TABS.map((t) => (
-          <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={`whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium ${tab === t ? "border-brand-600 text-brand-600 dark:text-brand-400" : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"}`}>{t}</button>
-        ))}
-      </div>
-      {tab === "Company Details" && <CompanyTab />}
-      {tab === "Email Service" && <EmailServiceTab />}
-    </>
-  );
-}
 
 /** What each failure code means to a person, and what to do about it. The server only ever sends the code. */
 const CONNECT_ERROR_TEXT: Record<SenderConnectError, string> = {
@@ -410,7 +388,7 @@ const generalError = (e: unknown, fields: string[]) =>
  * Company details: the account's company name, website and postal address. The website and name go into the email
  * signature of new campaigns, and the address into email footers.
  */
-function CompanyTab() {
+export function CompanyTab() {
   const { toast } = useToast();
   const me = useMe();
   const update = useUpdateCompany();

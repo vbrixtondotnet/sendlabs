@@ -3,6 +3,7 @@ import postgres from "postgres";
 import { loadDevVars } from "../../scripts/lib/env";
 import { withDatabase } from "../../scripts/lib/migrations";
 import { createApp } from "../../src/server/app";
+import type { ObjectStore } from "../../src/server/lib/object-store";
 import { closeDb, createDb, type Database } from "../../src/server/database/client";
 import { GoogleOAuth } from "../../src/server/services/google-oauth";
 import type { Role } from "../../src/shared/types";
@@ -60,6 +61,8 @@ export interface Caller {
   upload: (form: FormData) => Promise<Reply>;
   /** POST multipart form data to any path (an email with attachments). */
   postForm: (path: string, form: FormData) => Promise<Reply>;
+  /** Send multipart form data with any method (a profile picture is PUT). */
+  sendForm: (method: string, path: string, form: FormData, headers?: Record<string, string>) => Promise<Reply>;
   /** Fetch a raw text response (e.g. a CSV download). */
   text: (path: string) => Promise<{ status: number; body: string; headers: Headers }>;
 }
@@ -95,7 +98,7 @@ const toPg = (statement: string): string => {
   return statement.replace(/\?/g, () => `$${++n}`);
 };
 
-export async function startHarness(options: { google?: GoogleOAuth; fetch?: typeof fetch } = {}): Promise<Harness> {
+export async function startHarness(options: { google?: GoogleOAuth; fetch?: typeof fetch; objects?: ObjectStore } = {}): Promise<Harness> {
   loadDevVars();
   const testUrl = process.env.TEST_DATABASE_URL;
   const template = process.env.SENDRIX_TEST_TEMPLATE_DB;
@@ -126,7 +129,7 @@ export async function startHarness(options: { google?: GoogleOAuth; fetch?: type
   const ctx = { waitUntil: (p: Promise<unknown>) => { pending.add(p); void p.finally(() => pending.delete(p)); }, passThroughOnException: () => {} };
 
   // The app shares this file's connection pool, so a test makes no new connection per request.
-  const app = createApp({ db, ...(options.google ? { google: options.google } : {}), ...(options.fetch ? { fetch: options.fetch } : {}) });
+  const app = createApp({ db, ...(options.google ? { google: options.google } : {}), ...(options.fetch ? { fetch: options.fetch } : {}), ...(options.objects ? { objects: options.objects } : {}) });
   const reply = async (res: Response): Promise<Reply> => {
     const text = await res.text();
     let json: any = null;
@@ -146,6 +149,7 @@ export async function startHarness(options: { google?: GoogleOAuth; fetch?: type
       return reply(await fetchWith(override, new Request(`http://localhost${path}`, init)));
     },
     postForm: async (path, form) => reply(await fetchWith(override, new Request(`http://localhost${path}`, { method: "POST", body: form }))),
+    sendForm: async (method, path, form, headers) => reply(await fetchWith(override, new Request(`http://localhost${path}`, { method, body: form, ...(headers ? { headers } : {}) }))),
     upload: async (form) => reply(await fetchWith(override, new Request("http://localhost/api/imports", { method: "POST", body: form }))),
     text: async (path) => {
       const res = await fetchWith(override, new Request(`http://localhost${path}`));
