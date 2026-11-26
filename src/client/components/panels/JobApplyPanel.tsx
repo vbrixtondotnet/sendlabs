@@ -133,7 +133,7 @@ export function JobApplyPanel({ job, open = true, onClose, onExited }: { job: Jo
     <SlidePanel
       open={open}
       onExited={() => onExited?.()}
-      title="Apply by email"
+      title="Apply By Email"
       subtitle={[job.title, job.companyName].filter(Boolean).join(" · ")}
       onClose={onClose}
       footer={
@@ -181,11 +181,11 @@ export function JobApplyPanel({ job, open = true, onClose, onExited }: { job: Jo
         </Field>
 
         <div>
-          <p className="mb-1 text-sm font-medium">Attachments</p>
-          <input ref={picker} id="apply-files" type="file" multiple accept={ATTACHMENT_ACCEPT} className="sr-only" aria-label="Attach files" onChange={(e) => addFiles(e.target.files)} disabled={send.isPending} />
+          <p className="mb-1 text-sm font-medium">Resume / CV</p>
+          <input ref={picker} id="apply-files" type="file" multiple accept={ATTACHMENT_ACCEPT} className="sr-only" aria-label="Resume / CV file" onChange={(e) => addFiles(e.target.files)} disabled={send.isPending} />
           <Button type="button" variant="secondary" onClick={() => picker.current?.click()} disabled={send.isPending || files.length >= MAX_ATTACHMENTS}>
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12.5l-8.6 8.6a5 5 0 01-7.1-7.1l9-9a3.3 3.3 0 014.7 4.7l-9 9a1.7 1.7 0 01-2.4-2.4l8.3-8.3" /></svg>
-            Attach files
+            Attach Resume/CV
           </Button>
           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">PDF or Word files only (.pdf, .doc, .docx). Up to {MAX_ATTACHMENTS} files, {formatBytes(MAX_TOTAL_ATTACHMENT_BYTES)} in all.</p>
           {fileProblem && <p className="mt-1 text-sm text-rose-600 dark:text-rose-400" role="alert">{fileProblem}</p>}

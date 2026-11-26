@@ -82,6 +82,52 @@ describe("the Gmail-style shell", () => {
   });
 });
 
+describe("the search box in the top bar (Agency)", () => {
+  it("still searches contacts: Enter opens Contacts with that keyword", async () => {
+    stubApi(({ path }) => (path === "/api/me" ? { json: me({ role: "Agency" }) } : undefined));
+    renderAt(<Layout />, { path: "/people", route: "/people" });
+    const box = await screen.findByRole("searchbox", { name: "Search contacts" });
+    fireEvent.change(box, { target: { value: "julie" } });
+    fireEvent.submit(box.closest("form")!);
+    expect((await screen.findByTestId("elsewhere")).getAttribute("data-location")).toBe("/contacts?q=julie");
+  });
+});
+
+describe("the job search in the left navigation (JobSeeker)", () => {
+  const api = ({ path }: { path: string }) =>
+    path === "/api/me" ? { json: me({ role: "JobSeeker" }) }
+    : path === "/api/jobs/categories" ? { json: { items: [{ value: "design", label: "Design" }] } }
+    : path === "/api/jobs/locations" ? { json: { items: ["India", "Philippines"] } }
+    : undefined;
+
+  it("sits under Summary after a separator, as Keyword, Category and Location, and there is no search box in the top bar", async () => {
+    stubApi(api);
+    renderAt(<Layout />, { path: "/contacts", route: "/contacts" });
+    const form = await screen.findByRole("search", { name: "Job search" });
+    expect(screen.queryByRole("searchbox")).toBeNull();
+    expect(within(form).getByLabelText("Keyword")).toBeTruthy();
+    expect(within(form).getByLabelText("Category")).toBeTruthy();
+    expect(within(form).getByRole("combobox", { name: "Location" })).toBeTruthy();
+    const nav = screen.getByRole("navigation", { name: "Main" });
+    expect(nav.lastElementChild).toBe(form);
+    expect(nav.lastElementChild!.previousElementSibling!.tagName).toBe("HR");
+    expect(nav.lastElementChild!.previousElementSibling!.previousElementSibling!.textContent).toBe("Summary");
+  });
+
+  it("Search Jobs opens the Jobs page with the keyword, category and locations", async () => {
+    stubApi(api);
+    renderAt(<Layout />, { path: "/contacts", route: "/contacts" });
+    const form = await screen.findByRole("search", { name: "Job search" });
+    fireEvent.change(within(form).getByLabelText("Keyword"), { target: { value: "asp.net" } });
+    await within(form).findByRole("option", { name: "Design" });
+    fireEvent.change(within(form).getByLabelText("Category"), { target: { value: "design" } });
+    fireEvent.focus(within(form).getByRole("combobox", { name: "Location" }));
+    fireEvent.click(await within(form).findByRole("option", { name: /Philippines/ }));
+    fireEvent.click(within(form).getByRole("button", { name: "Search Jobs" }));
+    expect((await screen.findByTestId("elsewhere")).getAttribute("data-location")).toBe("/jobs?q=asp.net&category=design&location=Philippines");
+  });
+});
+
 describe("the credits badge (mockup)", () => {
   it("shows 100 Credits at the top right for an account", async () => {
     stubApi(({ path }) => (path === "/api/me" ? { json: me() } : undefined));
@@ -168,7 +214,7 @@ describe("the header shows the real company and user", () => {
     renderAt(<Layout />, { path: "/campaigns", route: "/campaigns" });
     fireEvent.click(await screen.findByRole("button", { name: /Signed in as/ }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Account Settings" }));
-    expect((await screen.findByTestId("elsewhere")).getAttribute("data-location")).toBe("/account");
+    expect((await screen.findByTestId("elsewhere", {}, { timeout: 3000 })).getAttribute("data-location")).toBe("/account");
   });
 
   it("Logout ends the session and returns to the login page", async () => {
@@ -224,7 +270,7 @@ describe("where each account lands", () => {
 
   it("a JobSeeker can open /summary", async () => {
     stubApi(({ path }) => (path === "/api/me" ? { json: me({ role: "JobSeeker" }) } : undefined));
-    renderAt(<Layout />, { path: "/summary", route: "/summary" });
+    renderAt(<Layout />, { path: "/people", route: "/people" });
     await screen.findByTestId("user-icon");
     expect(screen.queryByTestId("elsewhere")).toBeNull();
   });

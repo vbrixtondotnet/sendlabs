@@ -1,5 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { JobSearchNav } from "@/components/JobSearchNav";
 import { CreditsBadge } from "@/components/CreditsBadge";
 import { Logo } from "@/components/Logo";
 import { UserMenu } from "@/components/UserMenu";
@@ -108,6 +109,13 @@ export function Layout() {
           <span className={rail ? "sr-only" : "truncate"}>{n.label}</span>
         </NavLink>
       ))}
+      {/* A JobSeeker's job search: a separator, then Keyword, Category and Location (not in the icons-only rail, which has no room) */}
+      {role === "JobSeeker" && !rail && (
+        <>
+          <hr className="my-3 border-slate-200 dark:border-slate-800" />
+          <JobSearchNav onDone={() => setOpen(false)} />
+        </>
+      )}
     </nav>
   );
 
@@ -145,7 +153,7 @@ export function Layout() {
         </button>
         <Link to="/" className="mr-2 flex shrink-0 items-center lg:w-44" aria-label="Sendrix home"><Logo className="h-8" /></Link>
 
-        {hasSearch && (
+        {role === "Agency" && (
           <form onSubmit={submitSearch} role="search" className="hidden max-w-2xl flex-1 sm:block">
             <label className="flex h-12 items-center gap-3 rounded-full bg-slate-200/60 px-4 text-slate-600 transition focus-within:bg-white focus-within:shadow-md dark:bg-slate-800 dark:text-slate-300 dark:focus-within:bg-slate-900">
               <svg viewBox="0 0 24 24" className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>

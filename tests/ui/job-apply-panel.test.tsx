@@ -29,10 +29,10 @@ const open = (handler: Handler = base, onClose = () => undefined) => {
   renderAt(<JobApplyPanel job={job} onClose={onClose} />, {});
   return calls;
 };
-const panel = () => screen.getByRole("dialog", { name: "Apply by email" });
+const panel = () => screen.getByRole("dialog", { name: "Apply By Email" });
 const sendCall = (calls: Call[]) => calls.find((c) => c.path === "/api/jobs/apply-email");
 const file = (name: string, size = 10, type = "") => new File([new Uint8Array(size).fill(1)], name, { type });
-const attach = (...files: File[]) => fireEvent.change(screen.getByLabelText("Attach files"), { target: { files } });
+const attach = (...files: File[]) => fireEvent.change(screen.getByLabelText("Resume / CV file"), { target: { files } });
 /** Fills To the only way it can be filled: with the Get Email Address button. */
 const fillTo = async () => {
   fireEvent.click(screen.getByRole("button", { name: /Get Email Address/ }));
@@ -57,10 +57,10 @@ describe("the Apply panel", () => {
     expect(within(p).queryByRole("link")).toBeNull();
   });
 
-  it("has To, Subject, Message and Attachments, and no CC or BCC", async () => {
+  it("has To, Subject, Message and Resume / CV, and no CC or BCC", async () => {
     open();
     await screen.findByText(/sales@acme.test/);
-    for (const label of ["To", "Subject", "Message", "Attach files"]) expect(screen.getByLabelText(label), label).toBeTruthy();
+    for (const label of ["To", "Subject", "Message", "Resume / CV file"]) expect(screen.getByLabelText(label), label).toBeTruthy();
     expect(screen.queryByLabelText(/^cc/i)).toBeNull();
     expect(screen.queryByLabelText(/bcc/i)).toBeNull();
     expect(screen.queryByText(/\bcc\b|\bbcc\b/i)).toBeNull();
@@ -258,7 +258,7 @@ describe("the sliding effect", () => {
 
     // Closing (the X, Escape or a click on the dimmed page): the same panel plays its exit and is hidden from assistive technology, then it goes.
     act(() => setOpen(false));
-    expect(screen.queryByRole("dialog", { name: "Apply by email" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Apply By Email" })).toBeNull();
     const leaving = document.querySelector("aside[role=dialog]") as HTMLElement;
     expect(leaving.className).toContain("slide-out-right");
     expect((leaving.previousElementSibling as HTMLElement).className).toContain("fade-out");
@@ -278,7 +278,7 @@ describe("the sliding effect", () => {
 describe("attachments in the Apply panel", () => {
   it("accepts only PDF and Word files in the picker, and says so", () => {
     open();
-    const input = screen.getByLabelText("Attach files") as HTMLInputElement;
+    const input = screen.getByLabelText("Resume / CV file") as HTMLInputElement;
     expect(input.accept).toBe(ATTACHMENT_ACCEPT);
     for (const want of [".pdf", ".doc", ".docx", "application/pdf", "application/msword"]) expect(input.accept).toContain(want);
     expect(input.accept).not.toMatch(/\.exe|image|\.txt|\.zip/);
@@ -311,7 +311,7 @@ describe("attachments in the Apply panel", () => {
     attach(file("a.pdf"), file("b.pdf"), file("c.pdf"));
     attach(file("d.pdf"));
     expect(screen.getByRole("alert").textContent).toMatch(/at most 3 files/);
-    expect((screen.getByRole("button", { name: "Attach files" }) as HTMLButtonElement).disabled).toBe(true); // the button stops offering more
+    expect((screen.getByRole("button", { name: "Attach Resume/CV" }) as HTMLButtonElement).disabled).toBe(true); // the button stops offering more
     fireEvent.click(screen.getByRole("button", { name: "Remove c.pdf" }));
     attach(file("empty.pdf", 0));
     expect(screen.getByRole("alert").textContent).toMatch(/is empty/);

@@ -13,10 +13,12 @@ const SLIDE_EXIT_MS = 300;
  * click on the dimmed page (both call `onClose`; the host decides), and gives focus back to what opened it. `footer` stays at the
  * bottom while the body scrolls.
  */
-export function SlidePanel({ open, title, subtitle, onClose, onExited, children, footer, size = "md" }: {
+export function SlidePanel({ open, title, subtitle, beside, onClose, onExited, children, footer, size = "md" }: {
   open: boolean;
   title: string;
   subtitle?: string;
+  /** Something small (a logo) shown in the header just to the left of the title and subtitle. */
+  beside?: ReactNode;
   onClose: () => void;
   onExited?: () => void;
   children: ReactNode;
@@ -62,9 +64,12 @@ export function SlidePanel({ open, title, subtitle, onClose, onExited, children,
       <div className={`absolute inset-0 bg-slate-900/40 ${open ? "fade-in" : "fade-out"}`} onClick={onClose} aria-hidden="true" />
       <aside ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} className={`${open ? "slide-in-right" : "slide-out-right"} absolute inset-y-0 right-0 flex w-full ${size === "lg" ? "max-w-3xl" : "max-w-xl"} flex-col bg-white shadow-2xl outline-none dark:bg-slate-900`}>
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-          <div className="min-w-0">
-            <h2 className="truncate text-lg font-medium">{title}</h2>
-            {subtitle && <p className="truncate text-sm text-slate-500 dark:text-slate-400">{subtitle}</p>}
+          <div className="flex min-w-0 items-start gap-3">
+            {beside}
+            <div className="min-w-0">
+              <h2 className="truncate text-lg font-medium">{title}</h2>
+              {subtitle && <p className="truncate text-sm text-slate-500 dark:text-slate-400">{subtitle}</p>}
+            </div>
           </div>
           <button type="button" onClick={onClose} className="shrink-0 cursor-pointer rounded-full p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Close panel">✕</button>
         </div>

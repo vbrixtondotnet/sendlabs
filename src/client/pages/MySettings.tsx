@@ -150,7 +150,7 @@ function ProfileTab({ me }: { me: MeDto }) {
 
   return (
     <Card className="max-w-2xl">
-      <CardHeader title="Profile" subtitle="Your picture, and how your name and position appear in your email signature." />
+      <CardHeader title="Profile" subtitle="Your picture, and how your name and job title appear in your email signature." />
       <PictureField me={me} />
       <form onSubmit={submit} noValidate>
         <div className="grid gap-4 p-5 sm:grid-cols-2">
@@ -162,7 +162,7 @@ function ProfileTab({ me }: { me: MeDto }) {
             <TextInput id="pf-last" autoComplete="family-name" maxLength={100} value={last} onChange={(e) => setLast(e.target.value)} />
             {fieldError(save.error, "lastName") && <p className="mt-1 text-xs text-rose-600">{fieldError(save.error, "lastName")}</p>}
           </Field>
-          <Field label="Position" htmlFor="pf-position" hint="Your job title, shown in your email signature. Optional.">
+          <Field label="Job Title" htmlFor="pf-position" hint="Shown in your email signature. Optional.">
             <TextInput id="pf-position" autoComplete="organization-title" maxLength={100} placeholder="e.g. Sales Director" value={position} onChange={(e) => setPosition(e.target.value)} />
             {fieldError(save.error, "position") && <p className="mt-1 text-xs text-rose-600">{fieldError(save.error, "position")}</p>}
           </Field>

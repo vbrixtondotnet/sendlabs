@@ -32,16 +32,12 @@ const jobCalls = (calls: Call[]) => calls.filter((c) => c.path === "/api/jobs");
 const lastJobs = (calls: Call[]) => jobCalls(calls).at(-1)!;
 
 describe("Jobs page: the live list", () => {
-  it("keeps the design: headline, Job search panel, job cards and the Hiring Companies panel", async () => {
+  it("keeps the design: headline, results bar, job cards and the Hiring Companies panel", async () => {
     stubApi(base);
     renderAt(<Jobs />);
     expect(screen.getByRole("heading", { name: "Find Your Next Opportunity" })).toBeTruthy();
-    const form = screen.getByRole("form", { name: "Job search" });
-    expect(within(form).getByLabelText("Keyword")).toBeTruthy();
-    expect(within(form).getByLabelText("Category")).toBeTruthy();
-    expect(within(form).getByRole("combobox", { name: "Location" })).toBeTruthy();
-    expect(within(form).getByLabelText("Remote only")).toBeTruthy();
-    expect(within(form).getByRole("button", { name: "Search Jobs" })).toBeTruthy();
+    expect(screen.queryByRole("form", { name: "Job search" })).toBeNull(); // the search fields live in the left navigation now
+    expect(screen.getByLabelText("Remote only")).toBeTruthy();
     expect(screen.getByRole("complementary", { name: "Hiring Companies" })).toBeTruthy();
     expect(await screen.findByRole("article", { name: "Senior .NET Developer, Acme Corp" })).toBeTruthy();
     expect(screen.queryByRole("table")).toBeNull();
@@ -89,7 +85,7 @@ describe("Jobs page: the live list", () => {
     expect(apply.textContent).toBe("Apply Now");
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(apply);
-    const panel = await screen.findByRole("dialog", { name: "Apply by email" });
+    const panel = await screen.findByRole("dialog", { name: "Apply By Email" });
     expect(within(panel).getByText("Senior .NET Developer · Acme Corp")).toBeTruthy();
     fireEvent.click(within(panel).getByRole("button", { name: "Close panel" }));
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -166,7 +162,7 @@ describe("Jobs page: View Job", () => {
     fireEvent.click(await screen.findByRole("button", { name: "View job: Senior .NET Developer" }));
     const view = await screen.findByRole("dialog", { name: "Senior .NET Developer" });
     fireEvent.click(within(view).getByRole("button", { name: "Apply now: Senior .NET Developer" }));
-    const apply = await screen.findByRole("dialog", { name: "Apply by email" });
+    const apply = await screen.findByRole("dialog", { name: "Apply By Email" });
     expect(within(apply).getByText("Senior .NET Developer · Acme Corp")).toBeTruthy();
     expect(screen.queryByRole("dialog", { name: "Senior .NET Developer" })).toBeNull(); // the description panel is on its way out (hidden at once)
     await waitFor(() => expect(document.querySelectorAll("aside[role=dialog]")).toHaveLength(1), { timeout: 1500 });
@@ -186,17 +182,31 @@ describe("Jobs page: View Job", () => {
     await waitFor(() => expect(document.querySelector("aside[role=dialog]")).toBeNull(), { timeout: 1500 });
   });
 
-  it("names Remotive as the source and links to the job there, for a Remotive job only", async () => {
-    stubApi(described);
+  it("shows the company's logo in the panel header, and nothing when the job has none", async () => {
+    stubApi((c) => (c.path === "/api/jobs" ? reply([job(), job({ id: "2", title: "UI/UX Designer", companyName: "Beta LLC", companyLogo: "" })]) : described(c)));
     renderAt(<Jobs />);
     fireEvent.click(await screen.findByRole("button", { name: "View job: Senior .NET Developer" }));
     const panel = await screen.findByRole("dialog", { name: "Senior .NET Developer" });
-    expect(within(panel).getByRole("link", { name: "Remotive" }).getAttribute("href")).toBe("https://remotive.com/remote-jobs/software-dev/job-1");
+    expect(within(panel).getByRole("img", { name: "Acme Corp logo" }).getAttribute("src")).toBe("https://remotive.com/job/1/logo");
     fireEvent.click(within(panel).getByRole("button", { name: "Close panel" }));
     await waitFor(() => expect(document.querySelector("aside[role=dialog]")).toBeNull(), { timeout: 1500 });
     fireEvent.click(screen.getByRole("button", { name: "View job: UI/UX Designer" }));
     const other = await screen.findByRole("dialog", { name: "UI/UX Designer" });
-    expect(within(other).queryByRole("link")).toBeNull();
+    expect(within(other).queryByRole("img")).toBeNull();
+  });
+
+  it("never shows where or when the job was posted: no \"Posted ... via ...\" line, no source link, and no \"Originally posted on ...\" note", async () => {
+    stubApi(({ path, query }) => (path === "/api/jobs/description"
+      ? { json: { id: query.get("id"), blocks: [{ type: "paragraph", text: "You will build great things." }, { type: "paragraph", text: "Originally posted on Himalayas" }, { type: "paragraph", text: "Posted 1 month ago via Himalayas" }] } }
+      : described({ path, query } as Call)));
+    renderAt(<Jobs />);
+    fireEvent.click(await screen.findByRole("button", { name: "View job: Senior .NET Developer" }));
+    const panel = await screen.findByRole("dialog", { name: "Senior .NET Developer" });
+    expect(await within(panel).findByText("You will build great things.")).toBeTruthy();
+    expect(within(panel).queryByText(/Originally posted/i)).toBeNull();
+    expect(within(panel).queryByText(/Posted .* ago/i)).toBeNull();
+    expect(within(panel).queryByText(/via /i)).toBeNull();
+    expect(within(panel).queryByRole("link")).toBeNull();
   });
 });
 
@@ -240,50 +250,27 @@ describe("Jobs page: both sources in one list", () => {
 });
 
 describe("Jobs page: filters", () => {
-  it("sends the keyword once, after the person stops typing (not for every letter)", async () => {
+  it("searches for the keyword, category and locations in the address (what the left navigation sends)", async () => {
     const calls = stubApi(base);
-    renderAt(<Jobs />);
+    renderAt(<Jobs />, { path: "/jobs?q=react&category=design&location=USA&location=Worldwide", route: "/jobs" });
     await screen.findByText("Senior .NET Developer");
-    const box = screen.getByLabelText("Keyword");
-    for (const v of ["r", "re", "rea", "reac", "react"]) fireEvent.change(box, { target: { value: v } });
-    expect(jobCalls(calls)).toHaveLength(1); // nothing sent while typing
-    await waitFor(() => expect(lastJobs(calls).query.get("keyword")).toBe("react"), { timeout: 3000 });
-    expect(jobCalls(calls)).toHaveLength(2); // one request for the whole word
-    expect(lastJobs(calls).query.get("page")).toBe("1");
+    const q = lastJobs(calls).query;
+    expect(q.get("keyword")).toBe("react");
+    expect(q.get("category")).toBe("design");
+    expect(q.get("locations")).toBe("USA,Worldwide");
+    expect(q.get("page")).toBe("1");
+    expect(jobCalls(calls)).toHaveLength(1); // one request, not one per filter
   });
 
-  it("Search Jobs sends the keyword at once", async () => {
+  it("sends Remote only and the sort as soon as they are chosen", async () => {
     const calls = stubApi(base);
     renderAt(<Jobs />);
     await screen.findByText("Senior .NET Developer");
-    fireEvent.change(screen.getByLabelText("Keyword"), { target: { value: "azure" } });
-    fireEvent.click(screen.getByRole("button", { name: "Search Jobs" }));
-    await waitFor(() => expect(lastJobs(calls).query.get("keyword")).toBe("azure"), { timeout: 500 });
-  });
-
-  it("sends category, locations, Remote only and the sort as soon as they are chosen", async () => {
-    const calls = stubApi(base);
-    renderAt(<Jobs />);
-    await screen.findByText("Senior .NET Developer");
-    await screen.findByRole("option", { name: "Software Development" }); // categories come from the API
-    fireEvent.change(screen.getByLabelText("Category"), { target: { value: "software-dev" } });
-    await waitFor(() => expect(lastJobs(calls).query.get("category")).toBe("software-dev"));
-
-    const loc = screen.getByRole("combobox", { name: "Location" });
-    fireEvent.focus(loc);
-    fireEvent.click(await within(await screen.findByRole("listbox", { name: "Location" })).findByRole("option", { name: /USA/ }));
-    await waitFor(() => expect(lastJobs(calls).query.get("locations")).toBe("USA"));
-
     fireEvent.click(screen.getByLabelText("Remote only"));
     await waitFor(() => expect(lastJobs(calls).query.get("remoteOnly")).toBe("true"));
-
     fireEvent.change(screen.getByLabelText("Sort by publication date"), { target: { value: "oldest" } });
     await waitFor(() => expect(lastJobs(calls).query.get("sort")).toBe("oldest"));
     expect(lastJobs(calls).query.get("page")).toBe("1");
-
-    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
-    await waitFor(() => expect(lastJobs(calls).query.get("category")).toBeNull());
-    expect(lastJobs(calls).query.get("remoteOnly")).toBeNull();
   });
 
   it("pages on the server: the next page is a new request, and the total comes from the API", async () => {
@@ -319,12 +306,11 @@ describe("Jobs page: empty and error states", () => {
 
   it("keeps the jobs on screen when a later search fails, says so, and Try again recovers", async () => {
     let failing = false;
-    stubApi(({ path, query }) => side(path) ?? (path === "/api/jobs" ? (failing && query.get("keyword") ? { status: 504, json: { error: { code: "JOB_SOURCE_UNAVAILABLE", message: "Remotive did not answer" } } } : reply([job()])) : undefined));
+    stubApi(({ path, query }) => side(path) ?? (path === "/api/jobs" ? (failing && query.get("remoteOnly") ? { status: 504, json: { error: { code: "JOB_SOURCE_UNAVAILABLE", message: "Remotive did not answer" } } } : reply([job()])) : undefined));
     renderAt(<Jobs />);
     await screen.findByText("Senior .NET Developer");
     failing = true;
-    fireEvent.change(screen.getByLabelText("Keyword"), { target: { value: "x" } });
-    fireEvent.click(screen.getByRole("button", { name: "Search Jobs" }));
+    fireEvent.click(screen.getByLabelText("Remote only"));
     expect(await screen.findByText("Could not refresh the jobs")).toBeTruthy();
     expect(screen.getByText("Senior .NET Developer")).toBeTruthy(); // still there
     failing = false;
@@ -366,10 +352,9 @@ describe("Hiring Companies panel", () => {
 
   it("follows the search: it asks again with the keyword, category, locations and Remote only (not the company)", async () => {
     const calls = stubApi(base);
-    renderAt(<Jobs />);
+    renderAt(<Jobs />, { path: "/jobs?category=design", route: "/jobs" });
     await within(panel()).findByText("Acme Corp");
     expect(companyCalls(calls)).toHaveLength(1);
-    fireEvent.change(screen.getByLabelText("Category"), { target: { value: "design" } });
     fireEvent.click(screen.getByLabelText("Remote only"));
     await waitFor(() => expect(companyCalls(calls).length).toBeGreaterThan(1));
     const last = companyCalls(calls).at(-1)!;
@@ -391,7 +376,6 @@ describe("Hiring Companies panel", () => {
     fireEvent.click(await within(panel()).findByRole("button", { name: "Show all jobs at Acme Corp" }));
     await waitFor(() => expect(lastJobs(calls).query.get("company")).toBe("Acme Corp"));
     expect(lastJobs(calls).query.get("keyword")).toBeNull(); // the Keyword box is untouched
-    expect((screen.getByLabelText("Keyword") as HTMLInputElement).value).toBe("");
     expect(await within(panel()).findByRole("button", { name: /Show all jobs, not only Acme Corp/ })).toBeTruthy(); // the card now offers Clear Filter
     expect(screen.getByRole("button", { name: "Remove the Acme Corp filter" })).toBeTruthy();
     // the panel did not ask again with the company, so it keeps offering the others
@@ -399,7 +383,7 @@ describe("Hiring Companies panel", () => {
     expect(within(panel()).getByText("Beta LLC")).toBeTruthy();
   });
 
-  it("Clear Filter, the chip's remove button and Reset all clear the company again", async () => {
+  it("Clear Filter and the chip's remove button clear the company again", async () => {
     const calls = stubApi(base);
     renderAt(<Jobs />);
     await screen.findByText("Senior .NET Developer");
@@ -410,10 +394,6 @@ describe("Hiring Companies panel", () => {
     fireEvent.click(within(panel()).getByRole("button", { name: "Show all jobs at Beta LLC" }));
     await waitFor(() => expect(lastJobs(calls).query.get("company")).toBe("Beta LLC"));
     fireEvent.click(screen.getByRole("button", { name: "Remove the Beta LLC filter" }));
-    await waitFor(() => expect(lastJobs(calls).query.get("company")).toBeNull());
-    fireEvent.click(within(panel()).getByRole("button", { name: "Show all jobs at Beta LLC" }));
-    await waitFor(() => expect(lastJobs(calls).query.get("company")).toBe("Beta LLC"));
-    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
     await waitFor(() => expect(lastJobs(calls).query.get("company")).toBeNull());
   });
 

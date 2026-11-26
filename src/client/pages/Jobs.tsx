@@ -1,22 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import type { HiringCompanyDto, JobDto, JobsPageDto } from "@shared/api";
 import { CANDIDATE_LOCATION_SOURCES, shortLocation } from "@shared/jobs";
 import { COMPANY_CONTACT_COST } from "@shared/credits";
 import { JOB_SORTS, type JobSort } from "@shared/schemas";
-import { Button, Card, Empty, ErrorNotice, Field, FillPage, Notice, PageHeader, Pagination, Select, TextInput } from "@/components/ui";
+import { Button, Card, Empty, ErrorNotice, FillPage, Notice, PageHeader, Pagination, Select } from "@/components/ui";
 import { JobApplyPanel } from "@/components/panels/JobApplyPanel";
 import { JobDetailsPanel } from "@/components/panels/JobDetailsPanel";
-import { MultiSelect } from "@/components/MultiSelect";
-import { useDebounced } from "@/hooks/useDebounced";
 import { useToast } from "@/hooks/useToast";
 import { postedAgo } from "@/lib/jobs";
 import { ApiClientError } from "@/services/http";
 import { useMe } from "@/services/me";
-import { useAddCompanyContact, useHiringCompanies, useJobCategories, useJobLocations, useJobs, type JobFilters } from "@/services/jobs";
+import { useAddCompanyContact, useHiringCompanies, useJobs, type JobFilters } from "@/services/jobs";
 
 const PAGE_SIZE = 25;
-/** How long the keyword must stay unchanged before it is sent: typing a word costs one request, not one per letter. */
-const KEYWORD_DEBOUNCE_MS = 600;
 const SORT_LABEL: Record<JobSort, string> = { newest: "Newest first", oldest: "Oldest first" };
 
 /** A small caps heading for a panel. */
@@ -28,24 +25,24 @@ const PanelTitle = ({ children }: { children: string }) => (
 function JobCard({ job, onView, onApply }: { job: JobDto; onView: () => void; onApply: () => void }) {
   const meta = [job.remote ? "Remote" : job.location || "Location not given", job.employmentType, job.salary].filter(Boolean).join(" · ");
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-5 transition hover:shadow-md dark:border-slate-800 dark:bg-slate-900" aria-label={`${job.title}, ${job.companyName}`}>
+    <article className="rounded-xl border border-slate-200 bg-white px-4 py-3 transition hover:shadow-md dark:border-slate-800 dark:bg-slate-900" aria-label={`${job.title}, ${job.companyName}`}>
       <div className="flex items-start gap-3">
-        {job.companyLogo && <img src={job.companyLogo} alt="" loading="lazy" referrerPolicy="no-referrer" className="h-10 w-10 shrink-0 rounded-lg border border-slate-200 bg-white object-contain dark:border-slate-700" />}
+        {job.companyLogo && <img src={job.companyLogo} alt="" loading="lazy" referrerPolicy="no-referrer" className="h-8 w-8 shrink-0 rounded-lg border border-slate-200 bg-white object-contain dark:border-slate-700" />}
         <div className="min-w-0">
-          <h3 className="text-lg font-medium leading-snug">{job.title}</h3>
-          {job.companyName && <p className="mt-0.5 text-slate-500 dark:text-slate-400">{job.companyName}</p>}
+          <h3 className="text-base font-medium leading-snug">{job.title}</h3>
+          {job.companyName && <p className="text-sm text-slate-500 dark:text-slate-400">{job.companyName}</p>}
         </div>
       </div>
-      <p className="mt-3 text-slate-700 dark:text-slate-200">{meta}</p>
+      <p className="mt-1.5 text-sm text-slate-700 dark:text-slate-200">{meta}</p>
       {/* On Remotive and Jobicy the location is where candidates may be; on Arbeitnow it is where the job is (shown in the line above unless the job is remote) */}
-      {job.remote && job.location && <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">{CANDIDATE_LOCATION_SOURCES.includes(job.source) ? "Candidates from" : "Based in"}: {shortLocation(job.location)}</p>}
-      {job.skills.length > 0 && <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{job.skills.slice(0, 8).join(" · ")}</p>}
-      <div className="mt-3 flex items-center justify-between gap-3">
+      {job.remote && job.location && <p className="text-xs text-slate-500 dark:text-slate-400">{CANDIDATE_LOCATION_SOURCES.includes(job.source) ? "Candidates from" : "Based in"}: {shortLocation(job.location)}</p>}
+      {job.skills.length > 0 && <p className="mt-1 truncate text-xs text-slate-600 dark:text-slate-300">{job.skills.slice(0, 8).join(" · ")}</p>}
+      <div className="mt-2 flex items-center justify-between gap-3">
         {/* Only how long ago. The source is named, and linked to, in the View Job panel. */}
-        <p className="text-sm text-slate-500 dark:text-slate-400">{postedAgo(job.publishedAt)}</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400">{postedAgo(job.publishedAt)}</p>
         <div className="flex shrink-0 items-center gap-2">
-          <Button variant="secondary" className="cursor-pointer" onClick={onView} aria-label={`View job: ${job.title}`}>View Job</Button>
-          <Button variant="primary" className="cursor-pointer" onClick={onApply} aria-label={`Apply now: ${job.title}`}>Apply Now</Button>
+          <Button variant="secondary" className="cursor-pointer !px-3 !py-1 text-sm" onClick={onView} aria-label={`View job: ${job.title}`}>View Job</Button>
+          <Button variant="primary" className="cursor-pointer !px-3 !py-1 text-sm" onClick={onApply} aria-label={`Apply now: ${job.title}`}>Apply Now</Button>
         </div>
       </div>
     </article>
@@ -55,7 +52,7 @@ function JobCard({ job, onView, onApply }: { job: JobDto; onView: () => void; on
 /** A grey stand-in for a job card while the first results load. */
 function JobCardSkeleton() {
   return (
-    <div className="animate-pulse rounded-2xl border border-slate-200 p-5 dark:border-slate-800" aria-hidden="true">
+    <div className="animate-pulse rounded-xl border border-slate-200 px-4 py-3 dark:border-slate-800" aria-hidden="true">
       <div className="flex gap-3">
         <div className="h-10 w-10 rounded-lg bg-slate-200 dark:bg-slate-800" />
         <div className="flex-1 space-y-2"><div className="h-4 w-2/3 rounded bg-slate-200 dark:bg-slate-800" /><div className="h-3 w-1/3 rounded bg-slate-200 dark:bg-slate-800" /></div>
@@ -142,16 +139,31 @@ function CompanyCard({ company, selected, add, canAdd, onShow, onClear, onAdd }:
  * list to that company.
  */
 export function Jobs() {
-  const [draft, setDraft] = useState({ keyword: "", category: "", locations: [] as string[], remoteOnly: false, company: "", sort: "newest" as JobSort });
-  const [keyword, setKeyword] = useState(""); // the keyword that is actually being searched
+  // The job search in the left navigation (Keyword, Category, Location) sends you here as /jobs?q=...&category=...&location=...: search for those.
+  const [params] = useSearchParams();
+  const urlSearch = params.toString();
+  const fromUrl = (search: string) => {
+    const p = new URLSearchParams(search);
+    return { keyword: (p.get("q") ?? "").trim(), category: p.get("category") ?? "", locations: p.getAll("location") };
+  };
+  const [draft, setDraft] = useState({ ...fromUrl(urlSearch), remoteOnly: false, company: "", sort: "newest" as JobSort });
+  const [keyword, setKeyword] = useState(draft.keyword); // the keyword that is actually being searched
   const [page, setPage] = useState(1);
   const [applying, setApplying] = useState<JobDto | null>(null); // the job whose Apply panel is showing (it stays until it has slid out)
   const [applyOpen, setApplyOpen] = useState(false);
   const [viewing, setViewing] = useState<JobDto | null>(null); // the job whose description panel is showing
   const [viewOpen, setViewOpen] = useState(false);
 
-  const typed = useDebounced(draft.keyword.trim(), KEYWORD_DEBOUNCE_MS);
-  useEffect(() => { setKeyword(typed); setPage(1); }, [typed]);
+  // Searching again from the left navigation while already here: take the new filters.
+  const seen = useRef(urlSearch);
+  useEffect(() => {
+    if (seen.current === urlSearch) return;
+    seen.current = urlSearch;
+    const f = fromUrl(urlSearch);
+    setDraft((d) => ({ ...d, ...f, company: "" }));
+    setKeyword(f.keyword);
+    setPage(1);
+  }, [urlSearch]);
 
   const filters = useMemo<JobFilters>(() => ({ keyword, category: draft.category, locations: draft.locations, remoteOnly: draft.remoteOnly, company: draft.company, sort: draft.sort }), [keyword, draft.category, draft.locations, draft.remoteOnly, draft.company, draft.sort]);
   const jobs = useJobs(filters, page, PAGE_SIZE);
@@ -182,8 +194,6 @@ export function Jobs() {
       setAdds((a) => ({ ...a, [name]: { status: code === "NO_EMAIL" ? "none" : "error", message } }));
     }
   };
-  const categories = useJobCategories();
-  const locations = useJobLocations();
 
   // The last results that loaded. A failed refresh must not wipe what the person is looking at.
   const [lastGood, setLastGood] = useState<JobsPageDto | null>(null);
@@ -201,35 +211,6 @@ export function Jobs() {
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row">
         <Card className="flex min-h-[28rem] min-w-0 flex-1 flex-col lg:min-h-0">
-          {/* relative + z-20: the open Location list drops down over the jobs below */}
-          <form
-            onSubmit={(e) => { e.preventDefault(); setKeyword(draft.keyword.trim()); setPage(1); }}
-            aria-label="Job search"
-            className="relative z-20 shrink-0 space-y-3 border-b border-slate-200 p-4 dark:border-slate-800"
-          >
-            <PanelTitle>Job search</PanelTitle>
-            <div className="grid items-start gap-3 sm:grid-cols-3">
-              <Field label="Keyword" htmlFor="job-keyword">
-                <TextInput id="job-keyword" placeholder="Title, company or skill" value={draft.keyword} onChange={(e) => setDraft((d) => ({ ...d, keyword: e.target.value }))} />
-              </Field>
-              <Field label="Category" htmlFor="job-category">
-                <Select id="job-category" value={draft.category} onChange={(e) => change({ category: e.target.value })}>
-                  <option value="">All categories</option>
-                  {categories.data?.items.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-                </Select>
-              </Field>
-              <MultiSelect label="Location" options={locations.data?.items ?? []} value={draft.locations} onChange={(l) => change({ locations: l })} placeholder="Search locations..." />
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button type="submit" variant="primary">Search Jobs</Button>
-              <Button type="button" variant="secondary" onClick={() => { setDraft({ keyword: "", category: "", locations: [], remoteOnly: false, company: "", sort: "newest" }); setKeyword(""); setPage(1); }}>Reset</Button>
-              <label className="ml-1 inline-flex cursor-pointer items-center gap-2 text-sm" title="Only jobs that can be done remotely">
-                <input type="checkbox" checked={draft.remoteOnly} onChange={(e) => change({ remoteOnly: e.target.checked })} className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-brand-600" />
-                Remote only
-              </label>
-            </div>
-          </form>
-
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-slate-200 px-4 py-2 text-sm text-slate-600 dark:border-slate-800 dark:text-slate-300">
             <p>
               {data ? `Showing ${total.toLocaleString("en-US")} ${total === 1 ? "job" : "jobs"}` : " "}
@@ -242,6 +223,10 @@ export function Jobs() {
               {jobs.isFetching && data ? " · updating…" : ""}
             </p>
             <div className="flex items-center gap-3">
+              <label className="inline-flex cursor-pointer items-center gap-2" title="Only jobs that can be done remotely">
+                <input type="checkbox" checked={draft.remoteOnly} onChange={(e) => change({ remoteOnly: e.target.checked })} className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-brand-600" />
+                Remote only
+              </label>
               <label className="inline-flex items-center gap-2">
                 <span className="sr-only">Sort by</span>
                 <Select aria-label="Sort by publication date" className="!w-auto !py-1 text-sm" value={draft.sort} onChange={(e) => change({ sort: e.target.value as JobSort })}>
@@ -276,7 +261,7 @@ export function Jobs() {
                 </div>
               )}
               <div className={`min-h-0 flex-1 overflow-y-auto p-4 transition-opacity ${jobs.isPlaceholderData ? "opacity-60" : ""}`} role="list" aria-label="Jobs">
-                <div className="space-y-3">
+                <div className="space-y-2">
                   {data.items.map((j) => (
                     <div role="listitem" key={j.id}><JobCard job={j} onView={() => { setViewing(j); setViewOpen(true); }} onApply={() => { setApplying(j); setApplyOpen(true); }} /></div>
                   ))}

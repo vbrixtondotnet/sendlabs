@@ -177,37 +177,37 @@ describe("User Details tab", () => {
 
   it("has a Position field, empty until it is set, and an optional one", async () => {
     openUser();
-    await screen.findByLabelText("Position");
-    expect(input("Position").value).toBe("");
-    expect(input("Position").readOnly).toBe(false);
-    expect(input("Position").disabled).toBe(false);
-    expect(input("Position").maxLength).toBe(100);
+    await screen.findByLabelText("Job Title");
+    expect(input("Job Title").value).toBe("");
+    expect(input("Job Title").readOnly).toBe(false);
+    expect(input("Job Title").disabled).toBe(false);
+    expect(input("Job Title").maxLength).toBe(100);
     expect(screen.getByText(/Optional/)).toBeTruthy();
   });
 
   it("shows the saved position", async () => {
     openUser(() => ({ json: meDto({ position: "Sales Director" }) }));
-    await screen.findByLabelText("Position");
-    expect(input("Position").value).toBe("Sales Director");
+    await screen.findByLabelText("Job Title");
+    expect(input("Job Title").value).toBe("Sales Director");
   });
 
   it("saves a changed position on its own, and it counts as a change", async () => {
     const calls = openUser();
-    await screen.findByLabelText("Position");
+    await screen.findByLabelText("Job Title");
     expect((screen.getByRole("button", { name: "Save changes" }) as HTMLButtonElement).disabled).toBe(true);
-    type("Position", "  Head of Sales ");
+    type("Job Title", "  Head of Sales ");
     expect((screen.getByRole("button", { name: "Save changes" }) as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(await screen.findByText("Profile updated")).toBeTruthy();
     expect(writes(calls)[0]!.body).toEqual({ firstName: "Ada", lastName: "Lovelace", position: "Head of Sales" });
-    expect(input("Position").value).toBe("Head of Sales");
+    expect(input("Job Title").value).toBe("Head of Sales");
     expect((screen.getByRole("button", { name: "Save changes" }) as HTMLButtonElement).disabled).toBe(true); // saved: nothing left to save
   });
 
   it("can be cleared again, and is allowed to be empty", async () => {
     const calls = openUser((c) => (c.method === "GET" ? { json: meDto({ position: "CTO" }) } : { json: { firstName: "Ada", lastName: "Lovelace", position: "", displayName: "Ada Lovelace" } }));
-    await screen.findByLabelText("Position");
-    type("Position", "");
+    await screen.findByLabelText("Job Title");
+    type("Job Title", "");
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(writes(calls)).toHaveLength(1));
     expect(writes(calls)[0]!.body.position).toBe("");
@@ -215,11 +215,11 @@ describe("User Details tab", () => {
 
   it("shows the server's reason under the field, and keeps what was typed", async () => {
     openUser(server({ profileReply: fail(400, "VALIDATION_ERROR", "Validation failed", [{ path: "position", message: "Use at most 100 characters" }]) }));
-    await screen.findByLabelText("Position");
-    type("Position", "something");
+    await screen.findByLabelText("Job Title");
+    type("Job Title", "something");
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(await screen.findByText("Use at most 100 characters")).toBeTruthy();
-    expect(input("Position").value).toBe("something");
+    expect(input("Job Title").value).toBe("something");
   });
 
   it("no longer carries the organization name", async () => {
