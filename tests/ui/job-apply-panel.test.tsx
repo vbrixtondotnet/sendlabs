@@ -101,7 +101,9 @@ describe("the Apply panel", () => {
     const call = sendCall(calls)!;
     expect(call.method).toBe("POST");
     const form = call.formData!;
-    expect([...form.keys()].sort()).toEqual(["attachments", "attachments", "body", "subject", "to"]); // no cc, no bcc, nothing else
+    expect([...form.keys()].sort()).toEqual(["attachments", "attachments", "body", "companyName", "jobTitle", "subject", "to"]); // no cc, no bcc, nothing else (the job is only named in the confirmation email)
+    expect(form.get("jobTitle")).toBe("Senior .NET Developer");
+    expect(form.get("companyName")).toBe("Acme Corp");
     expect(form.get("to")).toBe("hiring@acme.test");
     expect(form.get("subject")).toBe("Application for Senior .NET Developer at Acme Corp");
     expect(form.getAll("attachments").map((f) => (f as File).name)).toEqual(["resume.pdf", "cover.docx"]);

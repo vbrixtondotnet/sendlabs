@@ -95,6 +95,9 @@ export interface ApplicationEmailInput {
   subject: string;
   body: string;
   attachments: File[];
+  /** The job it is for: only used to word the confirmation email you get afterwards. */
+  jobTitle?: string;
+  companyName?: string;
 }
 
 /** Sends an application email from the Apply panel: one recipient, no CC or BCC, as multipart form data (the files travel as they are). */
@@ -105,6 +108,8 @@ export function useSendApplicationEmail() {
       form.append("to", input.to);
       form.append("subject", input.subject);
       form.append("body", input.body);
+      if (input.jobTitle) form.append("jobTitle", input.jobTitle);
+      if (input.companyName) form.append("companyName", input.companyName);
       for (const f of input.attachments) form.append("attachments", f, f.name);
       return api<{ sent: boolean; attachments: number }>("POST", "/api/jobs/apply-email", form);
     },

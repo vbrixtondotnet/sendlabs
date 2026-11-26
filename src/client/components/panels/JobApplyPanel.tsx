@@ -121,7 +121,7 @@ export function JobApplyPanel({ job, open = true, onClose, onExited }: { job: Jo
     if (!valid || !connected || send.isPending) return;
     setError(null);
     try {
-      await send.mutateAsync({ to: to.trim(), subject: subject.trim(), body, attachments: files });
+      await send.mutateAsync({ to: to.trim(), subject: subject.trim(), body, attachments: files, jobTitle: job.title, companyName: job.companyName });
       toast(`Email sent to ${to.trim()}`);
       onClose();
     } catch (err) {

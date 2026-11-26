@@ -292,6 +292,9 @@ export const jobApplicationEmailSchema = z.strictObject({
   to: email,
   subject: text(200).min(1, "Subject is required"),
   body: z.string().trim().min(1, "Write a message").max(20_000, "Use at most 20,000 characters"),
+  /** Which job it is for: only used to word the confirmation email to the sender. */
+  jobTitle: text(200).optional(),
+  companyName: text(200).optional(),
 });
 export type JobApplicationEmail = z.infer<typeof jobApplicationEmailSchema>;
 

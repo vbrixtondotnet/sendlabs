@@ -30,6 +30,10 @@ export type EnvOverride = {
   POSTMARK_FROM?: string;
   POSTMARK_FROM_NAME?: string;
   HUNTER_API_KEY?: string;
+  CLOUDFLARE_ACCOUNT_ID?: string;
+  CLOUDFLARE_EMAIL_API_TOKEN?: string;
+  SYSTEM_EMAIL_FROM?: string;
+  SYSTEM_EMAIL_FROM_NAME?: string;
 };
 
 /** Google credentials for tests. Fake values, and a throwaway 32-byte key, so the Gmail connection is "configured". */

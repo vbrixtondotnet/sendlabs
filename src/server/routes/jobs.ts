@@ -6,11 +6,13 @@ import { JobSourceError } from "../lib/live-fetch";
 import { readAttachments } from "../lib/attachments";
 import { parseJson, parseQuery } from "../lib/http";
 import { addCompanyContact } from "../services/company-contact";
+import { sendApplicationConfirmation } from "../services/application-confirmation";
 import { findContactEmail } from "../services/contact-email";
 import { HunterService } from "../services/hunter";
 import { emailProviderForRequest } from "../services/email-providers";
 import { sendApplicationEmail } from "../services/job-application-email";
 import { JobSearchService, jobSources } from "../services/job-search";
+import { systemMailerFor } from "../services/system-mail";
 
 /**
  * Jobs, live from Remotive, Arbeitnow, Jobicy, Himalayas and (with a key) Jooble, merged: nothing is stored. The browser asks us, we ask the sources (each with a timeout, a
@@ -90,14 +92,29 @@ jobRoutes.post("/apply-email", async (c) => {
     throw new ApiError(400, "BAD_REQUEST", "Send the email as a form");
   }
   // Only these fields exist. There is no CC or BCC: a form that carries one is refused, not quietly sent without it.
-  const unknown = [...new Set([...form.keys()])].filter((k) => !["to", "subject", "body", "attachments"].includes(k));
+  const unknown = [...new Set([...form.keys()])].filter((k) => !["to", "subject", "body", "attachments", "jobTitle", "companyName"].includes(k));
   if (unknown.length > 0) throw new ApiError(400, "VALIDATION_ERROR", "Validation failed", unknown.map((k) => ({ path: k, message: "This field is not accepted" })));
   const text = (name: string) => (typeof form.get(name) === "string" ? (form.get(name) as string) : "");
-  const fields = jobApplicationEmailSchema.parse({ to: text("to"), subject: text("subject"), body: text("body") });
+  const fields = jobApplicationEmailSchema.parse({ to: text("to"), subject: text("subject"), body: text("body"), ...(text("jobTitle") ? { jobTitle: text("jobTitle") } : {}), ...(text("companyName") ? { companyName: text("companyName") } : {}) });
   const files = form.getAll("attachments").filter((v): v is File => typeof v !== "string" && v.size >= 0 && v.name !== "");
   const attachments = await readAttachments(files);
 
   const actor = c.get("actor");
   await sendApplicationEmail({ email: emailProviderForRequest(c), userId: actor.userId, fallbackFromName: actor.displayName || actor.email }, fields, attachments);
+
+  // The application is out. Now the system emails the person (their own account address, not the employer's) to confirm it. It runs
+  // after the answer is on its way and can never change it: a problem here is only logged.
+  const mailer = systemMailerFor(c.env, c.get("fetch"));
+  c.executionCtx.waitUntil(
+    sendApplicationConfirmation(mailer, actor.userId, {
+      to: actor.email,
+      jobTitle: fields.jobTitle,
+      companyName: fields.companyName,
+      sentTo: fields.to,
+      sentAt: new Date(),
+      attachmentNames: attachments.map((a) => a.filename),
+      appUrl: c.env.APP_BASE_URL ?? "",
+    }),
+  );
   return c.json({ sent: true, attachments: attachments.length });
 });

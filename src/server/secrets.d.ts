@@ -51,6 +51,14 @@ interface Env {
    * Put it in `.dev.vars`, or `wrangler secret put HUNTER_API_KEY --env <env>`. It is sent only to api.hunter.io.
    */
   HUNTER_API_KEY?: string;
+  /** Cloudflare account id (32 hex characters): the account that owns the Email Sending domain. Used to send system email (the "application sent" confirmation). */
+  CLOUDFLARE_ACCOUNT_ID?: string;
+  /** SECRET. Cloudflare API token with the "Email Sending: Edit" permission. Only ever sent to api.cloudflare.com. */
+  CLOUDFLARE_EMAIL_API_TOKEN?: string;
+  /** The From address of system email. Default jobs@sendrix.app. Its domain must be onboarded for Email Sending in Cloudflare. */
+  SYSTEM_EMAIL_FROM?: string;
+  /** The name shown on the From line of system email. Default "Sendrix". */
+  SYSTEM_EMAIL_FROM_NAME?: string;
   /**
    * Local development shortcut only: when set (in `.dev.vars`), a request with no session runs as this user, so the API
    * can be tried without signing in. Unset by default, so locally you sign in through the login page. Ignored outside
