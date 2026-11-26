@@ -1,5 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { CompanyContactDto, ContactEmailDto, HiringCompaniesDto, JobCategoryDto, JobDescriptionDto, JobsPageDto, MeDto } from "@shared/api";
+import type { CompanyContactDto, ContactEmailDto, HiringCompaniesDto, JobCategoryDto, JobDescriptionDto, JobsPageDto, MeDto, ShareConfirmDto, ShareStartDto, SharedJobDto } from "@shared/api";
+import type { ShareNetwork } from "@shared/shares";
 import type { JobSort } from "@shared/schemas";
 import { api, withQuery } from "./http";
 
@@ -151,6 +152,34 @@ export function useJobDescription(id: string) {
     queryKey: ["jobs", "description", id],
     queryFn: ({ signal }) => api<JobDescriptionDto>("GET", withQuery("/api/jobs/description", { id }), undefined, signal),
     staleTime: 10 * 60_000,
+    retry: false,
+  });
+}
+
+/** Starts sharing a job to LinkedIn or Facebook: the server saves a copy for the public link and answers with it. */
+export function useStartShare() {
+  return useMutation({
+    mutationFn: (input: { jobId: string; title: string; network: ShareNetwork }) => api<ShareStartDto>("POST", "/api/jobs/share", input),
+    retry: false,
+  });
+}
+
+/** "I've posted it": the server gives the credit (once), and the credits in the header show the new balance at once. */
+export function useConfirmShare() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (shareId: string) => api<ShareConfirmDto>("POST", `/api/jobs/share/${encodeURIComponent(shareId)}/confirm`),
+    onSuccess: (result) => qc.setQueryData<MeDto>(["me"], (me) => (me ? { ...me, user: { ...me.user, credits: result.credits } } : me)),
+    retry: false,
+  });
+}
+
+/** The job on the public share page (/share/<id>): no sign-in needed. */
+export function useSharedJob(id: string) {
+  return useQuery({
+    queryKey: ["shared-job", id],
+    queryFn: ({ signal }) => api<SharedJobDto>("GET", `/api/share/${encodeURIComponent(id)}`, undefined, signal),
+    staleTime: 5 * 60_000,
     retry: false,
   });
 }

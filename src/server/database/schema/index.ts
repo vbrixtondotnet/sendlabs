@@ -12,3 +12,4 @@ export * from "./system-templates";
 export * from "./global-contacts";
 export * from "./credit-transactions";
 export * from "./contact-lookups";
+export * from "./job-shares";

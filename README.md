@@ -1006,3 +1006,12 @@ Staging must verify the real Queue (retries, DLQ, concurrency) and real Gmail se
 - [Google Workspace sending limits](https://support.google.com/a/answer/166852)
 
 Service limits and package compatibility change. Verify against current official documentation before building and before production deployment.
+
+## Share a job to earn a credit
+
+Every job card has LinkedIn and Facebook buttons ("Share this job and earn 1 Credit"). A button opens that network's own share window with the job's public link, `/share/<id>`, which anyone can open without signing in: it shows the job as the View Job panel does, with an Apply Now button (for a signed-in JobSeeker it opens the Apply By Email panel; for a visitor it does nothing until sign-up is built).
+
+- **The credit is on the honor system, with safeguards.** LinkedIn and Facebook never tell a website whether the person posted, so the person confirms with "I've posted it". The server gives 1 credit once per person per job per network, not sooner than 10 seconds after the share window was opened, and at most 5 times in 24 hours (`src/shared/shares.ts`). Real verification would need the person to connect their LinkedIn / Facebook account.
+- **The public page shows a saved copy** of the job (table `job_shares`, taken by the server from the job sources when the share starts), so the link keeps working after the job leaves its source's list.
+- **Link previews:** a deployed Worker serves `/share/<id>` with Open Graph tags (title, company, logo) so the networks can draw a preview card. This needs the `ASSETS` binding and `/share/*` in `run_worker_first` (both in `wrangler.jsonc` for staging and production). On localhost Vite serves the page, so there are no preview tags.
+- Run `npm run db:migrate` for the new `job_shares` table.

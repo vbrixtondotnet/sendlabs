@@ -4,6 +4,7 @@ import { FIELDS } from "./csv";
 import { isValidEmail, normalizeEmail } from "./email";
 import { isBlankHtml } from "./merge";
 import { PASSWORD_MAX_LENGTH } from "./password-rules";
+import { SHARE_NETWORKS } from "./shares";
 import { PEOPLE_COMPANY_SIZES, PEOPLE_MAX_INDUSTRIES, PEOPLE_MAX_TITLES } from "./people";
 import { CAMPAIGN_STATUSES, CONSENT_STATUSES, IMPORT_ROW_OUTCOMES, RECIPIENT_STATUSES, ROLES, USER_STATUSES } from "./types";
 
@@ -385,3 +386,10 @@ export const loginSchema = z.strictObject({
   password: z.string().min(1, "Enter your password").max(PASSWORD_MAX_LENGTH),
 });
 export type LoginInput = z.infer<typeof loginSchema>;
+
+/** Starts a share: which job (the id, and its title so the server can find it) and which network. */
+export const jobShareSchema = z.strictObject({
+  jobId: text(300).min(1),
+  title: text(200).min(1),
+  network: z.enum(SHARE_NETWORKS),
+});

@@ -40,7 +40,7 @@
       // The deployed Worker serves the built app (run `npm run build` first) as well as /api, so the pages people open from an email,
       // above all /unsubscribe/<token>, load from the same address. Requests under /api/ always go to the Worker; every other
       // address that is not a file falls back to the app (single-page application), where the router takes over.
-      "assets": { "directory": "./dist", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*"] },
+      "assets": { "binding": "ASSETS", "directory": "./dist", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*", "/share/*"] },
       "compatibility_flags": ["nodejs_compat"],
       "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "REPLACE_WITH_STAGING_HYPERDRIVE_ID" }],
       "r2_buckets": [{ "binding": "PROFILE_PICTURES", "bucket_name": "sendrix-avatars-staging" }]
@@ -55,7 +55,7 @@
       // The deployed Worker serves the built app (run `npm run build` first) as well as /api, so the pages people open from an email,
       // above all /unsubscribe/<token>, load from the same address. Requests under /api/ always go to the Worker; every other
       // address that is not a file falls back to the app (single-page application), where the router takes over.
-      "assets": { "directory": "./dist", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*"] },
+      "assets": { "binding": "ASSETS", "directory": "./dist", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*", "/share/*"] },
       "compatibility_flags": ["nodejs_compat"],
       "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "REPLACE_WITH_PRODUCTION_HYPERDRIVE_ID" }],
       "r2_buckets": [{ "binding": "PROFILE_PICTURES", "bucket_name": "sendrix-avatars-production" }]

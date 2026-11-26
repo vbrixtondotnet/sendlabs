@@ -36,6 +36,10 @@ TOKEN_ENCRYPTION_KEY=generate-with-openssl-rand-base64-32
 # HTTPS address). APP_BASE_URL stays http://localhost:5173 for sign-in. /unsubscribe/* and /api/unsubscribe/* must reach this app.
 # UNSUBSCRIBE_BASE_URL=https://sabertoothsoftwarelabs.net
 
+# Sharing a job to LinkedIn / Facebook posts a link to /share/<id>. They cannot open http://localhost, so to test sharing from your own machine set
+# this to a public https address that reaches this app (a tunnel to port 5173, or a deployed site). Unset, the links use APP_BASE_URL.
+# SHARE_BASE_URL=https://your-public-address.example
+
 # Jobs: Jooble is used as an extra job source when this key is set (free key: https://jooble.org/api/about). Optional.
 # JOOBLE_API_KEY=your-jooble-key
 

@@ -9,7 +9,7 @@ import { useJobDescription } from "@/services/jobs";
 const SOURCE_NOTE = /^\s*((originally\s+)?(posted|published)\b.{0,80}|(via|source|apply\s+(on|at|via))\b.{0,60})\s*$/i;
 const withoutSourceNotes = (blocks: JobDescriptionBlock[]) => blocks.filter((b) => !((b.type === "paragraph" || b.type === "heading") && SOURCE_NOTE.test(b.text)));
 
-function Description({ blocks: all }: { blocks: JobDescriptionBlock[] }) {
+export function Description({ blocks: all }: { blocks: JobDescriptionBlock[] }) {
   const blocks = withoutSourceNotes(all);
   if (blocks.length === 0) return <p className="text-sm text-slate-500 dark:text-slate-400">This job has no description.</p>;
   return (

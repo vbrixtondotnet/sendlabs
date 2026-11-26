@@ -51,6 +51,13 @@ interface Env {
    * Put it in `.dev.vars`, or `wrangler secret put HUNTER_API_KEY --env <env>`. It is sent only to api.hunter.io.
    */
   HUNTER_API_KEY?: string;
+  /**
+   * Optional public https address for the links people share (/share/<id>), e.g. a tunnel or the deployed site. LinkedIn and Facebook cannot open
+   * http://localhost, so on a development machine set this to an address that reaches this app. Unset, the links use APP_BASE_URL.
+   */
+  SHARE_BASE_URL?: string;
+  /** The built app (static assets), in a deployed Worker only. Used to serve /share/<id> with Open Graph tags for link previews. */
+  ASSETS?: Fetcher;
   /** Cloudflare R2 bucket for profile pictures (binding `PROFILE_PICTURES` in wrangler.jsonc). Locally wrangler simulates it; deployed, create it with `wrangler r2 bucket create`. */
   PROFILE_PICTURES?: R2Bucket;
   /** Cloudflare account id (32 hex characters): the account that owns the Email Sending domain. Used to send system email (the "application sent" confirmation). */

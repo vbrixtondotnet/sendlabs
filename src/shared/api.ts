@@ -383,3 +383,25 @@ export interface SenderStatusDto {
   /** Null when the account has not connected a Gmail address. */
   sender: SenderDto | null;
 }
+
+/** Sharing a job (see shared/shares.ts). */
+export interface ShareStartDto {
+  shareId: string;
+  /** The public link to post. */
+  url: string;
+  network: "linkedin" | "facebook";
+  /** True when this job was already shared to this network and rewarded: sharing again earns nothing. */
+  alreadyRewarded: boolean;
+  /** How long after the share window opened "I've posted it" works. */
+  confirmAfterMs: number;
+}
+export interface ShareConfirmDto {
+  /** False when the credit had already been given. */
+  rewarded: boolean;
+  credits: number;
+}
+/** What the public page /share/<id> shows: the job and its description, as in the View Job panel. */
+export interface SharedJobDto {
+  job: JobDto;
+  blocks: JobDescriptionBlock[];
+}

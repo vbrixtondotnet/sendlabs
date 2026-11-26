@@ -250,6 +250,15 @@ export class JobSearchService {
     return null;
   }
 
+  /**
+   * One job by id, as the sources list it now: found by searching for its title (which every source understands) and picking the id. null
+   * when it is no longer listed. Used by sharing, which saves a copy of the job taken here, not what the browser sent.
+   */
+  async find(id: string, title: string, signal?: AbortSignal): Promise<JobDto | null> {
+    const { matching } = await this.search({ page: 1, pageSize: 1, keyword: title.trim().slice(0, 100), locations: [], remoteOnly: false, sort: "newest" } as JobListQuery, signal);
+    return matching.find((j) => j.id === id) ?? null;
+  }
+
   /** The choices of the Location filter: the places the jobs name (every source), most common first, at most 150, plus the pinned places (Philippines, India), which are always offered. */
   async locations(signal?: AbortSignal): Promise<string[]> {
     const { jobs } = await fromAll([

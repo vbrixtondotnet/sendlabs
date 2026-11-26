@@ -111,9 +111,10 @@ describe("Jobs page: View Job", () => {
     stubApi(described);
     renderAt(<Jobs />);
     const card = await screen.findByRole("article", { name: "Senior .NET Developer, Acme Corp" });
-    const buttons = within(card).getAllByRole("button");
+    const buttons = within(card).getAllByRole("button").filter((b) => !/^Share on /.test(b.getAttribute("aria-label") ?? "")); // the share buttons are tested in share.test.tsx
     const names = buttons.map((b) => b.textContent);
     expect(names).toEqual(["View Job", "Apply Now"]);
+    expect(within(card).getByText("Share this job and earn 1 Credit")).toBeTruthy();
     expect(buttons[0]!.compareDocumentPosition(buttons[1]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy(); // View Job comes first
     expect(buttons[0]!.parentElement).toBe(buttons[1]!.parentElement); // side by side
   });

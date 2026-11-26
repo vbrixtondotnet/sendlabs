@@ -11,6 +11,7 @@ import { CampaignDetails } from "@/pages/CampaignDetails";
 import { EmailTemplates } from "@/pages/EmailTemplates";
 import { Login } from "@/pages/Login";
 import { Unsubscribe } from "@/pages/Unsubscribe";
+import { SharedJob } from "@/pages/SharedJob";
 import { MySettings } from "@/pages/MySettings";
 import { UserAccounts } from "@/pages/UserAccounts";
 import { GlobalContacts } from "@/pages/GlobalContacts";
@@ -20,6 +21,7 @@ export function App() {
     <Routes>
       <Route path="login" element={<Login />} />
       <Route path="unsubscribe/:token" element={<Unsubscribe />} />
+      <Route path="share/:id" element={<SharedJob />} />
       <Route element={<Layout />}>
         <Route index element={<Overview />} />
         <Route path="summary" element={<Overview />} />

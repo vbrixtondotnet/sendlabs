@@ -163,7 +163,7 @@ describe("nothing is saved", () => {
   it("has no job tables, and a search leaves the database as it was", async () => {
     const tables = async () => (await h.rows<{ table_name: string }>("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")).map((t) => t.table_name);
     const before = await tables();
-    expect(before.filter((t) => /job/.test(t))).toEqual([]);
+    expect(before.filter((t) => /job/.test(t))).toEqual(["job_shares"]); // only copies of jobs somebody shared, made when they share
     const { fetchFn } = world({ remotive: [rem(1)], arbeitnow: [arb("a")] });
     await makeSearch(fetchFn).list(q());
     expect(await tables()).toEqual(before);

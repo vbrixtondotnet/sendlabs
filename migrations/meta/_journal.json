@@ -64,6 +64,13 @@
       "when": 1795670492481,
       "tag": "0008_user_avatar",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1795678297059,
+      "tag": "0009_job_shares",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { MAX_APPLY_FORM_BYTES } from "../shared/email-attachments";
 import { closeDb, connectionStringFor, createDb, type Database } from "./database/client";
@@ -13,6 +13,7 @@ import { requestContext } from "./middleware/request-context";
 import { campaignRoutes } from "./routes/campaigns";
 import { contactRoutes } from "./routes/contacts";
 import { jobRoutes } from "./routes/jobs";
+import { sharePage, sharePublicRoutes } from "./routes/share";
 import { peopleRoutes } from "./routes/people";
 import { healthRoutes } from "./routes/health";
 import { importRoutes } from "./routes/imports";
@@ -79,7 +80,7 @@ export function createApp(options: { google?: GoogleOAuth; fetch?: typeof fetch;
     }
     await next();
   });
-  app.use("/api/*", async (c, next) => {
+  const withDb: MiddlewareHandler<AppEnv> = async (c, next) => {
     // One database client per request. It connects only when a query runs, and its connections are closed once the response
     // is on its way (after it, where the platform allows, so the response is not held up).
     // (A caller may hand in a ready client, as the tests do to share one connection pool; that one is not closed here.)
@@ -98,7 +99,10 @@ export function createApp(options: { google?: GoogleOAuth; fetch?: typeof fetch;
         await closing; // no execution context (tests, scripts): wait for it
       }
     }
-  });
+  };
+  app.use("/api/*", withDb);
+  app.use("/share/*", withDb);
+  app.get("/share/:id", sharePage);
 
   // Public: health, and the page Google sends the browser back to. Everything else requires an actor.
   // The callback trusts only a one-time `state` we issued, which also says which account it is for.
@@ -106,6 +110,7 @@ export function createApp(options: { google?: GoogleOAuth; fetch?: typeof fetch;
   app.route("/api/sender", senderPublicRoutes);
   app.route("/api/auth", authRoutes);
   app.route("/api/unsubscribe", unsubscribeRoutes);
+  app.route("/api/share", sharePublicRoutes); // the public job page's data
 
   const api = new Hono<AppEnv>();
   api.use("*", requireActor);

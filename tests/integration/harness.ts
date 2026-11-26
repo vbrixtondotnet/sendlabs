@@ -35,6 +35,7 @@ export type EnvOverride = {
   CLOUDFLARE_EMAIL_API_TOKEN?: string;
   SYSTEM_EMAIL_FROM?: string;
   SYSTEM_EMAIL_FROM_NAME?: string;
+  ASSETS?: Fetcher;
 };
 
 /** Google credentials for tests. Fake values, and a throwaway 32-byte key, so the Gmail connection is "configured". */

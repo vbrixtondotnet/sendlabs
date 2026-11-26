@@ -6,6 +6,7 @@ import { COMPANY_CONTACT_COST } from "@shared/credits";
 import { JOB_SORTS, type JobSort } from "@shared/schemas";
 import { Button, Card, Empty, ErrorNotice, FillPage, Notice, PageHeader, Pagination, Select } from "@/components/ui";
 import { JobApplyPanel } from "@/components/panels/JobApplyPanel";
+import { ShareJob } from "@/components/ShareJob";
 import { JobDetailsPanel } from "@/components/panels/JobDetailsPanel";
 import { useToast } from "@/hooks/useToast";
 import { postedAgo } from "@/lib/jobs";
@@ -37,9 +38,10 @@ function JobCard({ job, onView, onApply }: { job: JobDto; onView: () => void; on
       {/* On Remotive and Jobicy the location is where candidates may be; on Arbeitnow it is where the job is (shown in the line above unless the job is remote) */}
       {job.remote && job.location && <p className="text-xs text-slate-500 dark:text-slate-400">{CANDIDATE_LOCATION_SOURCES.includes(job.source) ? "Candidates from" : "Based in"}: {shortLocation(job.location)}</p>}
       {job.skills.length > 0 && <p className="mt-1 truncate text-xs text-slate-600 dark:text-slate-300">{job.skills.slice(0, 8).join(" · ")}</p>}
-      <div className="mt-2 flex items-center justify-between gap-3">
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
         {/* Only how long ago. The source is named, and linked to, in the View Job panel. */}
         <p className="text-xs text-slate-500 dark:text-slate-400">{postedAgo(job.publishedAt)}</p>
+        <ShareJob job={job} />
         <div className="flex shrink-0 items-center gap-2">
           <Button variant="secondary" className="cursor-pointer !px-3 !py-1 text-sm" onClick={onView} aria-label={`View job: ${job.title}`}>View Job</Button>
           <Button variant="primary" className="cursor-pointer !px-3 !py-1 text-sm" onClick={onApply} aria-label={`Apply now: ${job.title}`}>Apply Now</Button>

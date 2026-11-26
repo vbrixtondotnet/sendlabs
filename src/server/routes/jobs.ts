@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { contactEmailLookupSchema, jobApplicationEmailSchema, jobListQuery } from "../../shared/schemas";
+import { contactEmailLookupSchema, jobApplicationEmailSchema, jobListQuery, jobShareSchema } from "../../shared/schemas";
 import type { AppEnv } from "../app";
 import { ApiError } from "../lib/errors";
 import { JobSourceError } from "../lib/live-fetch";
@@ -12,6 +12,7 @@ import { HunterService } from "../services/hunter";
 import { emailProviderForRequest } from "../services/email-providers";
 import { sendApplicationEmail } from "../services/job-application-email";
 import { JobSearchService, jobSources } from "../services/job-search";
+import { confirmShare, shareBaseUrl, startShare } from "../services/job-share";
 import { systemMailerFor } from "../services/system-mail";
 
 /**
@@ -115,4 +116,21 @@ jobRoutes.post("/apply-email", async (c) => {
     }),
   );
   return c.json({ sent: true, attachments: attachments.length });
+});
+
+/**
+ * Share to LinkedIn / Facebook to earn a credit. Start: finds the job in the sources (the saved copy is ours, not the browser's), keeps it
+ * for the public link and answers with that link. Confirm: "I've posted it", which gives the credit once (see services/job-share.ts).
+ */
+jobRoutes.post("/share", async (c) => {
+  const input = await parseJson(c, jobShareSchema);
+  const job = await viaSources(() => service(c).find(input.jobId, input.title, c.req.raw.signal));
+  if (!job) throw new ApiError(404, "NOT_FOUND", "This job is no longer listed, so it cannot be shared");
+  const blocks = (await viaSources(() => service(c).description(job.id, c.req.raw.signal))) ?? [];
+  c.header("Cache-Control", "no-store");
+  return c.json(await startShare(c.get("db"), { userId: c.get("actor").userId }, { job, blocks, network: input.network }, shareBaseUrl(c.env, new URL(c.req.url).origin)));
+});
+jobRoutes.post("/share/:id/confirm", async (c) => {
+  c.header("Cache-Control", "no-store");
+  return c.json(await confirmShare(c.get("db"), { userId: c.get("actor").userId }, c.req.param("id")));
 });
