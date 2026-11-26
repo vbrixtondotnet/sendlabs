@@ -18,7 +18,7 @@ function JobSeekerOverview() {
   const contacts = useContacts({ page: 1, pageSize: 1 });
   return (
     <>
-      <PageHeader title="Overview" description="Find jobs, find people, and keep your contacts." actions={<Link to="/jobs"><Button variant="primary">Browse jobs</Button></Link>} />
+      <PageHeader title="Summary" description="Find jobs, find people, and keep your contacts." actions={<Link to="/jobs"><Button variant="primary">Browse jobs</Button></Link>} />
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Contacts" value={contacts.data ? fmt(contacts.data.total) : "…"} hint="In the database" />
       </div>

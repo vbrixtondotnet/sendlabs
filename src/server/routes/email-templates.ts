@@ -10,13 +10,13 @@ import { requireRole } from "../middleware/auth";
 import { cleanName } from "../services/account";
 
 const MAX_SYSTEM_TEMPLATES = 100;
-const owners = requireRole("JobSeeker", "Agency");
+const owners = requireRole("Agency");
 const superAdmin = requireRole("SuperAdmin");
 
 /**
  * Email templates, in two lists:
  *  - Available Templates: starter templates made by the system and shared by every account. Everyone can read them; only a SuperAdmin
- *    creates, edits or deletes them. JobSeeker and Agency accounts can copy one into their own My Templates.
+ *    creates, edits or deletes them. Agency accounts can copy one into their own My Templates. (A JobSeeker has no Email Templates at all.)
  *  - My Templates: the signed-in account's own. It adds (a copy of an available one, or a new one), edits and removes them.
  */
 export const emailTemplateRoutes = new Hono<AppEnv>();

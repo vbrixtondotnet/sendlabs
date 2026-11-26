@@ -119,6 +119,7 @@ export function createApp(options: { google?: GoogleOAuth; fetch?: typeof fetch;
   only("/test-recipients", "Agency");
   only("/suppressions", "Agency");
   only("/users", "SuperAdmin");
+  only("/email-templates", "SuperAdmin", "Agency");
   only("/global-contacts", "SuperAdmin");
   api.route("/me", meRoutes);
   api.route("/sender", senderRoutes);

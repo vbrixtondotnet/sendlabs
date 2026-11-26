@@ -6,24 +6,30 @@ import { Button, Card, CardHeader, ErrorNotice, Field, LoadingRows, Notice, Page
 import { useToast } from "@/hooks/useToast";
 import { ApiClientError } from "@/services/http";
 import { useChangePassword, useMe, useUpdateProfile } from "@/services/me";
+import { EmailServiceTab } from "@/pages/Settings";
 
 const TABS = ["User Details", "Account Details"] as const;
-type Tab = (typeof TABS)[number];
+/** A JobSeeker has no Settings page, so its Gmail connection lives here, as a third tab. */
+const JOBSEEKER_TABS = [...TABS, "Email Settings"] as const;
+type Tab = (typeof JOBSEEKER_TABS)[number];
 
-/** The signed-in user's own settings: their name and position, and their password. (Company Details and the email service are under Settings in the sidebar.) */
+/** The signed-in user's own settings: their name and position, and their password. (An Agency's Company Details and email service are under Settings in the sidebar; a JobSeeker's Email Settings are the third tab here.) */
 export function MySettings() {
   const [params] = useSearchParams();
-  const [tab, setTab] = useState<Tab>(() => {
-    const wanted = params.get("tab");
-    return wanted === "account" ? "Account Details" : "User Details";
-  });
   const me = useMe();
+  const tabs: readonly Tab[] = me.data?.user.role === "JobSeeker" ? JOBSEEKER_TABS : TABS;
+  const [chosen, setChosen] = useState<Tab | null>(null);
+  // ?tab=account, ?tab=email, or coming back from Google's Connect Gmail screen (?sender=...) picks the tab; otherwise User Details.
+  const wanted = params.get("tab");
+  const fromUrl: Tab = wanted === "account" ? "Account Details" : wanted === "email" || params.has("sender") ? "Email Settings" : "User Details";
+  const tab: Tab = chosen && tabs.includes(chosen) ? chosen : tabs.includes(fromUrl) ? fromUrl : "User Details";
+  const setTab = (t: Tab) => setChosen(t);
 
   return (
     <>
       <PageHeader title="My settings" description="Your own details and your password." />
       <div className="mb-5 flex gap-1 overflow-x-auto border-b border-slate-200 dark:border-slate-800" role="tablist">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={`whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium ${tab === t ? "border-brand-600 text-brand-600 dark:text-brand-400" : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"}`}>{t}</button>
         ))}
       </div>
@@ -33,6 +39,8 @@ export function MySettings() {
         <Card className="max-w-2xl"><LoadingRows rows={3} cols={1} /></Card>
       ) : tab === "User Details" ? (
         <UserDetailsTab me={me.data} />
+      ) : tab === "Email Settings" ? (
+        <EmailServiceTab />
       ) : (
         <AccountTab />
       )}

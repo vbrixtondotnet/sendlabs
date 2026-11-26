@@ -36,6 +36,41 @@ const type = (label: string, value: string) => fireEvent.change(screen.getByLabe
 const input = (label: string) => screen.getByLabelText(label) as HTMLInputElement;
 const writes = (calls: Call[]) => calls.filter((c) => c.method === "PATCH");
 
+describe("My settings for a JobSeeker: the Email Settings tab", () => {
+  const seeker = (path = "/account") =>
+    open(({ method, path: p, ...r }) => (p === "/api/me" ? { json: meDto({ role: "JobSeeker" }) } : p === "/api/sender" ? { json: { configured: true, sender: null } } : server()({ method, path: p, ...r } as Call)), path);
+
+  it("has User Details, Account Details and Email Settings (and no Company Details)", async () => {
+    seeker();
+    await screen.findByLabelText("First name");
+    await waitFor(() => expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["User Details", "Account Details", "Email Settings"]));
+    expect(screen.queryByRole("tab", { name: "Company Details" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Email Service" })).toBeNull();
+  });
+
+  it("shows the Gmail connection on Email Settings, without the campaign-only cards", async () => {
+    seeker();
+    await screen.findByLabelText("First name");
+    fireEvent.click(await screen.findByRole("tab", { name: "Email Settings" }));
+    expect(await screen.findByText("Gmail sender")).toBeTruthy();
+    expect(screen.queryByText("Test-send allowlist")).toBeNull();
+    expect(screen.queryByText("Suppression list")).toBeNull();
+    expect(screen.queryByText("Unsubscribe and compliance")).toBeNull();
+  });
+
+  it("opens on Email Settings for ?tab=email and when Google sends the browser back (?sender=...)", async () => {
+    seeker("/account?tab=email");
+    expect((await screen.findByRole("tab", { name: "Email Settings" })).getAttribute("aria-selected")).toBe("true");
+    expect(await screen.findByText("Gmail sender")).toBeTruthy();
+  });
+
+  it("an Agency still has only the two tabs here (its email settings are under Settings)", async () => {
+    open(server());
+    await screen.findByLabelText("First name");
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["User Details", "Account Details"]);
+  });
+});
+
 describe("My settings: tabs", () => {
   it("has two tabs, User Details first and then Account Details", async () => {
     open(server());

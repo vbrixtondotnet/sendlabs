@@ -382,7 +382,7 @@ function ComplianceCard() {
 }
 
 /** Everything about how email goes out, in one place: the Gmail sender and test sends, unsubscribe rules, limits, suppression, retention. */
-function EmailServiceTab() {
+export function EmailServiceTab() {
   const { role } = useRole();
   // Two equal columns, so every section is the same width: Gmail sender | test-send allowlist, then
   // unsubscribe and compliance | sending limits, then suppression list | data retention. One column on a phone.

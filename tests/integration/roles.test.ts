@@ -22,8 +22,8 @@ describe("what each kind of account can use", () => {
     ["/api/sender", false, true, true],
     ["/api/users", true, false, false],
     ["/api/global-contacts", true, false, false],
-    ["/api/email-templates/available", true, true, true],
-    ["/api/email-templates", false, true, true],
+    ["/api/email-templates/available", true, false, true],
+    ["/api/email-templates", false, false, true],
     ["/api/me", true, true, true],
   ];
   for (const [path, sa, js, ag] of matrix) {
@@ -54,7 +54,7 @@ describe("Available Templates", () => {
     }
     const made = await h.superAdmin.api("POST", "/api/email-templates/available", { name: "Aerospace", htmlBody: BODY });
     expect(made.status).toBe(201);
-    expect((await h.jobSeeker.api("GET", `/api/email-templates/available/${made.json.id}`)).json.htmlBody).toBe(BODY);
+    expect((await h.api("GET", `/api/email-templates/available/${made.json.id}`)).json.htmlBody).toBe(BODY);
     expect((await h.superAdmin.api("PUT", `/api/email-templates/available/${made.json.id}`, { name: "Aerospace 2", htmlBody: BODY })).json.name).toBe("Aerospace 2");
     expect(await status(h, "DELETE", `/api/email-templates/available/${made.json.id}`)).toBe(403);
     expect(await status(h.superAdmin, "DELETE", `/api/email-templates/available/${made.json.id}`)).toBe(204);
@@ -151,6 +151,14 @@ describe("Global Contacts", () => {
       expect(await status(who, "POST", "/api/global-contacts", person)).toBe(403);
       expect(await status(who, "PUT", "/api/global-contacts/x", person)).toBe(403);
       expect(await status(who, "DELETE", "/api/global-contacts/x")).toBe(403);
+    }
+  });
+});
+
+describe("a JobSeeker has no Email Templates", () => {
+  it("is refused on every Email Templates route, reading or writing", async () => {
+    for (const [method, path] of [["GET", "/api/email-templates"], ["GET", "/api/email-templates/available"], ["GET", "/api/email-templates/available/construction"], ["POST", "/api/email-templates/available/construction/add"], ["POST", "/api/email-templates"], ["PUT", "/api/email-templates/x"], ["DELETE", "/api/email-templates/x"]] as const) {
+      expect(await status(h.jobSeeker, method, path, method === "GET" || method === "DELETE" ? undefined : { name: "x", htmlBody: BODY }), `${method} ${path}`).toBe(403);
     }
   });
 });
