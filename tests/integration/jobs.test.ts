@@ -579,7 +579,14 @@ describe("categories and locations for the filters", () => {
       remotive: [rem(1, { candidate_required_location: "USA, Canada" }), rem(2, { candidate_required_location: "USA" })],
       arbeitnow: [arb("a", { location: "Berlin" }), arb("b", { location: "Berlin" }), arb("c", { location: "Berlin" }), arb("d", { location: "Remote job", remote: true })],
     });
-    expect(await makeSearch(fetchFn).locations()).toEqual(["Berlin", "USA", "Canada"]);
+    expect(await makeSearch(fetchFn).locations()).toEqual(["Berlin", "USA", "Canada", "Philippines", "India"]); // then the pinned places, which are always offered
+  });
+
+  it("always offers Philippines and India, even when no job names them, and does not list them twice when one does", async () => {
+    const none = world({ remotive: [rem(1, { candidate_required_location: "USA" })] });
+    expect(await makeSearch(none.fetchFn).locations()).toEqual(["USA", "Philippines", "India"]);
+    const some = world({ remotive: [rem(1, { candidate_required_location: "Philippines" }), rem(2, { candidate_required_location: "Philippines" })] });
+    expect(await makeSearch(some.fetchFn).locations()).toEqual(["Philippines", "India"]);
   });
 });
 

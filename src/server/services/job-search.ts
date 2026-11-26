@@ -1,5 +1,5 @@
 import type { HiringCompaniesDto, JobCategoryDto, JobDescriptionBlock, JobDto, JobsPageDto } from "../../shared/api";
-import { ARBEITNOW, HIMALAYAS, JOBICY, JOOBLE, REMOTIVE } from "../../shared/jobs";
+import { ARBEITNOW, HIMALAYAS, JOBICY, JOOBLE, PINNED_LOCATIONS, REMOTIVE } from "../../shared/jobs";
 import type { JobListQuery } from "../../shared/schemas";
 import { JobSourceError } from "../lib/live-fetch";
 import { ArbeitnowJobService } from "./arbeitnow-jobs";
@@ -250,7 +250,7 @@ export class JobSearchService {
     return null;
   }
 
-  /** The choices of the Location filter: the places the jobs name (both sources), most common first, at most 150. */
+  /** The choices of the Location filter: the places the jobs name (every source), most common first, at most 150, plus the pinned places (Philippines, India), which are always offered. */
   async locations(signal?: AbortSignal): Promise<string[]> {
     const { jobs } = await fromAll([
       { name: REMOTIVE.name, run: () => this.sources.remotive.jobs("", "", signal) },
@@ -261,6 +261,9 @@ export class JobSearchService {
     ]);
     const counts = new Map<string, number>();
     for (const j of jobs) for (const t of tokens(j.location)) counts.set(t, (counts.get(t) ?? 0) + 1);
-    return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 150).map(([t]) => t);
+    const common = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 150).map(([t]) => t);
+    // The pinned places are always there (appended when the jobs on screen do not name them), compared ignoring case.
+    const have = new Set(common.map((t) => t.toLowerCase()));
+    return [...common, ...PINNED_LOCATIONS.filter((p) => !have.has(p.toLowerCase()))];
   }
 }

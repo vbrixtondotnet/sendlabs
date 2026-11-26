@@ -38,6 +38,12 @@ export const JOOBLE = {
 /** Every source the Jobs page shows, by name. (Jooble only when a key is set.) */
 export const JOB_SOURCES = [REMOTIVE, ARBEITNOW, JOBICY, HIMALAYAS, JOOBLE] as const;
 
+/**
+ * Places the Location filter always offers, whatever the current jobs happen to name: the list is made from the jobs on screen (and cut to the
+ * most common), so a place that has few jobs right now would otherwise drop out of it. These are the places the app is used to search.
+ */
+export const PINNED_LOCATIONS: readonly string[] = ["Philippines", "India"];
+
 /** On these sources a remote job's location is where candidates may be (not where the job is). Both credit the source on the job. */
 /** Sources whose terms ask that the job names them and links back to the job on their site (shown in the View Job panel). */
 export const CREDITED_SOURCES: readonly string[] = [REMOTIVE.name, JOBICY.name, HIMALAYAS.name, JOOBLE.name];
