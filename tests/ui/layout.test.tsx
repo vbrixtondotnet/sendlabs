@@ -25,7 +25,7 @@ describe("the Settings menu", () => {
   it("shows Settings, with the other items", async () => {
     stubApi(({ path }) => (path === "/api/me" ? { json: me() } : undefined));
     open();
-    await screen.findByText("Sabertooth Software Labs");
+    await screen.findByTestId("user-icon");
     expect(links()).toEqual(expect.arrayContaining(["Overview", "Imports", "Contacts", "Search People", "Campaigns", "Settings"]));
     expect(screen.getByRole("link", { name: "Settings" }).getAttribute("href")).toBe("/settings");
   });
@@ -37,7 +37,7 @@ describe("what the menu shows for each kind of account", () => {
   const openAs = async (role: "SuperAdmin" | "JobSeeker" | "Agency") => {
     stubApi(({ path }) => (path === "/api/me" ? { json: me({ role }) } : undefined));
     open();
-    await screen.findByText("Sabertooth Software Labs");
+    await screen.findByTestId("user-icon");
   };
 
   it("JobSeeker: everything except Campaigns, with Jobs straight after the people tools", async () => {
@@ -91,13 +91,14 @@ describe("the credits badge (mockup)", () => {
 });
 
 describe("the header shows the real company and user", () => {
-  it("shows the company's name and the signed-in user, and nothing hardcoded", async () => {
+  it("shows the signed-in user (icon, full name, arrow), and nothing hardcoded", async () => {
     stubApi(({ path }) => (path === "/api/me" ? { json: me() } : undefined));
     open();
-    expect(await screen.findByText("Sabertooth Software Labs")).toBeTruthy();
-    const avatar = screen.getByLabelText("Signed in as admin@sabertoothsoftwarelabs.net");
-    expect(avatar.textContent).toBe("AD");
+    const avatar = await screen.findByLabelText("Signed in as admin@sabertoothsoftwarelabs.net");
+    expect(screen.getByTestId("user-icon").textContent).toBe("AD");
+    expect(avatar.textContent).toContain("Administrator"); // the full name
     expect(avatar.getAttribute("title")).toContain("admin@sabertoothsoftwarelabs.net");
+    expect(screen.queryByText("Sabertooth Software Labs")).toBeNull(); // the company name is not in the header any more
     expect(document.body.textContent).not.toContain("Brian");
     expect(screen.queryByLabelText("Signed in as Brian V.")).toBeNull();
   });
@@ -105,17 +106,19 @@ describe("the header shows the real company and user", () => {
   it("has no \"Preview as\" role switch: what you can do is what your account allows", async () => {
     stubApi(({ path }) => (path === "/api/me" ? { json: me() } : undefined));
     open();
-    await screen.findByText("Sabertooth Software Labs");
+    await screen.findByTestId("user-icon");
     expect(screen.queryByLabelText("Preview as")).toBeNull();
     expect(screen.queryByText("Preview as")).toBeNull();
     expect(screen.queryByRole("combobox")).toBeNull();
   });
 
-  it("shows another account's company name", async () => {
+  it("shows another account's full name", async () => {
     stubApi(({ path }) => (path === "/api/me" ? { json: me({ email: "admin@globex.test", displayName: "Hank Scorpio" }, "Globex Corp") } : undefined));
     open();
-    expect(await screen.findByText("Globex Corp")).toBeTruthy();
-    expect(screen.getByLabelText("Signed in as admin@globex.test").textContent).toBe("HS");
+    const who = await screen.findByLabelText("Signed in as admin@globex.test");
+    expect(screen.getByTestId("user-icon").textContent).toBe("HS");
+    expect(who.textContent).toContain("Hank Scorpio");
+    expect(screen.queryByText("Globex Corp")).toBeNull();
     expect(screen.queryByText("Sabertooth Software Labs")).toBeNull();
   });
 
@@ -200,7 +203,7 @@ describe("what a JobSeeker's menu looks like", () => {
   it("has Jobs first, the start page called Summary, no Email Templates or Imports, and Settings opening My Settings", async () => {
     stubApi(({ path }) => (path === "/api/me" ? { json: me({ role: "JobSeeker" }) } : undefined));
     open();
-    await screen.findByText("Sabertooth Software Labs");
+    await screen.findByTestId("user-icon");
     expect(nav()).toEqual([["Jobs", "/jobs"], ["Contacts", "/contacts"], ["Search People", "/people"], ["Summary", "/summary"], ["Settings", "/account"]]);
   });
 
@@ -221,14 +224,43 @@ describe("where each account lands", () => {
   it("a JobSeeker can open /summary", async () => {
     stubApi(({ path }) => (path === "/api/me" ? { json: me({ role: "JobSeeker" }) } : undefined));
     renderAt(<Layout />, { path: "/summary", route: "/summary" });
-    await screen.findByText("Sabertooth Software Labs");
+    await screen.findByTestId("user-icon");
     expect(screen.queryByTestId("elsewhere")).toBeNull();
   });
 
   it("an Agency still lands on / (its Overview)", async () => {
     stubApi(({ path }) => (path === "/api/me" ? { json: me({ role: "Agency" }) } : undefined));
     renderAt(<Layout />, { path: "/", route: "/" });
-    await screen.findByText("Sabertooth Software Labs");
+    await screen.findByTestId("user-icon");
     expect(screen.queryByTestId("elsewhere")).toBeNull();
+  });
+});
+
+describe("the right side of the header", () => {
+  it("reads, in order: Credits, a | separator, the user icon, the full name and a down arrow that opens the menu", async () => {
+    stubApi(({ path }) => (path === "/api/me" ? { json: me({ firstName: "Brixton Ray", lastName: "Villanueva", displayName: "Brixton Ray Villanueva" }) } : undefined));
+    open();
+    const trigger = await screen.findByRole("button", { name: /Signed in as/ });
+    const credits = screen.getByText("100 Credits");
+    const bar = screen.getByText("|");
+    const icon = screen.getByTestId("user-icon");
+    const order = (a: Node, b: Node) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(order(credits, bar)).toBe(true);
+    expect(order(bar, icon)).toBe(true);
+    expect(trigger.textContent).toBe("BVBrixton Ray Villanueva");
+    expect(trigger.querySelector("svg")).toBeTruthy(); // the down arrow
+    expect(screen.queryByRole("menu")).toBeNull();
+    fireEvent.click(trigger);
+    expect(screen.getByRole("menu", { name: "Account menu" })).toBeTruthy();
+    expect(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Settings" })).toBeTruthy();
+    expect(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Logout" })).toBeTruthy();
+  });
+
+  it("shows no Credits or separator for a SuperAdmin, only the user", async () => {
+    stubApi(({ path }) => (path === "/api/me" ? { json: me({ role: "SuperAdmin" }) } : undefined));
+    open();
+    await screen.findByTestId("user-icon");
+    expect(screen.queryByText("|")).toBeNull();
+    expect(screen.queryByText(/Credits/)).toBeNull();
   });
 });

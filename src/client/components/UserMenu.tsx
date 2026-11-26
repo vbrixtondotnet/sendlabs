@@ -8,8 +8,8 @@ import { initialsOf } from "@/services/me";
 const itemCls = "block w-full cursor-pointer rounded-md px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100 focus:bg-slate-100 focus:outline-none dark:text-slate-200 dark:hover:bg-slate-800 dark:focus:bg-slate-800";
 
 /**
- * The round initials button in the header. Clicking it opens a small menu: Settings (your own profile and password)
- * and Logout. It closes on Escape, on a click anywhere else, and after choosing something.
+ * The user part of the header: the round user icon (initials), the person's full name and a down arrow, all one button. Clicking it opens a
+ * small menu: Settings (your own profile and password) and Logout. It closes on Escape, on a click anywhere else, and after choosing something.
  */
 export function UserMenu({ user }: { user: MeDto["user"] }) {
   const [open, setOpen] = useState(false);
@@ -39,9 +39,11 @@ export function UserMenu({ user }: { user: MeDto["user"] }) {
         aria-label={`Signed in as ${user.email}`}
         title={`${name} (${user.email})`}
         onClick={() => setOpen((v) => !v)}
-        className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-brand-600 text-xs font-semibold text-white hover:bg-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900"
+        className="flex cursor-pointer items-center gap-2 rounded-full py-1 pl-1 pr-2 hover:bg-slate-200/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 dark:hover:bg-slate-800"
       >
-        {initialsOf(user.displayName, user.email)}
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-600 text-xs font-semibold text-white" data-testid="user-icon">{initialsOf(user.displayName, user.email)}</span>
+        <span className="hidden max-w-[11rem] truncate text-sm font-medium text-slate-700 dark:text-slate-200 sm:inline">{name}</span>
+        <svg viewBox="0 0 24 24" className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${open ? "rotate-180" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
       </button>
 
       {open && (

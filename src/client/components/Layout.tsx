@@ -163,13 +163,17 @@ export function Layout() {
           </form>
         )}
 
+        {/* Right side, in this order: Credits | user icon, full name and a down arrow (which opens the account menu) */}
         <div className="ml-auto flex items-center gap-3">
-          {me.data ? (
-            <span className="hidden max-w-[14rem] truncate text-sm text-slate-600 dark:text-slate-300 md:block" title={me.data.user.email}>{me.data.company.name || me.data.user.displayName}</span>
-          ) : me.isError ? (
+          {me.isError && !me.data ? (
             <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">Not signed in</span>
           ) : null}
-          {me.data && hasSearch && <CreditsBadge credits={me.data.user.credits} />}
+          {me.data && hasSearch && (
+            <>
+              <CreditsBadge credits={me.data.user.credits} />
+              <span className="select-none text-slate-300 dark:text-slate-600" aria-hidden="true">|</span>
+            </>
+          )}
           {me.data && <UserMenu user={me.data.user} />}
         </div>
       </header>

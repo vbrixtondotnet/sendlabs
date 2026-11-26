@@ -11,10 +11,10 @@ export function useMe() {
   });
 }
 
-/** `Sabertooth Software Labs` -> `SS`; falls back to the email's first letters. Two characters at most. */
+/** `Brixton Ray Villanueva` -> `BV` (first and last word); falls back to the email's first letters. Two characters at most. */
 export function initialsOf(name: string, email: string): string {
   const words = (name || email.split("@")[0] || "?").split(/[\s._-]+/).filter(Boolean);
-  const letters = words.length > 1 ? (words[0]?.[0] ?? "") + (words[1]?.[0] ?? "") : (words[0] ?? "?").slice(0, 2);
+  const letters = words.length > 1 ? (words[0]?.[0] ?? "") + (words[words.length - 1]?.[0] ?? "") : (words[0] ?? "?").slice(0, 2);
   return letters.toUpperCase();
 }
 
