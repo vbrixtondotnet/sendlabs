@@ -57,7 +57,7 @@ interface Env {
   CLOUDFLARE_EMAIL_API_TOKEN?: string;
   /** The From address of system email. Default jobs@sendrix.app. Its domain must be onboarded for Email Sending in Cloudflare. */
   SYSTEM_EMAIL_FROM?: string;
-  /** The name shown on the From line of system email. Default "Sendrix". */
+  /** The name shown on the From line of system email. Default "Sendrix Jobs". */
   SYSTEM_EMAIL_FROM_NAME?: string;
   /**
    * Local development shortcut only: when set (in `.dev.vars`), a request with no session runs as this user, so the API

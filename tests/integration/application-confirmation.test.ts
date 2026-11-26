@@ -8,7 +8,7 @@ import { startHarness, type Harness } from "./harness";
 
 const ACCOUNT = "0123456789abcdef0123456789abcdef";
 const TOKEN = "cf-secret-token-xyz";
-const ENV = { CLOUDFLARE_ACCOUNT_ID: ACCOUNT, CLOUDFLARE_EMAIL_API_TOKEN: TOKEN, SYSTEM_EMAIL_FROM: "jobs@sendrix.app", SYSTEM_EMAIL_FROM_NAME: "Sendrix" };
+const ENV = { CLOUDFLARE_ACCOUNT_ID: ACCOUNT, CLOUDFLARE_EMAIL_API_TOKEN: TOKEN, SYSTEM_EMAIL_FROM: "jobs@sendrix.app", SYSTEM_EMAIL_FROM_NAME: "Sendrix Jobs" };
 
 describe("the system mailer's settings", () => {
   it("needs a real account id and a token, and defaults the sender to jobs@sendrix.app", () => {
@@ -16,7 +16,7 @@ describe("the system mailer's settings", () => {
     expect(systemMailConfig({ CLOUDFLARE_ACCOUNT_ID: ACCOUNT })).toBeNull();
     expect(systemMailConfig({ CLOUDFLARE_EMAIL_API_TOKEN: TOKEN })).toBeNull();
     expect(systemMailConfig({ CLOUDFLARE_ACCOUNT_ID: "../../evil", CLOUDFLARE_EMAIL_API_TOKEN: TOKEN })).toBeNull(); // it goes into a URL
-    expect(systemMailConfig({ CLOUDFLARE_ACCOUNT_ID: ACCOUNT, CLOUDFLARE_EMAIL_API_TOKEN: TOKEN })).toEqual({ accountId: ACCOUNT, token: TOKEN, from: DEFAULT_FROM, fromName: "Sendrix" });
+    expect(systemMailConfig({ CLOUDFLARE_ACCOUNT_ID: ACCOUNT, CLOUDFLARE_EMAIL_API_TOKEN: TOKEN })).toEqual({ accountId: ACCOUNT, token: TOKEN, from: DEFAULT_FROM, fromName: "Sendrix Jobs" });
     expect(DEFAULT_FROM).toBe("jobs@sendrix.app");
     expect(systemMailConfig({ ...ENV, SYSTEM_EMAIL_FROM: "not an address" })).toBeNull();
   });
@@ -34,7 +34,7 @@ describe("the Cloudflare mailer", () => {
     expect(seen[0]!.url).toBe(`https://api.cloudflare.com/client/v4/accounts/${ACCOUNT}/email/sending/send`);
     expect(seen[0]!.init.method).toBe("POST");
     expect((seen[0]!.init.headers as Record<string, string>).authorization).toBe(`Bearer ${TOKEN}`);
-    expect(JSON.parse(String(seen[0]!.init.body))).toEqual({ to: "me@example.test", from: { address: "jobs@sendrix.app", name: "Sendrix" }, subject: "S", text: "T", html: "<p>T</p>" });
+    expect(JSON.parse(String(seen[0]!.init.body))).toEqual({ to: "me@example.test", from: { address: "jobs@sendrix.app", name: "Sendrix Jobs" }, subject: "S", text: "T", html: "<p>T</p>" });
   });
 
   it("maps Cloudflare's failures onto send-failure kinds, and never puts the token in a message", async () => {
@@ -59,31 +59,58 @@ describe("the Cloudflare mailer", () => {
 });
 
 describe("the confirmation email", () => {
-  const base = { to: "me@example.test", jobTitle: "Senior .NET Developer", companyName: "Acme Corp", sentTo: "hiring@acme.test", sentAt: new Date(Date.UTC(2026, 10, 26, 9, 30)), attachmentNames: ["resume.pdf", "cover.docx"], appUrl: "https://sendrix.app/" };
+  const base = { to: "me@example.test", firstName: "Brixton Ray", jobTitle: "Senior .NET Developer", companyName: "Acme Corp", sentAt: new Date(Date.UTC(2026, 10, 26, 9, 30)) };
 
-  it("says what was sent, to whom, when and which files, and nothing of the message", () => {
+  it("is worded exactly as specified: subject, greeting, details, status and sign-off", () => {
     const m = buildApplicationConfirmation({ ...base });
     expect(m.to).toBe("me@example.test");
-    expect(m.subject).toBe("Your application to Acme Corp was sent");
-    expect(m.text).toContain("Your application for Senior .NET Developer at Acme Corp was sent.");
-    expect(m.text).toContain("Sent to: hiring@acme.test");
-    expect(m.text).toContain("Sent on: Thu, 26 Nov 2026 09:30:00 GMT");
-    expect(m.text).toContain("Attachments: resume.pdf, cover.docx");
-    expect(m.text).toContain("Open Sendrix: https://sendrix.app");
-    expect(m.text).toContain("Please do not reply");
-    expect(m.html).toContain("<strong>Senior .NET Developer at Acme Corp</strong>");
+    expect(m.subject).toBe("Your application has been successfully submitted!");
+    expect(m.text).toBe([
+      "Hi Brixton Ray,",
+      "",
+      "Thank you for applying through Sendrix Jobs!",
+      "",
+      "We're pleased to confirm that your application for Senior .NET Developer at Acme Corp has been successfully submitted to the employer.",
+      "",
+      "Application Details",
+      "",
+      "Position: Senior .NET Developer",
+      "",
+      "Company: Acme Corp",
+      "",
+      "Date Applied: November 26, 2026",
+      "",
+      "Application Status: Submitted",
+      "",
+      "The employer can now review your application. If your qualifications match their requirements, they may contact you directly through your registered email address.",
+      "",
+      "Thank you for using Sendrix Jobs in your career journey. We wish you the best of luck!",
+      "",
+      "Best regards,",
+      "The Sendrix Jobs Team",
+    ].join("\n"));
+    expect(m.html).toContain("Hi Brixton Ray,");
+    expect(m.html).toContain("<strong>Senior .NET Developer</strong>");
+    expect(m.html).toContain("Submitted");
+    expect(m.html).toContain("The Sendrix Jobs Team");
   });
 
-  it("copes with an unknown job and no files, and escapes everything a person supplied", () => {
-    const bare = buildApplicationConfirmation({ ...base, jobTitle: undefined, companyName: undefined, attachmentNames: [], appUrl: "" });
-    expect(bare.subject).toBe("Your application was sent");
-    expect(bare.text).toContain("Your application for a job was sent.");
-    expect(bare.text).not.toContain("Attachments");
-    expect(bare.text).not.toContain("Open Sendrix");
-    const evil = buildApplicationConfirmation({ ...base, jobTitle: '<img src=x onerror="alert(1)">\r\nBcc: x@evil.test', companyName: "A & B <b>", attachmentNames: ['"><script>.pdf'] });
+  it("says less, never 'undefined', when the job is not known or the name is empty", () => {
+    const bare = buildApplicationConfirmation({ ...base, firstName: "", jobTitle: undefined, companyName: undefined });
+    expect(bare.text).toContain("Hi there,");
+    expect(bare.text).toContain("your application for the position has been successfully submitted");
+    expect(bare.text).not.toMatch(/Position:|Company:|undefined/);
+    expect(bare.text).toContain("Date Applied: November 26, 2026");
+    expect(bare.text).toContain("Application Status: Submitted");
+    expect(buildApplicationConfirmation({ ...base, jobTitle: undefined }).text).toContain("for the position at Acme Corp");
+  });
+
+  it("escapes everything a person supplied, and cannot add headers", () => {
+    const evil = buildApplicationConfirmation({ ...base, firstName: "<b>Bob</b>", jobTitle: '<img src=x onerror="alert(1)">\nBcc: x@evil.test', companyName: "A & B <script>" });
     expect(evil.html).not.toContain("<img");
     expect(evil.html).not.toContain("<script>");
-    expect(evil.html).toContain("A &amp; B &lt;b&gt;");
+    expect(evil.html).not.toContain("<b>Bob");
+    expect(evil.html).toContain("A &amp; B &lt;script&gt;");
     expect(evil.subject).not.toMatch(/[\r\n]/);
     expect(evil.text.split("\n").some((l) => l.startsWith("Bcc:"))).toBe(false);
   });
@@ -112,6 +139,7 @@ describe("after an application is sent (POST /api/jobs/apply-email)", () => {
       return cloudflare.respond();
     }) as unknown as typeof fetch;
     h = await startHarness({ google: new GoogleOAuth(google.fetch), fetch: stub });
+    expect((await h.jobSeeker.api("PATCH", "/api/me", { firstName: "Rico", lastName: "Prinsipe" })).status).toBe(200);
     const start = await h.jobSeeker.api("POST", "/api/sender/gmail/connect");
     expect((await h.jobSeeker.text(google.consent(start.json.url, { email: "sales@sabertooth.test" }))).status).toBe(302);
   });
@@ -136,12 +164,16 @@ describe("after an application is sent (POST /api/jobs/apply-email)", () => {
     expect(c.url).toBe(`https://api.cloudflare.com/client/v4/accounts/${ACCOUNT}/email/sending/send`);
     expect(c.auth).toBe(`Bearer ${TOKEN}`);
     expect(c.body.to).toBe("jobseeker@sendrix.app"); // the account's address, not the employer's
-    expect(c.body.from).toEqual({ address: "jobs@sendrix.app", name: "Sendrix" });
-    expect(c.body.subject).toBe("Your application to Acme Corp was sent");
-    expect(c.body.text).toContain("Senior .NET Developer at Acme Corp");
-    expect(c.body.text).toContain("Sent to: hiring@acme.test");
-    expect(c.body.text).toContain("Attachments: resume.pdf");
-    expect(c.body.text).not.toContain("I would like to apply"); // not the message itself
+    expect(c.body.from).toEqual({ address: "jobs@sendrix.app", name: "Sendrix Jobs" });
+    expect(c.body.subject).toBe("Your application has been successfully submitted!");
+    expect(c.body.text).toContain("Hi Rico,"); // the signed-in account's first name
+    expect(c.body.text).toContain("your application for Senior .NET Developer at Acme Corp has been successfully submitted");
+    expect(c.body.text).toContain("Position: Senior .NET Developer");
+    expect(c.body.text).toContain("Company: Acme Corp");
+    expect(c.body.text).toMatch(/Date Applied: [A-Z][a-z]+ \d{1,2}, \d{4}/);
+    expect(c.body.text).toContain("Application Status: Submitted");
+    expect(c.body.text).not.toContain("hiring@acme.test"); // the employer's address is not part of it
+    expect(c.body.text).not.toContain("I would like to apply"); // nor is the message itself
     expect(google.mailbox).toHaveLength(1); // the application itself still went out through their Gmail
   });
 
@@ -179,6 +211,6 @@ describe("after an application is sent (POST /api/jobs/apply-email)", () => {
     const r = await apply(withMail(), { to: "hiring@acme.test", subject: "Application", body: "Hello, I would like to apply." });
     expect(r.status).toBe(200);
     await settle();
-    expect(cloudflare.calls.at(-1)!.body.subject).toBe("Your application was sent");
+    expect(cloudflare.calls.at(-1)!.body.text).toContain("your application for the position has been successfully submitted");
   });
 });

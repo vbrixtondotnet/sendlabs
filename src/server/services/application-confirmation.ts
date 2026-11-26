@@ -7,58 +7,67 @@ const oneLine = (v: string | undefined, max: number) => (v ?? "").replace(/[\u00
 export interface ApplicationConfirmation {
   /** The account's own address: where the confirmation goes (never the employer's). */
   to: string;
+  /** The person's first name, for the greeting. */
+  firstName: string;
   jobTitle?: string | undefined;
   companyName?: string | undefined;
-  /** Who the application went to. */
-  sentTo: string;
+  /** When the application was sent. */
   sentAt: Date;
-  attachmentNames: string[];
-  /** The address of the app, for the link back. */
-  appUrl: string;
 }
 
+/** "November 26, 2026" (the day it was sent, in UTC). */
+export const applicationDate = (d: Date): string => d.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
+
 /**
- * The "your application was sent" email. A short summary only (what, to whom, when, which files) and never the message itself.
- * Plain and transactional: no tracking, no marketing, no unsubscribe link. Everything that came from a person is cleaned and escaped.
+ * The "your application has been successfully submitted" email, worded as Sendrix Jobs specifies:
+ *
+ *   Hi {{FirstName}}, ... your application for {{JobTitle}} at {{CompanyName}} has been successfully submitted to the employer ...
+ *   Application Details: Position, Company, Date Applied, Application Status: Submitted ...
+ *
+ * Never the application message itself. Plain and transactional: no tracking, no marketing, no unsubscribe link. Everything that came from
+ * a person is cleaned and escaped. When the job's title or company is not known the sentence and the detail line say less, never "undefined".
  */
 export function buildApplicationConfirmation(a: ApplicationConfirmation): SystemMail {
+  const first = oneLine(a.firstName, 80) || "there";
   const title = oneLine(a.jobTitle, 200);
   const company = oneLine(a.companyName, 200);
-  const what = [title, company].filter(Boolean).join(" at ") || "a job";
-  const when = a.sentAt.toUTCString();
-  const files = a.attachmentNames.map((n) => oneLine(n, 120)).filter(Boolean);
-  const link = /^https?:\/\//i.test(a.appUrl) ? a.appUrl.replace(/\/+$/, "") : "";
-  const subject = `Your application${company ? ` to ${company}` : ""} was sent`;
+  const date = applicationDate(a.sentAt);
+  const forWhat = `${title || "the position"}${company ? ` at ${company}` : ""}`;
 
-  const lines = [
-    "Hello,",
-    "",
-    `Your application for ${what} was sent.`,
-    "",
-    `Sent to: ${oneLine(a.sentTo, 254)}`,
-    `Sent on: ${when}`,
-    ...(files.length ? [`Attachments: ${files.join(", ")}`] : []),
-    ...(link ? ["", `Open Sendrix: ${link}`] : []),
-    "",
-    "This is an automated message from Sendrix. Please do not reply to it.",
+  const intro = "Thank you for applying through Sendrix Jobs!";
+  const confirm = `We're pleased to confirm that your application for ${forWhat} has been successfully submitted to the employer.`;
+  const details: [string, string][] = [
+    ...(title ? ([["Position", title]] as [string, string][]) : []),
+    ...(company ? ([["Company", company]] as [string, string][]) : []),
+    ["Date Applied", date],
+    ["Application Status", "Submitted"],
   ];
+  const next = "The employer can now review your application. If your qualifications match their requirements, they may contact you directly through your registered email address.";
+  const thanks = "Thank you for using Sendrix Jobs in your career journey. We wish you the best of luck!";
 
-  const row = (k: string, v: string) => `<tr><td style="padding:2px 12px 2px 0;color:#64748b">${escapeHtml(k)}</td><td style="padding:2px 0">${escapeHtml(v)}</td></tr>`;
+  const text = [
+    `Hi ${first},`, "", intro, "", confirm, "",
+    "Application Details", "", ...details.flatMap(([k, v]) => [`${k}: ${v}`, ""]),
+    next, "", thanks, "", "Best regards,", "The Sendrix Jobs Team",
+  ].join("\n");
+
+  const p = (t: string) => `<p style="margin:0 0 14px">${escapeHtml(t)}</p>`;
   const html = [
     '<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#0f172a">',
-    "<p>Hello,</p>",
-    `<p>Your application for <strong>${escapeHtml(what)}</strong> was sent.</p>`,
-    '<table style="border-collapse:collapse;font-size:14px">',
-    row("Sent to", oneLine(a.sentTo, 254)),
-    row("Sent on", when),
-    ...(files.length ? [row("Attachments", files.join(", "))] : []),
+    p(`Hi ${first},`),
+    p(intro),
+    p(confirm),
+    '<p style="margin:0 0 6px"><strong>Application Details</strong></p>',
+    '<table style="border-collapse:collapse;font-size:14px;margin:0 0 14px">',
+    ...details.map(([k, v]) => `<tr><td style="padding:2px 14px 2px 0;color:#475569">${escapeHtml(k)}:</td><td style="padding:2px 0"><strong>${escapeHtml(v)}</strong></td></tr>`),
     "</table>",
-    ...(link ? [`<p><a href="${escapeHtml(link)}">Open Sendrix</a></p>`] : []),
-    '<p style="color:#64748b;font-size:12px">This is an automated message from Sendrix. Please do not reply to it.</p>',
+    p(next),
+    p(thanks),
+    '<p style="margin:0">Best regards,<br>The Sendrix Jobs Team</p>',
     "</div>",
   ].join("\n");
 
-  return { to: a.to, subject, text: lines.join("\n"), html };
+  return { to: a.to, subject: "Your application has been successfully submitted!", text, html };
 }
 
 /**

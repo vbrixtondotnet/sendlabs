@@ -14,7 +14,7 @@ import { EmailSendError } from "./email-provider";
  */
 
 export const DEFAULT_FROM = "jobs@sendrix.app";
-export const DEFAULT_FROM_NAME = "Sendrix";
+export const DEFAULT_FROM_NAME = "Sendrix Jobs";
 const TIMEOUT_MS = 10_000;
 
 export interface SystemMail {

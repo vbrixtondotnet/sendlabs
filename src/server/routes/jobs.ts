@@ -108,12 +108,10 @@ jobRoutes.post("/apply-email", async (c) => {
   c.executionCtx.waitUntil(
     sendApplicationConfirmation(mailer, actor.userId, {
       to: actor.email,
+      firstName: actor.firstName || actor.displayName || actor.email.split("@")[0] || "",
       jobTitle: fields.jobTitle,
       companyName: fields.companyName,
-      sentTo: fields.to,
       sentAt: new Date(),
-      attachmentNames: attachments.map((a) => a.filename),
-      appUrl: c.env.APP_BASE_URL ?? "",
     }),
   );
   return c.json({ sent: true, attachments: attachments.length });

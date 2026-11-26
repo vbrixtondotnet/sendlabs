@@ -47,4 +47,4 @@ TOKEN_ENCRYPTION_KEY=generate-with-openssl-rand-base64-32
 # CLOUDFLARE_ACCOUNT_ID=your-32-character-account-id
 # CLOUDFLARE_EMAIL_API_TOKEN=your-token
 # SYSTEM_EMAIL_FROM=jobs@sendrix.app
-# SYSTEM_EMAIL_FROM_NAME=Sendrix
+# SYSTEM_EMAIL_FROM_NAME=Sendrix Jobs
